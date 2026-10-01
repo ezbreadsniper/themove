@@ -84,6 +84,7 @@ export class MeshBuilder {
   /**
    * Sweeps rings into a tube.
    * ring: { c, x, z, rx, rzF, rzB, n, shape(θ), offset(θ)->Vector3, v, w: [[bone, w]] | (θ, p) => [[bone, w]] }
+   *   or { points: Vector3[sides + 1] } for a ring taken from a simulation (point k sits at u = k / sides)
    * opts: { sides, uv: [u0, v0, u1, v1], capStart, capEnd, uOffset, uScale }
    */
   loft(rings, opts = {}) {
@@ -99,10 +100,14 @@ export class MeshBuilder {
       for (let k = 0; k <= sides; k++) {
         const u = arc[0] + (arc[1] - arc[0]) * (k / sides);
         const theta = (u + uOffset - 0.5) * Math.PI * 2;
-        const r = ringRadius(ring, theta);
-        const p = ring.c.clone()
-          .addScaledVector(ring.z, Math.cos(theta) * r)
-          .addScaledVector(ring.x, Math.sin(theta) * r);
+        let p;
+        if (ring.points) p = ring.points[Math.round((ring.pointsArc ? (u - arc[0]) / (arc[1] - arc[0]) : u) * (ring.points.length - 1))].clone();
+        else {
+          const r = ringRadius(ring, theta);
+          p = ring.c.clone()
+            .addScaledVector(ring.z, Math.cos(theta) * r)
+            .addScaledVector(ring.x, Math.sin(theta) * r);
+        }
         if (ring.offset) p.add(ring.offset(theta, p));
         const weights = typeof ring.w === 'function' ? ring.w(theta, p) : ring.w;
         this.addVertex(p, [u0 + (u1 - u0) * u, v0 + (v1 - v0) * vv], weights);

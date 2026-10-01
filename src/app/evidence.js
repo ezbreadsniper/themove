@@ -16,6 +16,8 @@ const ZONES = {
   hips: (m) => ({ y: m.hipsY - 0.05, h: 0.55 }),
   handL: (m, w) => ({ x: w.LeftHand.x, y: w.LeftHand.y - 0.05, h: 0.4 }),
   feet: () => ({ y: 0.09, h: 0.42, pitch: 18 }),
+  ankles: (m) => ({ y: 0.115 * (m.height / 1.78), h: 0.36 * (m.height / 1.78), pitch: 8 }),
+  legs: (m) => ({ y: m.kneeY * 0.62, h: m.kneeY * 1.45, pitch: 6 }),
 };
 
 const container = document.getElementById('view');

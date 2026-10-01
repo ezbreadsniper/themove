@@ -410,6 +410,31 @@ for (const [name, deg] of Object.entries(DIRECTIONS)) {
   SAMPLERS[`run_${name}`] = gaitSampler('run', deg);
 }
 
+/**
+ * Seated on a chair/bench (~46 cm seat at 1.78 m): pelvis down and back, thighs near horizontal,
+ * shins vertical with the feet planted forward. The clothing gauntlet's sitting test pose.
+ */
+SAMPLERS.sit = {
+  duration: 3,
+  loop: true,
+  sample: (L, t, dur) => {
+    const k = L.measures.height / 1.78;
+    const w = L.world;
+    const breath = Math.sin((t / dur) * TAU);
+    const p = base(L, { armDown: 14, elbow: 38 });
+    SIDES.forEach((side) => Pose.armFlex(p, side, 22));
+    Pose.spineFlex(p, 'Spine', 4 + breath * 0.6);
+    Pose.spineFlex(p, 'Spine1', 3);
+    Pose.headNod(p, 3);
+    const hipDrop = w.LeftUpLeg.y - (0.46 * k + 0.06 * k);
+    const hips = new THREE.Vector3(0, -hipDrop, -0.06 * k);
+    const thigh = w.LeftUpLeg.distanceTo(w.LeftLeg);
+    const ankles = Object.fromEntries(SIDES.map((side) => [side, w[`${side}Foot`].clone().add(new THREE.Vector3(0, 0, hips.z + thigh * 0.92))]));
+    plantLegs(L, p, { hips, ankles });
+    return p;
+  },
+};
+
 SAMPLERS.talk = {
   duration: 4,
   loop: true,

@@ -354,3 +354,187 @@ export function buildShoes(layout, type, { size = 1 } = {}) {
   }
   return { mb, coversFoot: spec.coversFoot };
 }
+
+/**
+ * Shoe collision volume (bind pose, world space), built from the same spec as the shoe mesh so the two
+ * can never disagree. It is a solid union of the sole slab, the foot box (a heightfield over the outline)
+ * and the ankle collar tube. Garments collide with it; nothing is parented to it.
+ *
+ * resolve(p, margin) returns the smallest push that moves p out of the volume (plus margin), with the
+ * contact kind ('top' | 'side' | 'collar'), or null when p is already outside.
+ * topAt(x, z) is the height of the shoe's upper surface at a point of the footprint (-Infinity outside).
+ */
+export function shoeCollider(layout, type, { size = 1 } = {}) {
+  const spec = SHOES[type];
+  const sc = (layout.measures.height / 1.78) * size * FOOT_SCALE * (1 - (layout.measures.feminine ?? 0) * 0.06);
+  const out = {};
+  for (const [side] of SIDES) out[side] = spec && !spec.sandal ? shoeVolume(layout, spec, side, sc) : footVolume(layout, spec, side, sc);
+  return out;
+}
+
+/** Superellipse half-dome height at lateral fraction t (0 = centre line, 1 = edge). */
+const dome = (t, n) => (t >= 1 ? 0 : (1 - t ** n) ** (1 / n));
+
+function shoeVolume(layout, spec, side, sc) {
+  const ankle = layout.world[`${side}Foot`];
+  const s = side === 'Left' ? 1 : -1;
+  const m = layout.measures;
+  const { outline } = spec;
+  const toX = (z) => ankle.x + (z > 0.1 ? s * (z - 0.1) * 0.08 : 0);
+  const heelLift = (z) => (spec.sole.heel ?? 0) * (1 - smooth(-0.005, 0.03, z));
+  const spring = (z) => spec.sole.toeSpring * smooth(0.15, outline[outline.length - 1][0], z);
+  const soleTop = (z) => spec.sole.h + heelLift(z) + spring(z);
+  const b = spec.box;
+  const zFrom = b.from ?? outline[0][0] + 0.006;
+  const zTo = outline[outline.length - 1][0] - 0.008;
+  const heightAt = (z) => {
+    const ramp = (b.ramp ?? 0) * (1 - smooth(-0.01, 0.11, z)) * smooth(-0.05, 0.0, z);
+    const round = (b.toeRound ?? 0) * smooth(zTo - 0.06, zTo - 0.02, z) * (1 - smooth(zTo - 0.02, zTo, z));
+    if (z <= 0) return b.heelH + ramp;
+    if (z <= 0.045) return b.heelH + (b.instepH - b.heelH) * smooth(0, 0.045, z) + ramp;
+    return b.instepH + (b.toeH - b.instepH) * smooth(0.045, zTo, z) + ramp + round;
+  };
+  const endScale = (z, edge) => 1 - (1 - edge) * Math.max(smooth(zFrom + 0.012, zFrom, z), smooth(zTo - 0.012, zTo, z));
+  const zMin = outline[0][0];
+  const zMax = outline[outline.length - 1][0];
+  const topAtLocal = (dx, zl) => {
+    if (zl < zMin || zl > zMax) return -Infinity;
+    let top = -Infinity;
+    const ws = widthAt(outline, zl) * sc;
+    if (dx < ws) top = soleTop(zl) * sc;
+    if (zl >= zFrom && zl <= zTo) {
+      const w = (widthAt(outline, zl) - 0.004) * sc * endScale(zl, 0.7);
+      const h = heightAt(zl) * sc * endScale(zl, 0.75);
+      if (dx < w) top = Math.max(top, (soleTop(zl) - 0.002) * sc + h * dome(dx / w, 2.3));
+    }
+    return top;
+  };
+  const halfWidth = (zl) => (zl < zMin || zl > zMax ? 0 : widthAt(outline, zl) * sc);
+
+  // Collar tube (same stations as buildCollar).
+  const c = spec.collar;
+  let collar = null;
+  if (c) {
+    const stations = [...legStations(layout, side)].sort((a, bb) => a.y - bb.y);
+    const legR = (y) => {
+      if (y <= stations[0].y) return stations[0].r;
+      for (let i = 0; i < stations.length - 1; i++) {
+        if (y <= stations[i + 1].y) return stations[i].r + (stations[i + 1].r - stations[i].r) * ((y - stations[i].y) / (stations[i + 1].y - stations[i].y));
+      }
+      return stations[stations.length - 1].r;
+    };
+    const baseY = soleTop(0);
+    const y0 = (c.instep ? baseY + 0.01 : baseY + spec.box.heelH * 0.5) * sc;
+    const y1 = (baseY + c.height) * sc;
+    collar = {
+      y0,
+      y1,
+      ring: (y) => {
+        const along = Math.max(0, Math.min(1, (y - y0) / (y1 - y0)));
+        const centre = legCenter(layout, side, Math.max(y, m.ankleY));
+        const r = legR(y) + c.pad * sc + (c.taper ?? 0) * sc * (1 - along) + (c.flare ?? 0) * sc * along;
+        return {
+          cx: centre.x,
+          cz: centre.z - 0.004 * sc + (c.lean ?? 0) * sc * along,
+          rx: r * 0.98,
+          rzF: r * 1.05 + (c.instep ?? 0) * sc * Math.max(0, 1 - along * 1.7) ** 1.4,
+          rzB: r * 1.08,
+        };
+      },
+    };
+  }
+
+  const topAt = (x, z) => {
+    const zl = (z - ankle.z) / sc;
+    return topAtLocal(Math.abs(x - toX(zl)), zl);
+  };
+  let maxTop = collar ? collar.y1 : 0;
+  for (let z = zMin; z <= zMax; z += 0.005) maxTop = Math.max(maxTop, topAtLocal(0, z));
+  const maxW = Math.max(...outline.map(([, w]) => w)) * sc + 0.08;
+  return {
+    side,
+    collarTop: collar ? collar.y1 : -Infinity,
+    footprint: { zMin: ankle.z + zMin * sc, zMax: ankle.z + zMax * sc },
+    topAt,
+    resolve(p, margin = 0) {
+      if (p.y > maxTop + margin || p.z < ankle.z + zMin * sc - margin - 0.01 || p.z > ankle.z + zMax * sc + margin + 0.01 || Math.abs(p.x - ankle.x) > maxW + margin + 0.03) return null;
+      const zl = (p.z - ankle.z) / sc;
+      let best = null;
+      const offer = (dx, dy, dz, kind) => {
+        const len = Math.hypot(dx, dy, dz);
+        if (!best || len < best.len) best = { len, push: V(dx, dy, dz), contact: kind };
+      };
+      const cx = toX(zl);
+      const dx = Math.abs(p.x - cx);
+      const top = topAtLocal(dx, zl);
+      const mz = margin / sc;
+      if (top > -Infinity || (dx < halfWidth(zl) + margin && zl > zMin - mz && zl < zMax + mz)) {
+        const t = top > -Infinity ? top : topAtLocal(0, Math.max(zMin, Math.min(zMax, zl)));
+        if (p.y < t + margin && p.y > -0.05) {
+          offer(0, t + margin - p.y, 0, 'top');
+          const hw = halfWidth(Math.max(zMin, Math.min(zMax, zl)));
+          offer(Math.sign(p.x - cx || s) * (hw + margin - dx), 0, 0, 'side');
+          offer(0, 0, ankle.z + zMax * sc + margin - p.z, 'side');
+          offer(0, 0, ankle.z + zMin * sc - margin - p.z, 'side');
+        }
+      }
+      if (collar && p.y < collar.y1 + margin && p.y > collar.y0 - margin) {
+        const ring = collar.ring(Math.max(collar.y0, Math.min(collar.y1, p.y)));
+        const ox = p.x - ring.cx;
+        const oz = p.z - ring.cz;
+        const theta = Math.atan2(ox, oz);
+        const R = 1 / Math.pow(Math.pow(Math.abs(Math.cos(theta)) / (Math.cos(theta) >= 0 ? ring.rzF : ring.rzB), 2.2) + Math.pow(Math.abs(Math.sin(theta)) / ring.rx, 2.2), 1 / 2.2);
+        const d = Math.hypot(ox, oz);
+        if (d < R + margin) {
+          const k = (R + margin - d) / (d || 1e-6);
+          offer(ox * k, 0, oz * k, 'collar');
+          offer(0, collar.y1 + margin - p.y, 0, 'collar');
+        }
+      }
+      return best && best.len > 0 ? best : null;
+    },
+  };
+}
+
+/** Bare foot / sandal: the foot itself (body.js stations) plus an optional footbed slab. */
+function footVolume(layout, spec, side, sc) {
+  const ankle = layout.world[`${side}Foot`];
+  const s = side === 'Left' ? 1 : -1;
+  const lift = spec?.footLift ?? 0;
+  const soleH = spec?.sole?.h ?? 0;
+  const st = [[-0.07, 0.024, 0.02], [-0.055, 0.026, 0.06], [-0.035, 0.032, 0.08], [0.03, 0.036, 0.076], [0.11, 0.044, 0.04], [0.165, 0.042, 0.027], [0.205, 0.03, 0.02]];
+  const at = (zl, i) => {
+    if (zl <= st[0][0]) return st[0][i];
+    for (let j = 0; j < st.length - 1; j++) if (zl <= st[j + 1][0]) return st[j][i] + (st[j + 1][i] - st[j][i]) * ((zl - st[j][0]) / (st[j + 1][0] - st[j][0]));
+    return st[st.length - 1][i];
+  };
+  const zMin = st[0][0];
+  const zMax = st[st.length - 1][0];
+  const toX = (zl) => ankle.x + (zl > 0.08 ? s * (zl - 0.08) * 0.1 : 0);
+  const topAtLocal = (dx, zl) => {
+    if (zl < zMin || zl > zMax) return -Infinity;
+    const w = at(zl, 1) * sc;
+    if (dx >= w) return -Infinity;
+    return Math.max(soleH * sc, (at(zl, 2) + lift) * sc * dome(dx / w, 2.4));
+  };
+  return {
+    side,
+    collarTop: (0.08 + lift) * sc,
+    footprint: { zMin: ankle.z + zMin * sc, zMax: ankle.z + zMax * sc },
+    topAt: (x, z) => {
+      const zl = (z - ankle.z) / sc;
+      return topAtLocal(Math.abs(x - toX(zl)), zl);
+    },
+    resolve(p, margin = 0) {
+      const zl = (p.z - ankle.z) / sc;
+      const dx = Math.abs(p.x - toX(zl));
+      const top = topAtLocal(dx, zl);
+      if (top === -Infinity || p.y >= top + margin || p.y < -0.05) return null;
+      const up = top + margin - p.y;
+      const sideways = at(zl, 1) * sc + margin - dx;
+      return up <= sideways
+        ? { len: up, push: V(0, up, 0), contact: 'top' }
+        : { len: sideways, push: V(Math.sign(p.x - toX(zl) || s) * sideways, 0, 0), contact: 'side' };
+    },
+  };
+}

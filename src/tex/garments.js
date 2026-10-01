@@ -208,7 +208,18 @@ export function paintBottom(style, rng) {
     stitch(r, L.x + L.w * outer, L.y, L.x + L.w * outer, L.y + L.h, seam, 2, 0.55);
     stitch(r, L.x + L.w * outer + 2, L.y, L.x + L.w * outer + 2, L.y + L.h, seam, 2, 0.4);
     stitch(r, L.x + L.w * inner, L.y, L.x + L.w * inner, L.y + L.h, seam, 2, 0.4);
-    r.rect(L.x, L.y, L.w, 2, deep, 0.7);
+    if (style.cinch) {
+      // Rib-knit ankle cuff (v 0..0.05 on the leg strip): vertical 1x1 rib, a shade off the leg colour.
+      const ribH = Math.max(4, Math.round(L.h * 0.055));
+      const rib = scale(base, 0.86);
+      r.rect(L.x, L.y, L.w, ribH, rib);
+      for (let x = 0; x < L.w; x += 2) r.rect(L.x + x, L.y, 1, ribH, scale(base, 0.7), 0.7);
+      r.rect(L.x, L.y + ribH, L.w, 1, deep, 0.8);
+    } else {
+      // Turned hem: folded edge shadow plus the hem topstitch a hem-depth above it.
+      r.rect(L.x, L.y, L.w, 2, deep, 0.7);
+      stitch(r, L.x, L.y + 4, L.x + L.w, L.y + 4, mix(thread, base, 0.35), 2, 0.7);
+    }
     if (cuffRows) paintSelvedgeCuff(r, L, cuffRows, outer, base, style.selvedge);
     if (style.fray) paintFray(r, L, base, noise);
     if (style.doubleKnee) paintDoubleKnee(r, L, base, thread);

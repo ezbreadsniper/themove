@@ -4,6 +4,7 @@ import { Raster } from '../tex/raster.js';
 import { createRng } from '../core/rng.js';
 import { rasterToTexture } from '../character/build.js';
 import { bakeAllClips } from '../anim/clips.js';
+import { updateCorrectives } from '../garment/correctives.js';
 import { SmokeEmitter } from './smoke.js';
 
 /** Lighting and atmosphere presets derived from the reference set (lighting only, no set dressing). */
@@ -182,6 +183,7 @@ export class Stage {
   update(dt = this.clock.getDelta()) {
     for (const e of this.entries) {
       e.mixer.update(dt);
+      updateCorrectives(e.character);
       if (!e.smoke) continue;
       const clip = e.action?.getClip();
       const t = e.action ? e.action.time : 0;

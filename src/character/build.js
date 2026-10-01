@@ -8,7 +8,9 @@ import { buildBody, TORSO_KEYS } from '../geo/parts/body.js';
 import { createHeadShape, buildHead, buildMouth } from '../geo/parts/head.js';
 import { buildHair, hairlineFor, HAIR_STYLES } from '../geo/parts/hair.js';
 import { buildTop, buildVest, buildBottom, buildSocks } from '../geo/parts/garments.js';
-import { buildShoes, shoeCoversFoot, shoeIsShiny, shoeFootLift, shoeDoubleSided } from '../geo/parts/shoes.js';
+import { buildShoes, shoeCoversFoot, shoeIsShiny, shoeFootLift, shoeDoubleSided, shoeCollider, SHOE_TYPES } from '../geo/parts/shoes.js';
+import { bakeAnkleCorrectives } from '../garment/correctives.js';
+import { collisionMargin } from '../garment/fabric-physics.js';
 import { buildCap, buildGlasses, buildWrapShades, buildChains, buildBeanie, buildBucket, buildDurag, buildHeadband, buildEarrings, buildWristwear, buildCigarette, buildBalaclava } from '../geo/parts/accessories.js';
 import { Raster } from '../tex/raster.js';
 import { buildBelt } from '../geo/parts/belt.js';
@@ -139,7 +141,7 @@ const RECIPES = {
     const { def, layout, rng } = ctx;
     if (!def.bottom) return { parts: [] };
     const skirt = def.bottom.type === 'skirt';
-    const res = skirt ? buildSkirtFor(layout, def.bottom) : buildBottom(layout, def.bottom, rng.fork('bottomGeo'), { under: ctx.topLayer });
+    const res = skirt ? buildSkirtFor(layout, def.bottom) : buildBottom(layout, def.bottom, rng.fork('bottomGeo'), { under: ctx.topLayer, shoes: def.shoes, socks: def.socks });
     const legsBelowY = skirt ? res.hemY + 0.05 : def.bottom.length === 'full' ? null : Math.min(layout.world.LeftUpLeg.y - 0.04, res.hemY + 0.12);
     const parts = [{ name: 'bottom', mb: res.mb, raster: paintBottom(def.bottom, rng.fork('bottomTex')), opts: { doubleSide: true, fabric: def.bottom.kind } }];
     if (def.bottom.belt) parts.push({ name: 'belt', mb: buildBelt(layout, { riseY: res.riseY, ease: res.ease }), raster: paintBelt(def.bottom.belt, rng.fork('beltTex')), opts: { shiny: true } });
@@ -295,6 +297,11 @@ export function buildCharacter(input) {
   meshes.push(skinnedMesh({ name: 'mouth', slot: 'mouth', mb: buildMouth(shape), raster: mouthTex, opts: { doubleSide: true } }, rig.skeleton));
   for (const part of parts) meshes.push(skinnedMesh(part, rig.skeleton));
   meshes.forEach((m) => group.add(m));
+  const bottomMesh = meshes.find((m) => m.name === 'bottom');
+  if (bottomMesh && def.shoes && SHOE_TYPES.includes(def.shoes.type) && def.shoes.type !== 'barefoot') {
+    const colliders = shoeCollider(layout, def.shoes.type, { size: def.shoes.size });
+    bakeAnkleCorrectives(bottomMesh, rig, colliders, { margin: collisionMargin(def.bottom.kind ?? 'denim') + 0.003 });
+  }
 
   const stats = characterStats(meshes);
   const mouthWorld = new THREE.Vector3(0, shape.lm.mouth, shape.point(0, shape.lm.mouth, 0.004 * shape.k).z);

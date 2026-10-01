@@ -1,6 +1,12 @@
 import { JOINT_INDEX as J } from '../../rig/skeleton.js';
 import { MeshBuilder, V, frameFor, ringRadius } from '../mesh-builder.js';
 import { torsoRings, torsoWeights, armStations, armFrame, legStations, legCenter, SIDES } from './body.js';
+import { shoeCollider, SHOE_TYPES } from './shoes.js';
+import { legFitClass, LEG_FIT_CLASSES } from '../../garment/fit-classes.js';
+import { fabricPhysics, collisionMargin } from '../../garment/fabric-physics.js';
+import { draftTrousers } from '../../garment/pattern.js';
+import { drapeTube, resampleDrape } from '../../garment/drape.js';
+import { legCollider } from '../../garment/colliders.js';
 
 const smoothstep = (a, b, x) => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
@@ -317,15 +323,18 @@ function applyCut(cut, r, { y, kneeY, hemY, tight, thighR }) {
   }
 }
 
-function pantsLegRings(layout, side, { hemY, width, fit, stack, rng, drape, topY, cuff = 0, fray = false, cinch = false, cut = 'straight' }) {
+/**
+ * Free-hanging leg radius at height y (the drafted ease before gravity and collisions): fit blends
+ * from near skin-tight to the baggy thigh-to-hem taper, then the cut shapes the lower leg.
+ */
+function legRadiusFn(layout, side, { hemY, width, fit, topY, cinch, cut }) {
   const m = layout.measures;
   const stations = legStations(layout, side);
-  const s = side === 'Left' ? 1 : -1;
   const kneeY = m.kneeY;
   const thighR = m.thighRadius * 1.0 + 0.006 + fit * 0.02;
   const topR = m.thighRadius * 0.84 + 0.004;
   const hemR = m.calfRadius * 1.2 + 0.004 + fit * 0.035 * width;
-  const radiusAt = (y) => {
+  return (y) => {
     const t = Math.max(0, Math.min(1, (topY - y) / (topY - 0.02)));
     const kneeBulge = Math.exp(-(((y - kneeY) / 0.08) ** 2)) * 0.006;
     const base = thighR + (hemR - thighR) * Math.pow(t, 0.8) + kneeBulge;
@@ -341,29 +350,52 @@ function pantsLegRings(layout, side, { hemY, width, fit, stack, rng, drape, topY
     const blouse = Math.exp(-(((toHem - 0.75) / 0.3) ** 2)) * 0.014;
     return gathered + (free + blouse - gathered) * smoothstep(0, 0.55, toHem);
   };
+}
+
+/** Leg-centre drift: baggy legs hang slightly outboard of the leg, and pull in under the crotch. */
+function legAxis(layout, side, fit, topY) {
+  const s = side === 'Left' ? 1 : -1;
+  return (y) => {
+    const c = legCenter(layout, side, y);
+    c.x += s * (0.01 + fit * 0.012) * Math.min(1, fit * 2) * Math.min(1, (topY - y) / 0.15 + 0.35);
+    c.x *= 1 - 0.28 * Math.max(0, 1 - (topY - y) / 0.2);
+    return c;
+  };
+}
+
+/** Back-of-leg depth factor of a trouser ring (room for seat and calf). */
+function ringBack(stations, y, t) {
+  return Math.max(t > 0.8 ? 1.1 : 1.04, Math.min(1.45, legBackAt(stations, Math.min(y, stations[0].y)) * 0.97));
+}
+
+function pantsLegRings(layout, side, opts) {
+  if (opts.drape) return drapedLegRings(layout, side, opts);
+  const { hemY, fit, stack, rng, topY, cuff = 0, fray = false } = opts;
+  const stations = legStations(layout, side);
+  const radiusAt = legRadiusFn(layout, side, opts);
+  const axis = legAxis(layout, side, fit, topY);
   const ys = [];
   const count = 7;
   for (let i = 0; i <= count; i++) ys.push(topY + (hemY - topY) * (i / count));
   const rings = [];
   ys.forEach((y, i) => {
-    const c = legCenter(layout, side, y);
-    c.x += s * (0.01 + fit * 0.012) * Math.min(1, fit * 2) * Math.min(1, (topY - y) / 0.15 + 0.35);
-    c.x *= 1 - 0.28 * Math.max(0, 1 - (topY - y) / 0.2);
     const r = radiusAt(y);
     const stackZone = stack > 0 && y < hemY + 0.26;
     const wobble = stackZone ? (i % 2 ? 0.01 : -0.004) * stack + rng.range(-0.003, 0.003) : 0;
-    rings.push({ y, c, r: r + wobble, hem: false, t: (i / count) * (cuff > 0 ? 0.9 : 1) });
+    rings.push({ y, c: axis(y), r: r + wobble, t: (i / count) * (cuff > 0 ? 0.9 : 1) });
   });
   const last = rings[rings.length - 1];
   const at = (y, r, t, lip = false) => rings.push({ ...last, y, c: last.c.clone().setY(y), r, t, lip });
   if (cuff > 0) {
+    // Roll-up: the hem turned outward once; the outer layer is a fabric thickness proud of the leg.
     at(hemY, last.r + 0.008, 0.95, true);
     at(hemY + cuff, last.r + 0.008, 1, true);
     at(hemY + cuff - 0.006, last.r - 0.004, 1, true);
   } else if (fray) {
     at(hemY - 0.004, last.r + 0.004, 1, true);
   } else {
-    at(hemY + 0.01, last.r - 0.003, 1, true);
+    // Turned hem: the inside of the opening shows the doubled allowance, not a paper edge.
+    at(hemY + (opts.hemTurn ?? 0.01), last.r - 0.003 - (opts.thickness ?? 0.0012) * 2, 1, true);
   }
   return rings.map((ring) => ({
     c: ring.c,
@@ -371,18 +403,204 @@ function pantsLegRings(layout, side, { hemY, width, fit, stack, rng, drape, topY
     z: Z,
     rx: ring.r * 0.92,
     rzF: ring.r * 1.0,
-    rzB: ring.r * Math.max(ring.t > 0.8 ? 1.1 : 1.04, Math.min(1.45, legBackAt(stations, Math.min(ring.y, stations[0].y)) * 0.97)),
+    rzB: ring.r * ringBack(stations, ring.y, ring.t),
     n: 2.3,
     v: 1 - ring.t,
     w: weightsAlong(stations, 'y', ring.y),
-    offset: ringOffset(ring, { drape, fray }),
+    offset: ringOffset(ring, { fray }),
   }));
 }
 
-/** Hem drape at the shoe, or the ragged fringe of a cut-off hem. */
-function ringOffset(ring, { drape, fray }) {
+/**
+ * Full-length legs that reach the shoe: the upper leg is lofted from the draft as before; the lower
+ * leg (from just under the knee) is draped by the cloth solver against the leg and the shoe collider
+ * and retopologised to the runtime ring count. Joggers sew the leg onto a rib cuff instead of a hem.
+ */
+function drapedLegRings(layout, side, opts) {
+  const { fit, topY, rng, draft, shoe, physics, margin, sockExtra, cls } = opts;
+  const m = layout.measures;
+  const k = m.height / 1.78;
+  const stations = legStations(layout, side);
+  const s = side === 'Left' ? 1 : -1;
+  const Ft = J[`${side}Foot`];
+  const ankle = layout.world[`${side}Foot`];
+  const radiusAt = legRadiusFn(layout, side, { ...opts, hemY: draft.lengths.floorHem });
+  const axis = legAxis(layout, side, fit, topY);
+  const simTopY = m.kneeY - 0.1 * k;
+  const ringPoint = (c, r, y, t, theta) => {
+    const ring = { rx: r * 0.92, rzF: r, rzB: r * ringBack(stations, y, t), n: 2.3 };
+    const rr = ringRadius(ring, theta);
+    return V(c.x - Math.sin(theta) * rr, y, c.z + Math.cos(theta) * rr);
+  };
+  // Upper rings (analytic, from the draft's thigh/knee ease) down to the sim top.
+  const upper = [];
+  const count = 3;
+  for (let i = 0; i < count; i++) {
+    const y = topY + (simTopY + 0.11 * k - topY) * (i / (count - 1));
+    upper.push({ y, c: axis(y), r: radiusAt(y), t: ((topY - y) / (topY - draft.lengths.floorHem)) });
+  }
+  // Drafted lower leg: straight pattern lines from the knee girth to the hem girth.
+  const topR = radiusAt(simTopY);
+  const cuff = draft.cuff;
+  const cuffBottomY = cuff ? Math.max(m.ankleY - 0.01 * k, shoe.collarTop + 0.012) : null;
+  const cuffTopY = cuff ? cuffBottomY + cuff.height : null;
+  const hemGirthR = draft.girths.hem / (2 * Math.PI * 0.99);
+  const restHemY = cuff ? cuffTopY : draft.lengths.floorHem - (cls.excess ?? 0) * k * (opts.stack ?? 1);
+  const length = cuff ? simTopY - cuffTopY + cls.excess * k : simTopY - restHemY;
+  const pinR = cuff ? legRadiusAt(stations, cuffTopY) + 0.009 + sockExtra : 0;
+  const restR = (sm) => {
+    const r = topR + (hemGirthR - topR) * Math.min(1, sm / (simTopY - draft.lengths.floorHem));
+    if (!cuff) return r;
+    // The rib pulls the last few centimetres of the leg in to the seam (gathered, not shelved).
+    const toSeam = Math.max(0, Math.min(1, (length - sm) / (0.06 * k)));
+    return pinR + (r - pinR) * smoothstep(0, 1, toSeam);
+  };
+  const tAt = (y) => (topY - y) / (topY - draft.lengths.floorHem);
+  const rest = (sm, theta) => {
+    const y = simTopY - sm;
+    return ringPoint(axis(Math.max(y, m.ankleY - 0.03)), restR(sm), y, tAt(y), theta);
+  };
+  // Arrangement: the leg starts lifted (compressed) so the hem begins above the shoe, then falls on it.
+  const obstacle = Math.max(shoe.collarTop, ...[-0.06, 0, 0.06, 0.1].map((dz) => shoe.topAt(ankle.x, ankle.z + dz))) + margin + 0.01;
+  const startHem = cuff ? cuffTopY : Math.max(restHemY, obstacle);
+  const squash = Math.min(1, (simTopY - startHem) / length);
+  const start = (sm, theta) => {
+    const y = simTopY - sm * squash;
+    return ringPoint(axis(Math.max(y, m.ankleY - 0.03)), restR(sm), y, tAt(y), theta);
+  };
+  const leg = legCollider(layout, side, { extra: sockExtra });
+  const colliders = [leg, shoe];
+  const pinBottom = cuff ? (theta) => {
+    const c = legCenter(layout, side, cuffTopY);
+    const base = pinR;
+    // Elastic gathers: uneven lobes instead of a perfect ring.
+    const r = base + 0.003 * Math.sin(theta * 5 + 0.7) + 0.0015 * Math.sin(theta * 3);
+    return V(c.x - Math.sin(theta) * r * 0.96, cuffTopY, c.z + Math.cos(theta) * r);
+  } : null;
+  const sim = drapeTube({ rest, start, length, sides: 20, spacing: 0.016, colliders, margin, hemBand: cls.hemBand, floorY: cuff ? 0 : Math.max(0.006, draft.lengths.floorHem - 0.004 * k), physics, rng, pinBottom });
+  const rows = resampleDrape(sim, { sides: 10, axisAt: (y) => axis(Math.max(y, m.ankleY - 0.03)), maxRows: cuff ? 5 : 6 });
+  // Chord compensation: the runtime ring has half the sim's columns, so a straight edge between two
+  // resampled points can cut through a curved collider the sim points cleared. Re-collide the runtime
+  // points with the chord sag (r · (1 − cos(π / sides))) added to the margin.
+  for (const row of rows.slice(1)) {
+    for (const p of row.points) {
+      const c = axis(Math.max(p.y, m.ankleY - 0.03));
+      const sag = Math.hypot(p.x - c.x, p.z - c.z) * (1 - Math.cos(Math.PI / 10));
+      for (let pass = 0; pass < 2; pass++) {
+        for (const col of colliders) {
+          const res = col.resolve(p, margin + sag + 0.001);
+          if (res) p.add(res.push);
+        }
+      }
+    }
+  }
+  // Edge midpoints (within a ring and between consecutive rings) must clear the colliders too; a
+  // penetrating midpoint pushes both of its end points.
+  const pushPair = (a, b) => {
+    const mid = a.clone().add(b).multiplyScalar(0.5);
+    for (const col of colliders) {
+      const res = col.resolve(mid, margin * 0.5);
+      if (res) {
+        a.add(res.push);
+        b.add(res.push);
+        mid.add(res.push);
+      }
+    }
+  };
+  for (let pass = 0; pass < 3; pass++) {
+    for (let r = 1; r < rows.length; r++) {
+      const cur = rows[r].points;
+      const up = rows[r - 1].points;
+      for (let q = 0; q < cur.length - 1; q++) {
+        pushPair(cur[q], cur[q + 1]);
+        if (r > 1) {
+          pushPair(cur[q], up[q]);
+          pushPair(cur[q + 1], up[q]);
+          pushPair(cur[q], up[q + 1]);
+        }
+        else {
+          const mid = cur[q].clone().add(up[q]).multiplyScalar(0.5);
+          for (const col of colliders) {
+            const res = col.resolve(mid, margin * 0.5);
+            if (res) cur[q].add(res.push.multiplyScalar(2));
+          }
+        }
+      }
+      cur[cur.length - 1].copy(cur[0]);
+    }
+  }
+  // Debug hook for scripts that inspect the raw simulation (set globalThis.__drapeLog = [] first).
+  if (globalThis.__drapeLog) globalThis.__drapeLog.push({ side, sim, rows, length });
+  // Fabric lying on the shoe rides with the foot: the share of Foot weight grows toward the toe and
+  // fades out above the instep. Everything else stays on the shin, so the leg is not parented to the shoe.
+  const instepTop = shoe.topAt(ankle.x, ankle.z + 0.05 * k);
+  const footShare = (p, contact) => {
+    const zRel = (p.z - ankle.z) / k;
+    const front = smoothstep(-0.01, 0.06, zRel);
+    const heel = smoothstep(-0.03, -0.075, zRel);
+    const low = 1 - smoothstep(instepTop + 0.01, instepTop + 0.075 * k, p.y);
+    const heelLow = 1 - smoothstep(shoe.collarTop - 0.01, shoe.collarTop + 0.03 * k, p.y);
+    const touching = contact === 'top' || contact === 'collar' ? 1 : 0.75;
+    return Math.min(0.9, Math.max((0.1 + 0.8 * front) * low * touching, 0.9 * heel * heelLow));
+  };
+  const simWeights = (row) => (theta) => {
+    const kk = Math.round(((theta / (Math.PI * 2)) + 0.5) * 10);
+    const p = row.points[Math.max(0, Math.min(10, kk))];
+    const base = weightsAlong(stations, 'y', Math.max(p.y, m.ankleY + 0.03 * k));
+    const f = footShare(p, row.contact[Math.max(0, Math.min(10, kk))]);
+    return [...base.map(([b, w]) => [b, w * (1 - f)]), [Ft, f]];
+  };
+  const out = upper.map((ring) => ({
+    c: ring.c, x: X.clone().multiplyScalar(-1), z: Z, rx: ring.r * 0.92, rzF: ring.r, rzB: ring.r * ringBack(stations, ring.y, ring.t), n: 2.3, v: 1 - Math.min(1, ring.t), w: weightsAlong(stations, 'y', ring.y),
+  }));
+  const vTop = 1 - Math.min(1, upper[upper.length - 1].t);
+  rows.forEach((row) => out.push({ points: row.points, v: vTop - (vTop - 0.06) * (row.s / length), w: simWeights(row), strain: row.strain, contact: row.contact }));
+  const hem = rows[rows.length - 1];
+  const thick = physics.thickness;
+  if (cuff) {
+    // Rib cuff: snug on the sock/ankle, skinned like the skin it grips; a fold line at the bottom.
+    const cuffRing = (y, extra, v) => {
+      const c = legCenter(layout, side, y);
+      const r = legRadiusAt(stations, y) + sockExtra + extra;
+      return { c, x: X.clone().multiplyScalar(-1), z: Z, rx: r * 0.96, rzF: r, rzB: r * 1.04, n: 2.1, v, w: weightsAlong(stations, 'y', y) };
+    };
+    out.push(cuffRing(cuffTopY - 0.006, 0.008, 0.05));
+    out.push(cuffRing(cuffBottomY + 0.003, 0.0068, 0.01));
+    out.push(cuffRing(cuffBottomY, 0.0055, 0));
+    out.push(cuffRing(cuffBottomY + 0.008, 0.0015, 0));
+  } else {
+    // Turned hem: the lip ring sits a fabric thickness inside the fold, hemTurn up.
+    const inner = hem.points.map((p) => {
+      const c = axis(Math.max(p.y, m.ankleY - 0.03));
+      const d = Math.hypot(p.x - c.x, p.z - c.z) || 1;
+      const kIn = Math.max(0.6, (d - thick * 2 - 0.003) / d);
+      const q = V(c.x + (p.x - c.x) * kIn, p.y + draft.hemTurn, c.z + (p.z - c.z) * kIn);
+      for (const col of colliders) {
+        const res = col.resolve(q, 0.002);
+        if (res) q.add(res.push);
+      }
+      return q;
+    });
+    for (let pass = 0; pass < 3; pass++) {
+      for (let q = 0; q < inner.length; q++) {
+        for (const other of [hem.points[q], hem.points[Math.min(q + 1, inner.length - 1)], inner[Math.min(q + 1, inner.length - 1)]]) {
+          const mid = inner[q].clone().add(other).multiplyScalar(0.5);
+          for (const col of colliders) {
+            const res = col.resolve(mid, 0.0015);
+            if (res) inner[q].add(res.push.multiplyScalar(2));
+          }
+        }
+      }
+      inner[inner.length - 1].copy(inner[0]);
+    }
+    out.push({ points: inner, v: 0, w: simWeights({ points: inner, contact: hem.contact }) });
+  }
+  return out;
+}
+
+/** The ragged fringe of a cut-off hem. */
+function ringOffset(ring, { fray }) {
   if (fray && ring.lip) return (theta) => V(0, -Math.abs(Math.sin(theta * 7 + 0.6)) * 0.009 - Math.abs(Math.sin(theta * 3)) * 0.004, 0);
-  if (drape && ring.t > 0.95 && !ring.lip) return (theta) => V(0, Math.max(0, Math.cos(theta)) * drape, 0);
   return undefined;
 }
 
@@ -454,21 +672,33 @@ export function sampleTorsoShaped(table) {
   };
 }
 
-export function buildBottom(layout, style, rng, { under = null } = {}) {
+export function buildBottom(layout, style, rng, { under = null, shoes = null, socks = null } = {}) {
   const mb = new MeshBuilder('bottom');
   const m = layout.measures;
   const H = m.height;
+  const k = H / 1.78;
   const fit = style.fit ?? 0.7;
+  const length = style.length ?? 'full';
+  const cls = legFitClass(style);
+  const physics = fabricPhysics(style.kind ?? 'denim');
+  const collider = shoes && SHOE_TYPES.includes(shoes.type) ? shoeCollider(layout, shoes.type, { size: shoes.size ?? 1 }) : null;
+  const rolled = length === 'full' && (style.cuff ?? 0) > 0;
+  const drape = length === 'full' && !rolled && LEG_FIT_CLASSES[cls].simulate && !!collider;
   const hemY = {
-    full: 0.052 * (H / 1.78),
+    full: rolled && collider ? Math.max(0.052 * k, collider.Left.collarTop + 0.012) : 0.052 * k + (style.cinch ? 0.07 * k : 0),
+    ankle: m.ankleY + 0.05 * k,
     cropped: m.kneeY - (m.kneeY - m.ankleY) * 0.55,
     shorts: m.kneeY - (m.kneeY - m.ankleY) * 0.2,
     cutoff: m.kneeY + (layout.world.LeftUpLeg.y - m.kneeY) * 0.62,
-  }[style.length ?? 'full'] + (style.cinch && (style.length ?? 'full') === 'full' ? 0.07 * (H / 1.78) : 0);
+  }[length];
   const infl = 0.008 + fit * 0.037;
   const table = torsoRings(layout);
   const by = Object.fromEntries(table.map((r) => [r.key, r]));
   const riseY = m.hipsY + (style.rise ?? 0.03) * (H / 1.78);
+  const draft = draftTrousers(layout, {
+    fitClass: cls, fit, riseY, cut: style.cut, fabric: style.kind ?? 'denim', stack: style.stack ?? 1,
+    hemY: drape ? null : hemY,
+  });
   const torsoAt = sampleTorsoShaped(table);
   const waistRow = (y, ease, extra = {}) => {
     const t = torsoAt(y);
@@ -507,19 +737,27 @@ export function buildBottom(layout, style, rng, { under = null } = {}) {
       hemY,
       width: style.width ?? 1,
       fit,
-      stack: style.length === 'full' ? style.stack ?? 1 : 0,
-      drape: style.length === 'full' && !style.cuff ? style.drape ?? 0.032 : 0,
+      stack: length === 'full' ? style.stack ?? 1 : 0,
       cuff: style.cuff ?? 0,
       fray: !!style.fray,
       cut: style.cut ?? 'straight',
-      cinch: !!style.cinch && (style.length ?? 'full') === 'full',
+      cinch: !!style.cinch && length === 'full',
       rng: rng.fork(side),
       topY: riseY - 0.025,
+      hemTurn: LEG_FIT_CLASSES[cls].hemTurn * k,
+      thickness: physics.thickness,
+      drape,
+      draft,
+      cls: LEG_FIT_CLASSES[cls],
+      shoe: collider?.[side],
+      physics,
+      margin: collisionMargin(style.kind ?? 'denim'),
+      sockExtra: socks ? 0.004 : 0,
     });
     mb.loft(withLayer(rings, layer), { sides: 10, uv: GARMENT_UV.bottom[side === 'Left' ? 'legL' : 'legR'] });
     if (style.cargo) buildCargoPocket(mb, layout, side, fit);
   }
-  return { mb, hemY, riseY, ease: infl };
+  return { mb, hemY, riseY, ease: infl, draft, fitClass: cls };
 }
 
 /** Leg radius (and back bulge) at height y, interpolated from the body's leg stations. */
