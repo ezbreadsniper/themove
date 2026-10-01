@@ -1,0 +1,196 @@
+{
+  "sheet-01-black-tee": {
+    "identity": "Clean-cut lead in a red/black striped football jersey, raw Japanese denim and dress shoes.",
+    "visualGoals": [
+      "sharp model jawline",
+      "short rounded afro",
+      "Milan-style stripes with white V collar, no marks",
+      "indigo selvedge turn-ups"
+    ],
+    "heightRange": [
+      1.74,
+      1.86
+    ],
+    "ageRange": [
+      18,
+      40
+    ],
+    "animationProfile": "confident: upright posture, medium energy",
+    "status": "polish",
+    "knownIssues": [
+      "afro reads slightly helmet-like in profile"
+    ],
+    "polish": [
+      "hair silhouette",
+      "jersey sleeve cuff detail"
+    ]
+  },
+  "sheet-02-denim-vest": {
+    "identity": "Tattooed guy in a studded light-wash denim vest over a white tee, cap, glasses, gold chains, cropped black pants, cork sandals.",
+    "visualGoals": [
+      "patchwork tattoo arm + dense sleeve arm",
+      "vest covering shoulders with cut armholes",
+      "two-strap cork sandals"
+    ],
+    "heightRange": [
+      1.72,
+      1.84
+    ],
+    "ageRange": [
+      22,
+      45
+    ],
+    "animationProfile": "relaxed: loose arms, medium-low energy",
+    "status": "polish",
+    "knownIssues": [
+      "tattoo density lower than reference"
+    ],
+    "polish": [
+      "tattoo variety",
+      "collar fold"
+    ]
+  },
+  "sheet-03-red-rugby": {
+    "identity": "Blonde locs, wrap shades, red rugby shirt with white piping, long jorts, white socks, chunky hi-tops.",
+    "visualGoals": [
+      "locs draping on shoulders/back (rope sim)",
+      "piping layout",
+      "below-knee jorts"
+    ],
+    "heightRange": [
+      1.7,
+      1.84
+    ],
+    "ageRange": [
+      18,
+      35
+    ],
+    "animationProfile": "laid-back: slight swagger in walk",
+    "status": "polish",
+    "knownIssues": [
+      "locs have no secondary motion yet"
+    ],
+    "polish": [
+      "loc length variation",
+      "jort hem fold"
+    ]
+  },
+  "sheet-04-camo-cargo": {
+    "identity": "Bearded, clear glasses, red/white/blue star cap, fitted white tee, woodland camo cargos, checker slip-ons.",
+    "visualGoals": [
+      "short full beard",
+      "camo scale",
+      "cargo pocket bumps"
+    ],
+    "heightRange": [
+      1.74,
+      1.86
+    ],
+    "ageRange": [
+      22,
+      45
+    ],
+    "animationProfile": "steady: medium energy",
+    "status": "polish",
+    "knownIssues": [
+      "tee back reads boxy"
+    ],
+    "polish": [
+      "tee fit at back"
+    ]
+  },
+  "sheet-05-curly-denim": {
+    "identity": "Curly mop, thin clear glasses, ball chain, black tee, light-wash stacked jeans, round-buckle belt, all-black boots.",
+    "visualGoals": [
+      "curly mop covering ears",
+      "belt with round cross buckle (original design)",
+      "jeans stacked on boots"
+    ],
+    "heightRange": [
+      1.7,
+      1.82
+    ],
+    "ageRange": [
+      18,
+      35
+    ],
+    "animationProfile": "loose: higher energy idle",
+    "status": "polish",
+    "knownIssues": [
+      "small hair flap near ear at some angles"
+    ],
+    "polish": [
+      "hair clumping",
+      "tattoo detail"
+    ]
+  },
+  "sheet-06-floral-cutoffs": {
+    "identity": "Woman with long wavy dark hair, round clear glasses, black cropped baby tee, high-rise frayed denim cutoffs, white crew socks and low sneakers, fine-line floral sleeves.",
+    "visualGoals": [
+      "clearly feminine silhouette (bust, waist, hips, glutes)",
+      "long wavy hair framing the face",
+      "bare midriff between crop tee and high-rise shorts",
+      "frayed cut-off hem",
+      "floral fine-line tattoo sleeves"
+    ],
+    "heightRange": [
+      1.58,
+      1.74
+    ],
+    "ageRange": [
+      18,
+      35
+    ],
+    "animationProfile": "relaxed: soft hip sway, medium energy",
+    "status": "new",
+    "knownIssues": [],
+    "polish": [
+      "hair wave clumping",
+      "tee hem roll"
+    ]
+  },
+  "sheet-07-puffer-balaclava": {
+    "identity": "Guy in a grey knit balaclava, olive quilted puffer vest over a black tee, light-wash baggy jeans gathered into brown hiking boots, forearm tattoos.",
+    "visualGoals": [
+      "balaclava hides hair with one eye slot",
+      "quilted baffles visible in silhouette",
+      "funnel collar",
+      "jeans bloused into boots"
+    ],
+    "heightRange": [
+      1.74,
+      1.88
+    ],
+    "ageRange": [
+      18,
+      35
+    ],
+    "animationProfile": "heavy: grounded steps, low-medium energy",
+    "status": "new",
+    "knownIssues": [],
+    "polish": [
+      "boot lacing detail",
+      "puffer sheen"
+    ]
+  },
+  "trial-default": {
+    "identity": "Neutral fictional default used to test the whole pipeline (body, age, clothing, animation, export).",
+    "visualGoals": [
+      "average proportions",
+      "plain readable materials",
+      "works across every body/age setting"
+    ],
+    "heightRange": [
+      1.55,
+      2.0
+    ],
+    "ageRange": [
+      14,
+      80
+    ],
+    "animationProfile": "baseline",
+    "status": "system test asset",
+    "knownIssues": [],
+    "polish": []
+  }
+}

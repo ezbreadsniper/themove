@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "id": "sheet-02-denim-vest",
+  "name": "Sheet 02 - Denim Vest",
+  "seed": "sheet-02",
+  "rig": "mixamo-core-22",
+  "body": {
+    "height": 1.79,
+    "build": 0.4,
+    "shoulders": 1.04,
+    "hips": 1.0,
+    "legLength": 0.98,
+    "armLength": 1.0,
+    "headSize": 1.0,
+    "neckLength": 0.95
+  },
+  "skin": {
+    "tone": "#e1b395"
+  },
+  "face": {
+    "preset": "square",
+    "facialHair": "stubble",
+    "facialHairDensity": 0.18,
+    "facialHairColor": "#5a4030",
+    "noseBridge": 0.6,
+    "noseTip": 0.35,
+    "eyeDepth": 0.5,
+    "browRidge": 1.4,
+    "lidHeaviness": 0.3,
+    "mouthWidth": 0.94,
+    "upperLip": 0.7,
+    "chinProjection": 0.45,
+    "cleftChin": 0.6,
+    "earProtrusion": 0.6,
+    "cheekFullness": 0.15
+  },
+  "hair": {
+    "style": "crop",
+    "color": "#4a3020"
+  },
+  "top": {
+    "type": "tee",
+    "fit": 0.2,
+    "length": 0.05,
+    "sleeve": "none",
+    "collar": "crew",
+    "color": "#e2e0da",
+    "pattern": "plain",
+    "print": "none"
+  },
+  "outer": {
+    "type": "vest",
+    "fit": 0.5,
+    "color": "#6f8fb3",
+    "studs": "#d2d5da",
+    "stitch": "#d8c08a"
+  },
+  "bottom": {
+    "type": "pants",
+    "length": "cropped",
+    "kind": "twill",
+    "fit": 0.08,
+    "color": "#1c1c1f",
+    "wash": 0.15,
+    "whiskers": false,
+    "stack": 0,
+    "drawstring": "#141416"
+  },
+  "socks": null,
+  "shoes": {
+    "type": "sandal",
+    "upper": "#6e4628",
+    "sole": "#c9a476",
+    "size": 1.0
+  },
+  "tattoos": {
+    "left": "patchwork",
+    "right": "sleeve",
+    "ink": "#262a30"
+  },
+  "accessories": [
+    {
+      "type": "cap",
+      "color": "#1f2635",
+      "bill": 0.075,
+      "tilt": 0
+    },
+    {
+      "type": "glasses",
+      "color": "#4a3322",
+      "width": 1.05
+    },
+    {
+      "type": "chains",
+      "color": "#d4a93c",
+      "count": 3,
+      "pendant": true
+    }
+  ]
+}

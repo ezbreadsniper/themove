@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "id": "sheet-07-puffer-balaclava",
+  "name": "Sheet 07 - Puffer Balaclava",
+  "seed": "sheet-07",
+  "rig": "mixamo-core-22",
+  "body": {
+    "height": 1.82,
+    "build": 0.56,
+    "shoulders": 1.06,
+    "hips": 0.96,
+    "legLength": 1.01,
+    "armLength": 1.02,
+    "headSize": 0.98,
+    "neckLength": 1.0,
+    "age": 26,
+    "muscle": 0.55
+  },
+  "skin": {
+    "tone": "#6b4128"
+  },
+  "face": {
+    "preset": "square",
+    "browRidge": 1.3,
+    "eyeShape": "hooded",
+    "eyeDepth": 0.4,
+    "lidHeaviness": 0.5
+  },
+  "hair": {
+    "style": "buzz",
+    "color": "#141010"
+  },
+  "top": {
+    "type": "tee",
+    "fit": 0.5,
+    "length": 0.06,
+    "sleeve": "short",
+    "collar": "crew",
+    "color": "#161618"
+  },
+  "outer": {
+    "type": "puffer",
+    "fit": 0.5,
+    "color": "#4c5232",
+    "fabric": "nylon"
+  },
+  "bottom": {
+    "type": "jeans",
+    "length": "full",
+    "kind": "denim",
+    "fit": 0.9,
+    "color": "#7f9cc0",
+    "wash": 0.85,
+    "whiskers": true,
+    "stack": 0.6,
+    "cinch": true
+  },
+  "socks": null,
+  "shoes": {
+    "type": "workBoot",
+    "upper": "#b9843f",
+    "sole": "#5a3a22",
+    "size": 1.06
+  },
+  "tattoos": {
+    "left": "half",
+    "right": "half",
+    "ink": "#26292e"
+  },
+  "accessories": [
+    { "type": "balaclava", "color": "#6e6e70" }
+  ]
+}

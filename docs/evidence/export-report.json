@@ -1,0 +1,71 @@
+[
+  {
+    "id": "sheet-01-black-tee",
+    "bytes": 724576,
+    "problems": [],
+    "jointCount": 22,
+    "skinnedNodes": 6,
+    "clips": [
+      "neutral",
+      "aPose",
+      "idle",
+      "walk",
+      "turn",
+      "crouch",
+      "jump",
+      "wave",
+      "shrug",
+      "cheer",
+      "lookAround"
+    ],
+    "images": 5,
+    "materials": 5,
+    "reimportedMeshes": 6
+  },
+  {
+    "id": "sheet-02-denim-vest",
+    "bytes": 872412,
+    "problems": [],
+    "jointCount": 22,
+    "skinnedNodes": 10,
+    "clips": [
+      "neutral",
+      "aPose",
+      "idle",
+      "walk",
+      "turn",
+      "crouch",
+      "jump",
+      "wave",
+      "shrug",
+      "cheer",
+      "lookAround"
+    ],
+    "images": 9,
+    "materials": 9,
+    "reimportedMeshes": 10
+  },
+  {
+    "id": "sheet-03-red-rugby",
+    "bytes": 935080,
+    "problems": [],
+    "jointCount": 22,
+    "skinnedNodes": 9,
+    "clips": [
+      "neutral",
+      "aPose",
+      "idle",
+      "walk",
+      "turn",
+      "crouch",
+      "jump",
+      "wave",
+      "shrug",
+      "cheer",
+      "lookAround"
+    ],
+    "images": 8,
+    "materials": 8,
+    "reimportedMeshes": 9
+  }
+]

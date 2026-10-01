@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "id": "sheet-03-red-rugby",
+  "name": "Sheet 03 - Red Rugby",
+  "seed": "sheet-03",
+  "rig": "mixamo-core-22",
+  "body": {
+    "height": 1.77,
+    "build": 0.38,
+    "shoulders": 0.98,
+    "hips": 0.95,
+    "legLength": 1.0,
+    "armLength": 1.0,
+    "headSize": 1.0,
+    "neckLength": 1.0
+  },
+  "skin": {
+    "tone": "#a8744f"
+  },
+  "face": {
+    "preset": "soft",
+    "facialHair": "lightBeard",
+    "facialHairDensity": 0.42,
+    "facialHairColor": "#3a2618",
+    "noseTilt": 0.45,
+    "eyeSize": 1.1,
+    "mouthCorners": 0.35,
+    "cheekFullness": 0.3,
+    "chinWidth": 0.4,
+    "earSize": 1.1,
+    "browTilt": 0.3,
+    "noseTip": 0.2
+  },
+  "hair": {
+    "style": "locs",
+    "color": "#c9a660",
+    "rootColor": "#5a4028"
+  },
+  "top": {
+    "type": "rugby",
+    "fit": 0.4,
+    "length": 0.08,
+    "sleeve": "short",
+    "collar": "polo",
+    "color": "#c8231f",
+    "trim": "#ece9e2",
+    "pattern": "rugby",
+    "print": "blockPatch"
+  },
+  "outer": null,
+  "bottom": {
+    "type": "shorts",
+    "length": "shorts",
+    "kind": "denim",
+    "fit": 0.72,
+    "color": "#86a2c4",
+    "wash": 0.95,
+    "whiskers": true,
+    "stack": 0
+  },
+  "socks": {
+    "color": "#e8e6e0",
+    "height": 0.22
+  },
+  "shoes": {
+    "type": "hiTopChunky",
+    "upper": "#1a1a1c",
+    "sole": "#ecebe6",
+    "accent": "#ecebe6",
+    "toeCap": true,
+    "size": 0.94
+  },
+  "tattoos": {
+    "left": "none",
+    "right": "none",
+    "ink": "#2a3038"
+  },
+  "accessories": [
+    {
+      "type": "shades",
+      "color": "#b8c4d4",
+      "frame": "#d0d4da"
+    }
+  ]
+}

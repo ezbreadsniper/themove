@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "id": "sheet-04-camo-cargo",
+  "name": "Sheet 04 - Camo Cargo",
+  "seed": "sheet-04",
+  "rig": "mixamo-core-22",
+  "body": {
+    "height": 1.8,
+    "build": 0.55,
+    "shoulders": 1.02,
+    "hips": 0.98,
+    "legLength": 1.0,
+    "armLength": 1.02,
+    "headSize": 1.0,
+    "neckLength": 0.95
+  },
+  "skin": {
+    "tone": "#8a5a3c"
+  },
+  "face": {
+    "preset": "square",
+    "facialHair": "shortBeard",
+    "facialHairDensity": 0.85,
+    "facialHairColor": "#1a1410",
+    "foreheadSlope": 0.5,
+    "noseWidth": 1.2,
+    "noseTip": 0.6,
+    "lidHeaviness": 0.45,
+    "eyeHeight": -0.3,
+    "browHeight": -0.45,
+    "jawWidth": 1.15,
+    "earSize": 0.92,
+    "mouthCorners": -0.2,
+    "nostrilFlare": 0.3
+  },
+  "hair": {
+    "style": "crop",
+    "color": "#161210"
+  },
+  "top": {
+    "type": "tee",
+    "fit": 0.12,
+    "length": 0.005,
+    "sleeve": "short",
+    "collar": "crew",
+    "color": "#e8e6e0",
+    "pattern": "plain",
+    "print": "none"
+  },
+  "outer": null,
+  "bottom": {
+    "type": "pants",
+    "length": "full",
+    "kind": "twill",
+    "pattern": "camo",
+    "cargo": true,
+    "fit": 0.12,
+    "color": "#8a7c55",
+    "wash": 0.05,
+    "whiskers": false,
+    "stack": 0.35
+  },
+  "socks": null,
+  "shoes": {
+    "type": "slipOn",
+    "upper": "#141416",
+    "sole": "#ecebe6",
+    "accent": "#e8e6e0",
+    "size": 1.05
+  },
+  "tattoos": {
+    "left": "sparse",
+    "right": "sparse",
+    "ink": "#2a3038"
+  },
+  "accessories": [
+    {
+      "type": "cap",
+      "color": "#8e9196",
+      "front": "#2a4aa8",
+      "billColor": "#c42a2a",
+      "stars": true,
+      "bill": 0.08
+    },
+    {
+      "type": "glasses",
+      "color": "#d0d4da",
+      "width": 1.0
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "trial-default",
+  "name": "Trial Default",
+  "seed": "trial-default",
+  "rig": "mixamo-core-22",
+  "body": { "height": 1.78, "build": 0.5, "shoulders": 1.0, "hips": 1.0, "legLength": 1.0, "armLength": 1.0, "headSize": 1.0, "neckLength": 1.0, "age": 28, "muscle": 0.4 },
+  "skin": { "tone": "#b07d5a" },
+  "face": { "preset": "soft" },
+  "hair": { "style": "crop", "color": "#2a1d14" },
+  "top": { "type": "tee", "fit": 0.5, "length": 0.06, "sleeve": "short", "collar": "crew", "color": "#8c9196", "pattern": "plain", "print": "none" },
+  "outer": null,
+  "bottom": { "type": "jeans", "length": "full", "kind": "denim", "fit": 0.55, "color": "#4c6788", "wash": 0.5, "whiskers": true, "stack": 0.5 },
+  "socks": null,
+  "shoes": { "type": "canvasLow", "upper": "#e8e6e0", "sole": "#ecebe6", "accent": "#ffffff", "size": 1.0 },
+  "tattoos": { "left": "none", "right": "none", "ink": "#2a3038" },
+  "accessories": []
+}

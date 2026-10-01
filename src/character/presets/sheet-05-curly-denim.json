@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "id": "sheet-05-curly-denim",
+  "name": "Sheet 05 - Curly Denim",
+  "seed": "sheet-05",
+  "rig": "mixamo-core-22",
+  "body": {
+    "height": 1.77,
+    "build": 0.4,
+    "shoulders": 1.0,
+    "hips": 0.96,
+    "legLength": 1.02,
+    "armLength": 1.0,
+    "headSize": 1.0,
+    "neckLength": 1.0
+  },
+  "skin": {
+    "tone": "#b07a52"
+  },
+  "face": {
+    "preset": "narrow",
+    "facialHair": "mustache",
+    "facialHairDensity": 0.2,
+    "facialHairColor": "#2a1e16",
+    "noseProjection": 1.25,
+    "noseBridge": 0.4,
+    "noseTilt": -0.35,
+    "eyeTilt": 0.3,
+    "chinLength": 1.12,
+    "cheekFullness": -0.5,
+    "browGap": 0.4,
+    "earProtrusion": -0.3,
+    "mouthWidth": 0.9,
+    "upperLip": 0.8
+  },
+  "hair": {
+    "style": "curlyMop",
+    "color": "#141110"
+  },
+  "top": {
+    "type": "tee",
+    "fit": 0.45,
+    "length": -0.035,
+    "sleeve": "short",
+    "collar": "crew",
+    "color": "#18181a",
+    "pattern": "plain",
+    "print": "none"
+  },
+  "outer": null,
+  "bottom": {
+    "type": "jeans",
+    "length": "full",
+    "kind": "denim",
+    "fit": 0.9,
+    "color": "#8fa9c8",
+    "wash": 0.85,
+    "whiskers": true,
+    "stack": 1.1,
+    "belt": {
+      "color": "#141414",
+      "buckle": "#cfd2d8"
+    }
+  },
+  "socks": null,
+  "shoes": {
+    "type": "chunkyBoot",
+    "upper": "#131315",
+    "sole": "#141416",
+    "size": 1.02
+  },
+  "tattoos": {
+    "left": "half",
+    "right": "sparse",
+    "ink": "#2a3038"
+  },
+  "accessories": [
+    {
+      "type": "cap",
+      "style": "trucker",
+      "color": "#141416",
+      "mesh": "#1c1c1f",
+      "patch": "gothicCross",
+      "bill": 0.088
+    },
+    {
+      "type": "glasses",
+      "color": "#c8ccd2",
+      "width": 0.88,
+      "height": 0.8
+    },
+    {
+      "type": "chains",
+      "color": "#c9ccd0",
+      "count": 1,
+      "pendant": false,
+      "thickness": 0.004
+    }
+  ]
+}

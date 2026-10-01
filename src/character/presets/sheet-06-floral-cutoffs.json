@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "id": "sheet-06-floral-cutoffs",
+  "name": "Sheet 06 - Floral Cutoffs",
+  "seed": "sheet-06",
+  "rig": "mixamo-core-22",
+  "body": {
+    "height": 1.66,
+    "build": 0.42,
+    "shoulders": 0.96,
+    "hips": 1.03,
+    "legLength": 1.03,
+    "armLength": 0.98,
+    "headSize": 1.03,
+    "neckLength": 1.05,
+    "age": 24,
+    "muscle": 0.3,
+    "feminine": 1,
+    "bust": 0.68,
+    "waist": 0.94,
+    "butt": 0.62,
+    "thighs": 1.04
+  },
+  "skin": {
+    "tone": "#b98458"
+  },
+  "face": {
+    "preset": "feminine",
+    "eyeShape": "almond",
+    "noseWidth": 0.9,
+    "noseBridge": 0.1,
+    "upperLip": 1.15,
+    "lowerLip": 1.25,
+    "cheekbones": 1.12,
+    "mouthWidth": 0.98,
+    "irisColor": "#3a2416"
+  },
+  "hair": {
+    "style": "longWavy",
+    "color": "#2e1e15",
+    "rootColor": "#120c09"
+  },
+  "top": {
+    "type": "tee",
+    "fit": 0.12,
+    "length": -0.13,
+    "sleeve": "short",
+    "collar": "crew",
+    "color": "#141416",
+    "fabric": "cotton"
+  },
+  "outer": null,
+  "bottom": {
+    "type": "shorts",
+    "length": "cutoff",
+    "kind": "denim",
+    "fit": 0.14,
+    "color": "#6d8db3",
+    "wash": 0.75,
+    "whiskers": true,
+    "stack": 0,
+    "rise": 0.075,
+    "fray": true
+  },
+  "socks": {
+    "color": "#efeee9",
+    "height": 0.17
+  },
+  "shoes": {
+    "type": "canvasLow",
+    "upper": "#ecebe6",
+    "sole": "#f4f3ee",
+    "size": 0.92
+  },
+  "tattoos": {
+    "left": "floral",
+    "right": "floral",
+    "ink": "#23262c"
+  },
+  "accessories": [
+    { "type": "glasses", "color": "#cdc6b8", "width": 1.0, "height": 1.05, "frame": "round" },
+    { "type": "earrings", "color": "#d4a93c", "size": 0.8 }
+  ]
+}

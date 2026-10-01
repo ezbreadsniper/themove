@@ -1,0 +1,13 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { ensureServer, openPage } from './lib/browser.mjs';
+const [,, id = 'trial-default', yaw = '15'] = process.argv;
+const def = JSON.parse(readFileSync(`src/character/presets/${id}.json`, 'utf8'));
+const times = [0.05, 0.2, 0.35, 0.55, 0.8, 1.1, 1.6];
+const stop = await ensureServer();
+const { browser, page, errors } = await openPage('/evidence.html', { width: 1400, height: 800 });
+const frames = times.map((time) => ({ chars: [def], clip: 'talk', time, camYaw: +yaw, framing: 'close', preset: 'clean' }));
+const url = await page.evaluate(([f, o]) => window.evidence.strip(f, o), [frames, { width: 260, height: 300, labels: times.map((t) => `talk ${t}s`) }]);
+writeFileSync('docs/evidence/talk-strip.png', Buffer.from(url.split(',')[1], 'base64'));
+if (errors.length) console.log(errors.join('\n'));
+await browser.close();
+stop();

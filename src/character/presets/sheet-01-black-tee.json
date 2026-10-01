@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "sheet-01-black-tee",
+  "name": "Sheet 01 - Milan Jersey",
+  "seed": "sheet-01",
+  "rig": "mixamo-core-22",
+  "body": {
+    "height": 1.8,
+    "build": 0.5,
+    "shoulders": 1.04,
+    "hips": 0.96,
+    "legLength": 1.02,
+    "armLength": 1.02,
+    "headSize": 0.98,
+    "neckLength": 1.05
+  },
+  "skin": {
+    "tone": "#4a2b1a"
+  },
+  "face": {
+    "preset": "chiseled",
+    "noseBridge": -0.3,
+    "nostrilFlare": 0.5,
+    "upperLip": 1.15,
+    "lowerLip": 1.3,
+    "eyeDepth": 0.35,
+    "cheekFullness": -0.35,
+    "mouthWidth": 1.06,
+    "browHeight": -0.2,
+    "earProtrusion": -0.2
+  },
+  "hair": {
+    "style": "afro",
+    "color": "#161210"
+  },
+  "top": {
+    "type": "football",
+    "fit": 0.6,
+    "length": 0.07,
+    "sleeve": "short",
+    "collar": "polo",
+    "color": "#c8201e",
+    "pattern": "stripes",
+    "print": "none",
+    "stripe": "#141214",
+    "collarColor": "#ecebe6",
+    "cuff": "#c8201e",
+    "number": "80"
+  },
+  "outer": null,
+  "bottom": {
+    "type": "jeans",
+    "length": "full",
+    "kind": "denim",
+    "fit": 0.85,
+    "color": "#1d2846",
+    "wash": 0.18,
+    "whiskers": true,
+    "stack": 0.45,
+    "stitch": "#d49a3a",
+    "cuff": 0.05,
+    "selvedge": true
+  },
+  "socks": null,
+  "shoes": {
+    "type": "dress",
+    "upper": "#121214",
+    "sole": "#1c1712",
+    "size": 1.04
+  },
+  "tattoos": {
+    "left": "none",
+    "right": "none",
+    "ink": "#2a3038"
+  },
+  "accessories": []
+}
