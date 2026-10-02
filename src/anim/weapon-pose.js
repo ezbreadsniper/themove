@@ -93,7 +93,30 @@ export const STANCES = {
   /** Rifle coming off the back sling: lifted over the right shoulder, muzzle down and forward. */
   longOverShoulder: (spec, b) => bySocket(spec, 'grip', b.shoulderR.clone().add(new THREE.Vector3(-0.06 * b.k, 0.16 * b.k, 0.3 * b.k)), lookRotation(new THREE.Vector3(0.35, -0.75, 0.55))),
   longHip: (spec, b, aim) => bySocket(spec, 'grip', b.hips.clone().add(new THREE.Vector3(-0.17 * b.k, 0.1 * b.k, 0.2 * b.k)), lookRotation(aim)),
+  /** Pistol whip wind-up: gun cocked back beside the right ear, muzzle up and back. */
+  pistolWhipWind: (spec, b) => bySocket(spec, 'grip', b.shoulderR.clone().add(new THREE.Vector3(-0.02 * b.k, 0.14 * b.k, 0.06 * b.k)), lookRotation(new THREE.Vector3(0.1, 0.95, -0.25), new THREE.Vector3(-1, 0, 0))),
+  /** Pistol whip follow-through: the frame has come down and across, muzzle leading down and left. */
+  pistolWhipStrike: (spec, b) => bySocket(spec, 'grip', b.chest.clone().add(new THREE.Vector3(0.1 * b.k, -0.08 * b.k, 0.38 * b.k)), lookRotation(new THREE.Vector3(0.3, -0.45, 0.85), new THREE.Vector3(-0.8, 0.3, 0.2))),
+  /** Rifle shove wind-up: the gun turned across the chest at port arms (muzzle left), pulled in. */
+  longPortWind: (spec, b) => bySocket(spec, 'grip', b.chest.clone().add(new THREE.Vector3(-0.14 * b.k, -0.14 * b.k, 0.2 * b.k)), lookRotation(new THREE.Vector3(0.93, 0.33, 0.12), new THREE.Vector3(0, 0.35, 1))),
+  /** Rifle shove contact: the receiver driven straight out at chest height with both hands. */
+  longPortStrike: (spec, b) => bySocket(spec, 'grip', b.chest.clone().add(new THREE.Vector3(-0.13 * b.k, -0.08 * b.k, 0.44 * b.k)), lookRotation(new THREE.Vector3(0.95, 0.28, 0.05), new THREE.Vector3(0, 0.3, 1))),
 };
+
+/**
+ * Weapon-local offsets on top of a stance: cant (roll about the bore, + = top to the right), tilt
+ * (muzzle up +) and yaw, in degrees, plus a lift (m), all about the grip, which the right hand holds.
+ * Used for reload presentation (magwell turned to the eyes), procedural sway and bob.
+ */
+export function offsetXform(base, spec, { cant = 0, tilt = 0, yaw = 0, lift = 0 } = {}) {
+  if (!cant && !tilt && !yaw && !lift) return base;
+  const pivot = socket(spec, 'grip');
+  const d = THREE.MathUtils.degToRad;
+  const local = new THREE.Quaternion().setFromEuler(new THREE.Euler(-d(tilt), d(yaw), d(cant), 'YXZ'));
+  const q = base.quaternion.clone().multiply(local);
+  const pivotWorld = base.position.clone().add(pivot.clone().applyQuaternion(base.quaternion));
+  return xform(pivotWorld.sub(pivot.clone().applyQuaternion(q)).add(new THREE.Vector3(0, lift, 0)), q);
+}
 
 /** Weapon-local recoil offset: kick back along −Z and muzzle rise about the grip. */
 export function recoilXform(base, spec, kick) {
