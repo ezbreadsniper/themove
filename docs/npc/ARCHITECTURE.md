@@ -19,7 +19,8 @@ shots come from `node scripts/npc-shots.mjs`, which writes to `docs/npc/evidence
      ── cue() from DialogueDirector (talk / listen / emotion)
 
  DialogueDirector ── DialogueRunner (JSON graph, vars, conditions, effects, checks)
-                  ── DialogueCamera (180° rule shots, blend in/out, drift, wall/bystander fallback)
+                  ── DialogueCamera (180° rule shots composed per cut against framing, walls and
+                                    bystanders; blend in/out, handheld drift)
                   ── DialogueHud (letterbox, subtitles, choices, timer, log, barks)
 ```
 
@@ -33,6 +34,7 @@ const dialogue = new DialogueDirector({ camera, scene, hud: hudContainer, player
   globals: game.flags /* { cash, ... } */, stats: { persuade: 2, intimidate: 1 }, collision: world.collision });
 const npcs = new NpcManager({ world, scene, player: playerRoot, events: game.events, dialogue });
 npcs.spawnFromMarkers();               // npc_* markers from D, else FALLBACK_SPAWNS near the Foundry spawn
+                                       // (the shipped world-play.js only spawns with ?npcs=1 for now)
 
 // per frame, after the player and the gameplay camera have been updated:
 npcs.update(dt, { player: { pos, facing, weapon, aiming, sprint, crouch } });   // ctx is optional; the bus also works
@@ -152,6 +154,22 @@ Add a sampler to `SOCIAL_SAMPLERS` in `src/anim/social-clips.js`, named `npc_*`.
 `{ duration, loop, sample(L, t, dur) }` and uses `Pose`/`clip-kit` helpers and arm IK (`hand()`) onto
 points in character space. Loops must use whole periods. `tests/npc-social-clips.test.js` checks for
 finite values, loop closure, sane joint angles, hand bounds and planted feet.
+
+## Dialogue camera
+
+On every cut, `composeShot(kind, { a, b, speaker, side, aspect }, { raycast, bystanders })` in
+`camera.js` scores candidate shots. The candidates are the requested shot swung around the framed
+point (`orbit` ±0.2 / ±0.42 rad) and moved in or out (`scale` 0.85 / 1.2), plus its `SHOT_FALLBACKS`
+kinds. Every candidate stays on the conversation's side of the line of action. `scoreShot` penalises:
+
+- a speaker outside the middle 82% of the frame;
+- a head hidden behind a wall (collision raycast);
+- a bystander NPC standing in front of a speaker on screen, which costs most;
+- bystanders nearer than the speakers.
+
+Small preferences then favour the requested kind, the canonical angle and an unpulled camera. The
+chosen variant is held for the shot while the heads are tracked. The two-shot distance follows the
+speakers' separation and the camera aspect.
 
 ## Tuning reference
 
