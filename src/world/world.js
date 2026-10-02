@@ -67,9 +67,9 @@ export class World {
     this.scene = null;
   }
 
-  /** Per-frame: doors react to `actor` (player or camera), probe follows `actor`, sky follows camera. */
-  update(dt, { actor, camera }) {
-    this.doors.update(dt, actor);
+  /** Per-frame: doors react to `bodies` (or `actor`), probe follows `actor`, sky follows camera. */
+  update(dt, { actor, camera, bodies }) {
+    this.doors.update(dt, bodies ?? (actor ? [actor] : []));
     if (actor) this.probe.update(actor, dt);
     if (camera) this.sky.position.copy(camera.position);
     const cullFrom = camera?.position;
