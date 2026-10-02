@@ -515,6 +515,15 @@ function drapedLegRings(layout, side, opts) {
       }
     }
   };
+  const pushTri = (a, b, c) => {
+    const mid = a.clone().add(b).add(c).divideScalar(3);
+    for (const col of colliders) {
+      const res = col.resolve(mid, margin * 0.5);
+      if (res) [a, b, c, mid].forEach((v) => v.add(res.push));
+    }
+  };
+  // The seam point is shared so a push on the closing edge moves both ends of the ring.
+  rows.forEach((row) => { row.points[row.points.length - 1] = row.points[0]; });
   for (let pass = 0; pass < 3; pass++) {
     for (let r = 1; r < rows.length; r++) {
       const cur = rows[r].points;
@@ -525,6 +534,8 @@ function drapedLegRings(layout, side, opts) {
           pushPair(cur[q], up[q]);
           pushPair(cur[q + 1], up[q]);
           pushPair(cur[q], up[q + 1]);
+          pushTri(cur[q], cur[q + 1], up[q]);
+          pushTri(cur[q + 1], up[q + 1], up[q]);
         }
         else {
           const mid = cur[q].clone().add(up[q]).multiplyScalar(0.5);
@@ -589,9 +600,10 @@ function drapedLegRings(layout, side, opts) {
       }
       return q;
     });
+    inner[inner.length - 1] = inner[0];
     for (let pass = 0; pass < 3; pass++) {
-      for (let q = 0; q < inner.length; q++) {
-        for (const other of [hem.points[q], hem.points[Math.min(q + 1, inner.length - 1)], inner[Math.min(q + 1, inner.length - 1)]]) {
+      for (let q = 0; q < inner.length - 1; q++) {
+        for (const other of [hem.points[q], hem.points[q + 1], hem.points[q === 0 ? inner.length - 2 : q - 1], inner[q + 1]]) {
           const mid = inner[q].clone().add(other).multiplyScalar(0.5);
           for (const col of colliders) {
             const res = col.resolve(mid, 0.0015);
@@ -599,7 +611,6 @@ function drapedLegRings(layout, side, opts) {
           }
         }
       }
-      inner[inner.length - 1].copy(inner[0]);
     }
     out.push({ points: inner, v: 0, w: simWeights({ points: inner, contact: hem.contact }) });
   }
