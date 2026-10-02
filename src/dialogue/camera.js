@@ -16,7 +16,7 @@ import * as THREE from 'three';
  */
 export const SHOT_KINDS = ['two', 'ots', 'close', 'medium', 'profile'];
 /** When a shot is blocked by a wall, try these instead (all on the same side of the line). */
-export const SHOT_FALLBACKS = { ots: ['profile', 'close', 'two'], medium: ['profile', 'close', 'two'], close: ['profile', 'two'], profile: ['close', 'two'], two: ['profile'] };
+export const SHOT_FALLBACKS = { ots: ['profile', 'close', 'two'], medium: ['profile', 'close', 'two'], close: ['profile', 'two'], profile: ['close', 'two'], two: ['ots', 'profile', 'medium'] };
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Line of action between two heads: { mid, dir (a→b, XZ unit), normal (dir rotated +90° about Y), dist }. */
