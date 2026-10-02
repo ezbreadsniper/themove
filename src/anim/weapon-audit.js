@@ -33,7 +33,7 @@ export function socketWorldOf(character, name) {
  * muzzle and aim direction for stability checks. Call after mixer.update / updateMatrixWorld.
  */
 export function weaponContact(character) {
-  character.updateMatrixWorld(true);
+  character.updateWorldMatrix(true, true);
   const grip = socketWorldOf(character, 'grip');
   const support = socketWorldOf(character, 'support');
   const muzzle = socketWorldOf(character, 'muzzle');

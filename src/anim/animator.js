@@ -26,6 +26,8 @@ export function additiveClip(clip, reference = clip) {
  * Transition times (s) between kinds of states. Locomotion ↔ locomotion is a slower blend than going
  * into a one-shot, and nothing is ever an instant cut except an explicit `snap`.
  */
+const STABILIZE_RATE = 8;
+
 export const BLEND = { locomotion: 0.25, upper: 0.18, upperOneShot: 0.12, fullOneShot: 0.1, aimOffset: 0.08 };
 
 /**
@@ -55,6 +57,8 @@ export class Animator {
     this.full = null;
     this.aim = { yaw: 0, pitch: 0 };
     this.aimActions = {};
+    this.stabilizeWeight = 0;
+    this.stabilizeTarget = 0;
     this.mixer.addEventListener('finished', (e) => this.onFinished(e.action));
   }
 
@@ -202,6 +206,27 @@ export class Animator {
   /** Advances the mixer, then re-solves the support hand onto the weapon (layer / additive drift). */
   update(dt) {
     this.mixer.update(dt);
+    this.stabilizeWeight += (this.stabilizeTarget - this.stabilizeWeight) * Math.min(1, dt * STABILIZE_RATE);
+    if (this.upper && this.stabilizeWeight > 0.001) this.stabilizeUpperBody(this.stabilizeWeight);
     this.supportIK = applySupportIK(this.character);
+  }
+
+  /**
+   * Aim stabilisation: in layered play the lower body's pelvis yaw / lean would carry the whole upper
+   * body (and the gun) with every step. Cancels the pelvis rotation at the spine root by `weight`, so
+   * the upper clip keeps its own orientation over any locomotion.
+   */
+  stabilizeUpperBody(weight) {
+    const bones = this.character.userData.rig.bones;
+    const hips = bones.find((b) => b.name.endsWith('Hips'));
+    const spine = bones.find((b) => b.name.endsWith('Spine') && !b.name.endsWith('Spine1') && !b.name.endsWith('Spine2'));
+    const cancel = hips.quaternion.clone().invert().multiply(spine.quaternion);
+    spine.quaternion.slerp(cancel, weight);
+  }
+
+  /** Aim stabilisation on (1) while aiming, off (0) otherwise; eased in update(). */
+  stabilize(on) {
+    this.stabilizeTarget = on ? 1 : 0;
+    return this;
   }
 }

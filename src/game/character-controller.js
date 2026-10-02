@@ -107,6 +107,7 @@ export class CharacterController {
     const upper = this.upperFor(input);
     if (!a.locked && upper && upper !== a.upperName) a.play(upper);
     if (!upper && a.upper && !a.locked) a.release();
+    a.stabilize(!!this.weapon && !!input.aim);
     if (!this.weapon || !input.aim) a.setAim(0, 0, {});
     if (this.weapon && input.aim) a.setAim(THREE.MathUtils.clamp(this.aimOffset, -AIM_DEAD_ZONE, AIM_DEAD_ZONE), input.aimPitch ?? 0, { left: `${this.weapon}_aimLeft`, right: `${this.weapon}_aimRight`, up: `${this.weapon}_aimUp`, down: `${this.weapon}_aimDown` });
 

@@ -27,7 +27,8 @@ export function applySupportIK(character) {
   const weight = Math.min(1, model.supportIK);
   const spec = WEAPONS[type];
   const { layout } = character.userData;
-  character.updateMatrixWorld(true);
+  // Parents too: the root moves every frame and is otherwise only refreshed when the scene renders.
+  character.updateWorldMatrix(true, true);
   const toLocal = character.matrixWorld.clone().invert();
   const local = (p) => p.applyMatrix4(toLocal);
   const charQ = character.getWorldQuaternion(q()).invert();

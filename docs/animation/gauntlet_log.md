@@ -124,9 +124,23 @@ Tools:
 
 ---
 
+## W8: aim stabilisation and a moving-root bug
+**Failed:**
+- in layered walk-aim, the pelvis yaw and lean swung the gun 7.5° off the aim line;
+- the support hand sat 32 mm off the pistol whenever the root moved. The IK and the audit refreshed the character's own matrices but not its moving parent, so they ran one root-step behind. In the game the renderer refreshes the root only at render time.
+
+**Fixed:**
+- `Animator.stabilize()`: while aiming, the pelvis rotation is cancelled at the spine root, eased in and out;
+- runtime IK and audit call `updateWorldMatrix(true, true)`.
+
+**Verified:**
+- muzzle wobble during walk-aim is ≤ 0.6° and both hands stay at 0 mm, now tested with a moving root;
+- 674 tests pass and the in-game run passes.
+
+---
+
 ## Still open (next highest-value first)
-1. **Runtime aim stabilisation.** In layered walk-aim, the pelvis yaw (±6°) slightly sways the gun (the hands now stay on it). Baked `*_walkAim` clips counter the sway; the runtime layer does not.
-2. **Foot IK at runtime.** Uneven ground and slopes aren't handled; the clips assume flat ground.
-3. **Weapon drop/pickup and first-person view** aren't built.
-4. **UniMate** is blocked (no CUDA GPU here); see `unimate_plan.md`.
-5. **Skirt sit poke-through** (pre-existing clothing issue, see `docs/character/gauntlet_log.md`).
+1. **Foot IK at runtime.** Uneven ground and slopes aren't handled; the clips assume flat ground.
+2. **Weapon drop/pickup and first-person view** aren't built.
+3. **UniMate** is blocked (no CUDA GPU here); see `unimate_plan.md`.
+4. **Skirt sit poke-through** (pre-existing clothing issue, see `docs/character/gauntlet_log.md`).

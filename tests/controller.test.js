@@ -96,3 +96,23 @@ describe('runtime support-hand IK', () => {
     expect(ctl.animator.supportIK).toBeLessThan(0.5);
   });
 });
+
+describe('walking while aiming (moving root)', () => {
+  test.each(['pistol', 'rifle'])('%s: the muzzle holds the aim line within 1.5 deg and both hands stay on', async (type) => {
+    const { weaponContact } = await import('../src/anim/weapon-audit.js');
+    const { run, ctl, root } = game();
+    run({ weapon: type }, 2.5);
+    run({ aim: true, move: { x: 0, z: 0.5 } }, 1);
+    let worstAngle = 0;
+    let worstLeft = 0;
+    for (let i = 0; i < 30; i++) {
+      run({}, 1 / 30);
+      const k = weaponContact(ctl.character);
+      const forward = k.forward.clone().applyQuaternion(root.quaternion.clone().invert());
+      worstAngle = Math.max(worstAngle, THREE.MathUtils.radToDeg(forward.angleTo(new THREE.Vector3(0, 0, 1))));
+      worstLeft = Math.max(worstLeft, k.left);
+    }
+    expect(worstAngle).toBeLessThan(1.5);
+    expect(worstLeft).toBeLessThan(0.002);
+  });
+});
