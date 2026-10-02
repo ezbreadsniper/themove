@@ -65,6 +65,7 @@ function material(raster, name, opts = {}) {
 }
 
 /** Everything needed to build any part: resolved definition, rig layout, head shape, per-part RNGs. */
+const HEM_CLEARANCE = 0.02;
 const GREY = '#a7a6a1';
 
 /**
@@ -165,7 +166,7 @@ const RECIPES = {
     const legsBelowY = skirt ? layout.world.LeftUpLeg.y - 0.06 * (layout.measures.height / 1.78) : def.bottom.length === 'full' ? null : Math.min(layout.world.LeftUpLeg.y - 0.04, res.hemY + 0.12);
     const parts = [{ name: 'bottom', mb: res.mb, raster: paintBottom(def.bottom, rng.fork('bottomTex')), opts: { doubleSide: true, fabric: def.bottom.kind } }];
     if (def.bottom.belt) parts.push({ name: 'belt', mb: buildBelt(layout, { riseY: res.riseY, ease: res.ease }), raster: paintBelt(def.bottom.belt, rng.fork('beltTex')), opts: { shiny: true } });
-    return { parts, cover: { legsBelowY, torsoFrom: 'pelvisTop', lowerFrom: 'pelvisTop' } };
+    return { parts, cover: { legsBelowY, legHemY: res.hemY, legCorrectives: !skirt, torsoFrom: 'pelvisTop', lowerFrom: 'pelvisTop' } };
   },
   socks(ctx) {
     const { def, layout, rng } = ctx;
@@ -269,6 +270,8 @@ function buildRecipeParts(ctx) {
     if (res.cover && 'feet' in res.cover) cover.feet = res.cover.feet;
     if (res.cover?.footLift) cover.footLift = res.cover.footLift;
     if (res.cover?.neckHidden) cover.neckHidden = true;
+    if (res.cover?.legHemY != null) cover.legHemY = res.cover.legHemY;
+    if (res.cover && 'legCorrectives' in res.cover) cover.legCorrectives = res.cover.legCorrectives;
   }
   return { parts, cover };
 }
@@ -317,7 +320,9 @@ export function buildCharacter(input) {
   meshes.push(skinnedMesh({ name: 'mouth', slot: 'mouth', mb: buildMouth(shape), raster: mouthTex, opts: { doubleSide: true } }, rig.skeleton));
   for (const part of parts) meshes.push(skinnedMesh(part, rig.skeleton));
   meshes.forEach((m) => group.add(m));
-  bakeBodyCorrectives(meshes[0], rig);
+  // Skirt correctives push the fabric off the plain-LBS leg, so the skin keeps LBS under a skirt.
+  const coveredAboveY = cover.legCorrectives === false ? -Infinity : cover.legHemY != null ? cover.legHemY - HEM_CLEARANCE : Infinity;
+  bakeBodyCorrectives(meshes[0], rig, { coveredAboveY });
   const bottomMesh = meshes.find((m) => m.name === 'bottom');
   if (bottomMesh && def.bottom.type === 'skirt') {
     const shoes = def.shoes && SHOE_TYPES.includes(def.shoes.type) && def.shoes.type !== 'barefoot' ? shoeCollider(layout, def.shoes.type, { size: def.shoes.size }) : null;

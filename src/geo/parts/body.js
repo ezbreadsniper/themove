@@ -354,7 +354,7 @@ function buildConnectedLegs(mb, layout, bottom) {
     const rings = [
       legRing(V(0, 0, 0), 1e-6, 1e-6, 1e-6, yTop, (theta) => (inner(theta) ? [[J.Hips, 0.55], [U, 0.45]] : [[J.Hips, 0.75], [U, 0.25]]), { offset: (theta, p) => seamPoint(theta).sub(p) }),
       legRing(V(s * (halfW + 0.002 * k), upY, seat.cz), upR * 0.86, upR * 0.76, upR * (0.9 + (m.butt ?? 0.3) * 0.15) + glute.amount * 0.45, upY, [[J.Hips, 0.15], [U, 0.85]], { offset: keepInside(0.004 * k) }),
-      ...all.filter((st) => st.y < upY - 0.06 * k).map((st) => legRing(legCenter(layout, side, st.y), st.r * 0.96, st.r * (st.front ?? 1), st.r * st.back, st.y, st.w)),
+      ...all.filter((st) => st.y < upY - 0.06 * k).map((st) => legRing(legCenter(layout, side, st.y), st.r * 0.96, st.r * (st.front ?? 1), st.r * st.back, st.y, st.w, { shape: legLandmarks(st, side) })),
     ];
     junction[side] = mb.loft(rings, { sides: L, uv: SKIN_ATLAS[side === 'Left' ? 'legL' : 'legR'] }).starts[0];
   }
@@ -508,15 +508,29 @@ export function legStations(layout, side) {
   return [
     { y: hipY + 0.05 * k, r: T * 0.8 * (1.1 + fem * 0.1), back: 1.05 + (m.butt ?? 0.3) * 0.5, inset: 0.8, w: [[Hp, 0.6], [U, 0.4]] },
     { y: hipY - 0.03 * k, r: T * 1.0 * (1.05 + fem * 0.07), back: 1.08 + fem * 0.04 + (m.butt ?? 0.3) * 0.38, inset: 0.92, w: [[Hp, 0.2], [U, 0.8]] },
-    { y: hipY - (hipY - kneeY) * 0.4, r: T * 0.88 * (1 + fem * 0.06), back: 1.02 + (m.butt ?? 0.3) * 0.12, w: [[U, 1]] },
-    { y: kneeY + 0.075 * k, r: T * 0.7, back: 0.98, w: [[U, 0.9], [L, 0.1]] },
-    { y: kneeY + 0.01 * k, r: C * 1.02, front: 1.08, back: 0.95, w: [[U, 0.5], [L, 0.5]] },
-    { y: kneeY - shin * 0.1, r: C * 1.0, back: 1.05, w: [[U, 0.12], [L, 0.88]] },
-    { y: kneeY - shin * 0.3, r: C * 1.04, back: 1.25, w: [[L, 1]] },
-    { y: kneeY - shin * 0.6, r: C * 0.8, back: 1.08, w: [[L, 1]] },
-    { y: ankleY + 0.03 * k, r: m.ankleRadius * 1.05, back: 1, w: [[L, 0.9], [Ft, 0.1]] },
+    { y: hipY - (hipY - kneeY) * 0.4, r: T * 0.88 * (1 + fem * 0.06), back: 1.02 + (m.butt ?? 0.3) * 0.12, w: [[U, 1]], bumps: [[-0.6, 0.6, 0.04], [1.3, 0.5, 0.03]] },
+    { y: kneeY + 0.075 * k, r: T * 0.7, back: 0.98, w: [[U, 0.9], [L, 0.1]], bumps: [[0.9, 0.45, 0.08], [-1.2, 0.5, -0.03], [Math.PI, 0.6, -0.03]] },
+    { y: kneeY + 0.01 * k, r: C * 1.02, front: 1.08, back: 0.95, w: [[U, 0.5], [L, 0.5]], bumps: [[0, 0.4, 0.05], [Math.PI, 0.5, -0.05]] },
+    { y: kneeY - shin * 0.1, r: C * 1.0, back: 1.05, w: [[U, 0.12], [L, 0.88]], bumps: [[0, 0.3, 0.03], [2.4, 0.5, 0.04]] },
+    { y: kneeY - shin * 0.3, r: C * 1.04, back: 1.25, w: [[L, 1]], bumps: [[2.3, 0.5, 0.1], [-2.4, 0.45, 0.06], [0, 0.5, -0.03]] },
+    { y: kneeY - shin * 0.6, r: C * 0.8, back: 1.08, w: [[L, 1]], bumps: [[2.5, 0.5, 0.07]] },
+    { y: ankleY + 0.03 * k, r: m.ankleRadius * 1.05, back: 1, w: [[L, 0.9], [Ft, 0.1]], bumps: [[1.6, 0.4, 0.07], [-1.7, 0.4, 0.04]] },
     { y: ankleY - 0.01 * k, r: m.ankleRadius * 1.12, back: 1.05, w: [[L, 0.3], [Ft, 0.7]] },
   ];
+}
+
+/**
+ * Muscle and bone landmarks on a leg ring: bumps are [angle, width, amount] in anatomical angle
+ * (0 front, +π/2 medial, −π/2 lateral, ±π back), mirrored per side. Leg rings use x = −X, so the
+ * anatomical angle is the loft angle times the side sign.
+ */
+const LANDMARK_GAIN = 1.9;
+
+export function legLandmarks(station, side) {
+  if (!station.bumps) return undefined;
+  const s = side === 'Left' ? 1 : -1;
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  return (theta) => 1 + LANDMARK_GAIN * station.bumps.reduce((sum, [c, w, a]) => sum + a * Math.exp(-((wrap(s * theta - c) / w) ** 2)), 0);
 }
 
 /** Center of a leg at height y, following hip → knee → ankle. */
@@ -533,7 +547,7 @@ export function legCenter(layout, side, y) {
   return k.clone().lerp(f, t).setY(y);
 }
 
-function buildLeg(mb, layout, side, belowY) {
+function buildLeg(mb, layout, side, belowY, hemY = Infinity) {
   const rect = SKIN_ATLAS[side === 'Left' ? 'legL' : 'legR'];
   const stations = legStations(layout, side);
   const top = stations[0].y;
@@ -550,6 +564,7 @@ function buildLeg(mb, layout, side, belowY) {
       rx: st.r * 0.96,
       rzF: st.r * (st.front ?? 1),
       rzB: st.r * st.back,
+      shape: st.y < Math.min(belowY, hemY) - 0.06 ? legLandmarks(st, side) : undefined,
       v: 1 - (top - st.y) / (top - bottom),
       w: st.w,
     };
@@ -603,7 +618,7 @@ export function buildBody(layout, cover = {}) {
     buildHand(mb, layout, side);
     if (legsBelowY !== null && !connected) {
       mb.newSmoothingGroup();
-      buildLeg(mb, layout, side, legsBelowY);
+      buildLeg(mb, layout, side, legsBelowY, cover.legHemY ?? Infinity);
     }
     if (cover.feet !== false) buildFoot(mb, layout, side, cover.footLift ?? 0);
   }

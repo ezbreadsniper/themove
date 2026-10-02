@@ -64,3 +64,12 @@ describe('body joint-volume correctives', () => {
     expect(Math.abs(1 - fixed)).toBeLessThan(Math.abs(1 - lbs) * 0.5);
   });
 });
+
+describe('skin correctives never push through legwear', () => {
+  const trial = JSON.parse(readFileSync('src/character/presets/trial-default.json', 'utf8'));
+  test.each(['base', 'woman', 'heavy'])('knee-length shorts on the %s body: no skin through the fabric in any audit pose', async (variant) => {
+    const { auditLegwear, BODY_VARIANTS } = await import('../src/garment/audit.js');
+    const r = auditLegwear({ ...trial, body: { ...trial.body, ...BODY_VARIANTS[variant] }, bottom: { type: 'shorts', kind: 'cotton', fit: 0.5, length: 'shorts' }, socks: { color: '#dddddd', height: 0.16 } });
+    for (const row of r.rows) expect(row.poke.ratio, `${row.clip}@${row.time}`).toBe(0);
+  });
+});

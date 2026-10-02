@@ -22,6 +22,7 @@ export const BODY_DRIVERS = [
 
 const X = new THREE.Vector3(1, 0, 0);
 const MIN_SHIFT = 1e-5;
+const FADE_SPAN = 0.05;
 
 /** Bone indices of `bone` and everything below it (a vertex weighted to any of them moves with it). */
 function subtree(skel, bone) {
@@ -34,7 +35,7 @@ function subtree(skel, bone) {
   return out;
 }
 
-function bakeDriver(mesh, skel, side, driver) {
+function bakeDriver(mesh, skel, side, driver, fade) {
   const bone = boneByName(skel, `${side}${driver.joint}`);
   const moving = subtree(skel, bone);
   const geo = mesh.geometry;
@@ -78,7 +79,8 @@ function bakeDriver(mesh, skel, side, driver) {
       m3.setFromMatrix4(m4);
       for (let e = 0; e < 9; e++) blend.elements[e] += m3.elements[e] * w;
     }
-    push.applyMatrix3(blend.invert());
+    push.applyMatrix3(blend.invert()).multiplyScalar(fade(bind.y));
+    if (push.lengthSq() < MIN_SHIFT * MIN_SHIFT) continue;
     delta.set([push.x, push.y, push.z], i * 3);
     any = true;
   }
@@ -90,14 +92,22 @@ function bakeDriver(mesh, skel, side, driver) {
   } : null;
 }
 
-/** Bakes the joint-volume correctives onto a skinned skin mesh (body). Returns the driver table. */
-export function bakeBodyCorrectives(mesh, rig, drivers = BODY_DRIVERS) {
+/**
+ * Bakes the joint-volume correctives onto a skinned skin mesh (body). Returns the driver table.
+ * coveredAboveY: skin above this height is under a garment that keeps plain LBS, so the correction
+ * fades out over FADE_SPAN below it (otherwise the preserved volume pushes through the fabric).
+ */
+export function bakeBodyCorrectives(mesh, rig, { drivers = BODY_DRIVERS, coveredAboveY = Infinity } = {}) {
+  const fade = (y) => {
+    const t = Math.max(0, Math.min(1, (coveredAboveY - y) / FADE_SPAN));
+    return t * t * (3 - 2 * t);
+  };
   const skel = rig.skeleton;
   const rest = skel.bones.map((b) => b.quaternion.clone());
   const targets = [];
   for (const side of ['Left', 'Right']) {
     for (const d of drivers) {
-      const t = bakeDriver(mesh, skel, side, d);
+      const t = bakeDriver(mesh, skel, side, d, fade);
       if (t) targets.push(t);
     }
   }
