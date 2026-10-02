@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Pose, createPose } from './pose.js';
 import { base, plantLegs, ease, TAU } from './clip-kit.js';
-import { STANCES, aimDirection, bodyMarks, holdWeapon, blendXform, recoilXform, offsetXform } from './weapon-pose.js';
+import { STANCES, aimDirection, bodyMarks, holdWeapon, blendXform, recoilXform, offsetXform, crateGrip } from './weapon-pose.js';
 import { weaponNode } from '../weapons/model.js';
 import { WEAPONS } from '../weapons/specs.js';
 
@@ -17,10 +17,11 @@ import { WEAPONS } from '../weapons/specs.js';
  *   cant, tilt        weapon roll / pitch about the grip (deg): turning the magwell to the eyes, checks
  *   look, lookTurn    head down / left (deg) on top of the aim: eyes on the holster, magwell, chamber
  *   lift              weapon raised straight up (m at 1.78 m): clearing the holster
+ *   stowHidden        the holstered / slung copy is not shown either (a weapon not yet carried)
  * Between keys every number eases, stances blend as weapon transforms, and hands blend between targets,
  * so nothing snaps; the hand IK runs every frame, so hands stay on the weapon on every body.
  */
-const DEFAULTS = { stance: 'stowed', aim: [0, 0], spin: [0, 0], R: 'free', L: 'free', kick: 0, slide: 0, magDrop: 0, handMag: false, drawn: false, lean: 0, cheek: 0, blade: 0, crouch: 0, flinch: 0, cant: 0, tilt: 0, look: 0, lookTurn: 0, lift: 0 };
+const DEFAULTS = { stance: 'stowed', aim: [0, 0], spin: [0, 0], R: 'free', L: 'free', kick: 0, slide: 0, magDrop: 0, handMag: false, drawn: false, lean: 0, cheek: 0, blade: 0, crouch: 0, flinch: 0, cant: 0, tilt: 0, look: 0, lookTurn: 0, lift: 0, stowHidden: false };
 /** Scale used for hidden weapon nodes (exactly zero breaks some importers' matrix inverses). */
 export const HIDDEN = 1e-4;
 const NUMERIC = ['kick', 'slide', 'magDrop', 'lean', 'cheek', 'blade', 'crouch', 'flinch', 'cant', 'tilt', 'look', 'lookTurn', 'lift'];
@@ -115,7 +116,7 @@ export function weaponFrame(L, type, a, b, u, bodyPose = null, sway = null) {
   const shown = (on) => (on ? [1, 1, 1] : [HIDDEN, HIDDEN, HIDDEN]);
   p.props = {
     [`${weaponNode(type, 'hand')}.scale`]: shown(step.drawn),
-    [`${weaponNode(type, 'stowed')}.scale`]: shown(!step.drawn),
+    [`${weaponNode(type, 'stowed')}.scale`]: shown(!step.drawn && !step.stowHidden),
     [`${weaponNode(type, moving)}.position`]: [0, 0, -spec.travel * s.slide],
     [`${weaponNode(type, 'mag')}.position`]: [0, -spec.magDrop * s.magDrop, 0],
     [`${weaponNode(type, 'mag')}.scale`]: shown(s.magDrop < 0.98),
@@ -130,7 +131,7 @@ export function weaponFrame(L, type, a, b, u, bodyPose = null, sway = null) {
  * Sampler for a weapon timeline. body: name of a base sampler to run underneath (locomotion / idle),
  * played at its own duration.
  */
-function timeline(type, keys, { duration = keys[keys.length - 1][0], loop = false, body = null, events = [], layer = 'full', additive = false, reference = null, bob = 0, breath = 0 } = {}, bases = {}) {
+function timeline(type, keys, { duration = keys[keys.length - 1][0], loop = false, body = null, events = [], layer = 'full', additive = false, reference = null, bob = 0, breath = 0, then = null, contact = null } = {}, bases = {}) {
   const resolved = resolveKeys(keys);
   return {
     duration,
@@ -138,7 +139,7 @@ function timeline(type, keys, { duration = keys[keys.length - 1][0], loop = fals
     weapon: type,
     events,
     // A loop over a gait shares the gait's sync group, so the Animator starts it in phase with the legs.
-    meta: (L) => ({ layer, ...(additive ? { additive: true } : {}), ...(reference ? { additiveReference: reference } : {}), ...(loop && body && bases[body].meta?.(L).syncGroup ? { syncGroup: bases[body].meta(L).syncGroup } : {}) }),
+    meta: (L) => ({ layer, ...(then ? { then } : {}), ...(contact ? { contact: contact(L).toArray() } : {}), ...(additive ? { additive: true } : {}), ...(reference ? { additiveReference: reference } : {}), ...(loop && body && bases[body].meta?.(L).syncGroup ? { syncGroup: bases[body].meta(L).syncGroup } : {}) }),
     sample: (L, t) => {
       const { a, b, u } = stateAt(resolved, t);
       const under = body ? bases[body].sample(L, t % bases[body].duration, bases[body].duration) : null;
@@ -189,6 +190,26 @@ function autoFireKeys(aim, cycle) {
     keys.push([t0 + 0.1, { kick: 0.3, aim: [i === 5 ? 0 : [0.15, -0.2, 0.25, -0.1, 0.2][i], 3.2] }]);
   }
   return keys;
+}
+
+/**
+ * Taking a weapon out of a crate (it is not carried yet, so no holstered copy shows): crouch and lean
+ * into the crate with the eyes on it, the right hand comes down onto the grip ('grab': the game hides
+ * its crate prop and the hand copy appears), the gun comes up and round into `ready`, where the support
+ * hand meets it. contact = the grip point in root space.
+ */
+function pickUpKeys(ready) {
+  return [
+    [0, { stance: 'crate', R: 'free', L: 'free', drawn: false, stowHidden: true, crouch: 0, lean: 0, blade: 0, cheek: 0 }],
+    [0.3, { crouch: 0.4, lean: 20, look: 18 }],
+    [0.58, { R: 'grip', crouch: 0.9, lean: 42, look: 26 }],
+    [0.62, { drawn: true }],
+    [0.78, { lift: 0.05, crouch: 0.85, lean: 40 }],
+    [1.02, { stance: 'crateLift', lift: 0, crouch: 0.3, lean: 14, look: 14 }],
+    [1.3, { ...ready, L: 'free', crouch: 0, look: 6, stowHidden: true }],
+    [1.55, { ...ready, look: 0, stowHidden: true }],
+    [1.65, { ...ready, stowHidden: false }],
+  ];
 }
 
 /** Shots at the given times; each recovery is cut where the next shot starts. */
@@ -256,6 +277,7 @@ function pistolClips(T) {
     pistol_dryFire: T('pistol', [[0, aim], [0.05, { kick: 0.07 }], [0.25, { kick: 0 }], [0.4, {}]], { events: [{ name: 'click', time: 0.04 }] }),
     pistol_reload: T('pistol', [[0, aim], ...tactical(0.15), [1.76, { ...ready, ...square }], [2.0, aim]], { events: [{ name: 'magOut', time: 0.55 }, { name: 'magIn', time: 1.37 }, { name: 'tap', time: 1.43 }] }),
     pistol_reloadEmpty: T('pistol', [[0, { ...aim, slide: 1 }], ...empty(0.12), [1.7, { ...ready, ...square }], [1.95, aim]], { events: [{ name: 'magOut', time: 0.26 }, { name: 'magIn', time: 0.96 }, { name: 'tap', time: 1.02 }, { name: 'slideRelease', time: 1.46 }] }),
+    pistol_pickUp: T('pistol', pickUpKeys(ready), { then: 'pistol_idleTwoHand', contact: crateGrip, events: [{ name: 'grab', time: 0.6 }] }),
     pistol_magInsert: T('pistol', [[0, { ...ready, L: 'pouch', handMag: true, magDrop: 1 }], [0.33, { L: 'magWell' }], [0.46, { handMag: false, magDrop: 0 }], [0.7, ready]], { events: [{ name: 'magIn', time: 0.46 }] }),
     pistol_slideRelease: T('pistol', [[0, { ...ready, slide: 1 }], [0.2, { L: 'slide' }], [0.3, { L: 'slide', slide: 1 }], [0.36, { slide: 0 }], [0.6, ready]], { events: [{ name: 'slideRelease', time: 0.34 }] }),
     // Turned to show one flank, then the other (eyes following), then a press check: the support hand
@@ -357,6 +379,7 @@ function longGunClips(T, type) {
     [n('autoFire')]: T(type, autoFireKeys(aim, type === 'smg' ? 0 : 1), { duration: 0.6, loop: true, layer: 'additive', additive: true, reference: n('aimIdle'), events: [0, 0.1, 0.2, 0.3, 0.4, 0.5].map((time) => ({ name: 'fire', time })) }),
     [n('reload')]: T(type, [[0, aim], ...tactical(0.12), [1.8, { ...ready, ...square }], [2.05, aim]], { events: [{ name: 'magOut', time: 0.58 }, { name: 'magIn', time: 1.44 }, { name: 'tap', time: 1.5 }] }),
     [n('reloadEmpty')]: T(type, [[0, aim], ...empty(0.12), [2.05, { ...ready, ...square }], [2.3, aim]], { events: [{ name: 'magOut', time: 0.4 }, { name: 'magIn', time: 1.12 }, { name: 'tap', time: 1.18 }, { name: 'boltRelease', time: 1.74 }] }),
+    [n('pickUp')]: T(type, pickUpKeys(ready), { then: n('idle'), contact: crateGrip, events: [{ name: 'grab', time: 0.6 }] }),
     [n('magOut')]: T(type, [[0, ready], ...magOut(0.05), [0.75, { L: 'free', magDrop: 1 }]], { events: [{ name: 'magOut', time: 0.35 }] }),
     [n('magIn')]: T(type, [[0, { ...ready, L: 'pouch', handMag: true, magDrop: 1 }], ...magIn(0.05), [0.85, ready]], { events: [{ name: 'magIn', time: 0.55 }] }),
     [n('boltPull')]: T(type, [[0, ready], ...boltPull(0), [0.82, ready]], { events: [{ name: 'boltRelease', time: 0.48 }] }),

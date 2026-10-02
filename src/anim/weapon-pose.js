@@ -97,6 +97,13 @@ export const STANCES = {
   pistolWhipWind: (spec, b) => bySocket(spec, 'grip', b.shoulderR.clone().add(new THREE.Vector3(-0.02 * b.k, 0.14 * b.k, 0.06 * b.k)), lookRotation(new THREE.Vector3(0.1, 0.95, -0.25), new THREE.Vector3(-1, 0, 0))),
   /** Pistol whip follow-through: the frame has come down and across, muzzle leading down and left. */
   pistolWhipStrike: (spec, b) => bySocket(spec, 'grip', b.chest.clone().add(new THREE.Vector3(0.1 * b.k, -0.08 * b.k, 0.38 * b.k)), lookRotation(new THREE.Vector3(0.3, -0.45, 0.85), new THREE.Vector3(-0.8, 0.3, 0.2))),
+  /**
+   * Lying in a crate in front of the character (character space, absolute crate depth): flat, muzzle to
+   * the left, so the right hand comes down onto the grip from above and behind. CRATE_GRIP is the grip.
+   */
+  crate: (spec, b) => bySocket(spec, 'grip', crateGrip(b.layout), lookRotation(new THREE.Vector3(1, 0, 0.2), new THREE.Vector3(0, 1, 0))),
+  /** Coming up out of the crate: low in front of the belly, muzzle swinging from the left to the front. */
+  crateLift: (spec, b) => bySocket(spec, 'grip', b.chest.clone().add(new THREE.Vector3(-0.1 * b.k, -0.24 * b.k, 0.3 * b.k)), lookRotation(new THREE.Vector3(0.85, -0.25, 0.45), new THREE.Vector3(0, 1, 0))),
   /** Rifle shove wind-up: the gun turned across the chest at port arms (muzzle left), pulled in. */
   longPortWind: (spec, b) => bySocket(spec, 'grip', b.chest.clone().add(new THREE.Vector3(-0.14 * b.k, -0.14 * b.k, 0.2 * b.k)), lookRotation(new THREE.Vector3(0.93, 0.33, 0.12), new THREE.Vector3(0, 0.35, 1))),
   /** Rifle shove contact: the receiver driven straight out at chest height with both hands. */
@@ -116,6 +123,12 @@ export function offsetXform(base, spec, { cant = 0, tilt = 0, yaw = 0, lift = 0 
   const q = base.quaternion.clone().multiply(local);
   const pivotWorld = base.position.clone().add(pivot.clone().applyQuaternion(base.quaternion));
   return xform(pivotWorld.sub(pivot.clone().applyQuaternion(q)).add(new THREE.Vector3(0, lift, 0)), q);
+}
+
+/** Where a weapon lying in a crate is gripped: 55 cm up (on top of the load in a waist-low crate), 40 cm ahead, right of centre. */
+export function crateGrip(layout) {
+  const k = layout.measures.height / 1.78;
+  return new THREE.Vector3(-0.08 * k, 0.55, 0.4 * k);
 }
 
 /** Weapon-local recoil offset: kick back along −Z and muzzle rise about the grip. */
