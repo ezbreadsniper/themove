@@ -99,8 +99,10 @@ go in `docs/animation/animation_sources.md`.
   sit inside the loft as NPCs, chilling on the sofa/seats and listening to music (head nods, relaxed
   talk). sheet-04 (camo cargo) holds an unbranded clear lager bottle with a lime wedge and takes sips.
   The player is `trial-default` (or `?id=`). `?npcs=street` may still spawn the street test cast.
-- **Weapons:** the pistol and the SMG (Uzi-style) are the usable guns in the playable game for now (rifle code stays
-  in the repo, just not attached or selectable in `world-play.js`).
+- **Weapons:** all three guns stay in the game. The player starts with the **pistol only**. The
+  rifle and the SMG (Uzi-style) sit in a weapon crate behind the building (back lot, marker
+  `weapon_cache`, placed by D; G falls back to ~[24, 0, 20] if absent). Opening the crate (E) shows
+  both guns inside; taking one adds it to the player's loadout (1 pistol, 2 SMG, 3 rifle once owned).
 - **Movement:** WASD runs by default; Alt (or CapsLock toggle) walks; Shift sprints outdoors.
 - **Time of day:** night. Darker exterior (moonlight + sodium streetlights), interior lamps on.
 - **Music:** an original procedural minimal Detroit-techno track (in the spirit of Robert Hood's
