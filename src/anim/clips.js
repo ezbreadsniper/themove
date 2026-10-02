@@ -459,9 +459,9 @@ export function bakeClip(layout, name, { prefix = '' } = {}) {
   const tracks = JOINTS.map(([j]) => new THREE.QuaternionKeyframeTrack(`${prefix}${j}.quaternion`, times, quats[j]));
   tracks.push(new THREE.VectorKeyframeTrack(`${prefix}Hips.position`, times, hipPos));
   for (const [path, values] of Object.entries(props)) {
-    tracks.push(typeof values[0] === 'boolean'
-      ? new THREE.BooleanKeyframeTrack(path, times, values)
-      : new THREE.VectorKeyframeTrack(path, times, values.flat()));
+    if (typeof values[0] === 'boolean') tracks.push(new THREE.BooleanKeyframeTrack(path, times, values));
+    else if (typeof values[0] === 'number') tracks.push(new THREE.NumberKeyframeTrack(path, times, values));
+    else tracks.push(new THREE.VectorKeyframeTrack(path, times, values.flat()));
   }
   const clip = new THREE.AnimationClip(name, s.duration, tracks);
   clip.userData = { loop: s.loop, ...(s.weapon ? { weapon: s.weapon } : {}), ...(s.meta ? s.meta(layout) : {}), ...(s.events ? { events: s.events } : {}) };

@@ -105,6 +105,8 @@ export function weaponFrame(L, type, a, b, u, bodyPose = null) {
     [`${weaponNode(type, 'mag')}.position`]: [0, -spec.magDrop * s.magDrop, 0],
     [`${weaponNode(type, 'mag')}.scale`]: shown(s.magDrop < 0.98),
     [`${weaponNode(type, 'handMag')}.scale`]: shown(step.handMag),
+    // Runtime support-hand IK weight (src/anim/runtime-ik.js): 1 while the left hand is on the support.
+    [`${weaponNode(type, 'hand')}.supportIK`]: (a.L === 'support' ? 1 - u : 0) + (b.L === 'support' ? u : 0),
   };
   return p;
 }

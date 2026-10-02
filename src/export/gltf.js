@@ -64,7 +64,13 @@ function exportableUserData(object, root) {
 
 /** Exports a built character plus its procedural clips as binary glTF with Mixamo joint names. */
 export async function exportCharacterGLB(character, { clips = true, prefix = RIG_PREFIX } = {}) {
-  const animations = clips ? Object.values(bakeAllClips(character.userData.layout, { weapons: character.userData.weapon?.types })) : [];
+  // Runtime-only channels (the support-hand IK weight) have no glTF equivalent.
+  const animations = clips
+    ? Object.values(bakeAllClips(character.userData.layout, { weapons: character.userData.weapon?.types })).map((c) => {
+      c.tracks = c.tracks.filter((t) => !t.name.endsWith('.supportIK'));
+      return c;
+    })
+    : [];
   const saved = [];
   character.traverse((o) => {
     saved.push([o, o.userData]);

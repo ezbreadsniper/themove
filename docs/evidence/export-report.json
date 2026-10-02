@@ -1,7 +1,7 @@
 [
   {
     "id": "sheet-01-black-tee",
-    "bytes": 3379468,
+    "bytes": 3408824,
     "problems": [],
     "jointCount": 31,
     "skinnedNodes": 7,
@@ -65,6 +65,7 @@
       "stepDown",
       "knockback",
       "recover",
+      "stepInPlace",
       "push",
       "pull",
       "laugh",
@@ -77,7 +78,7 @@
   },
   {
     "id": "sheet-02-denim-vest",
-    "bytes": 3667140,
+    "bytes": 3696500,
     "problems": [],
     "jointCount": 31,
     "skinnedNodes": 11,
@@ -141,6 +142,7 @@
       "stepDown",
       "knockback",
       "recover",
+      "stepInPlace",
       "push",
       "pull",
       "laugh",
@@ -153,7 +155,7 @@
   },
   {
     "id": "sheet-03-red-rugby",
-    "bytes": 3739644,
+    "bytes": 3769008,
     "problems": [],
     "jointCount": 31,
     "skinnedNodes": 10,
@@ -217,6 +219,7 @@
       "stepDown",
       "knockback",
       "recover",
+      "stepInPlace",
       "push",
       "pull",
       "laugh",
@@ -229,7 +232,7 @@
   },
   {
     "id": "sheet-04-camo-cargo",
-    "bytes": 3558348,
+    "bytes": 3587704,
     "problems": [],
     "jointCount": 31,
     "skinnedNodes": 9,
@@ -293,6 +296,7 @@
       "stepDown",
       "knockback",
       "recover",
+      "stepInPlace",
       "push",
       "pull",
       "laugh",
@@ -305,7 +309,7 @@
   },
   {
     "id": "sheet-05-curly-denim",
-    "bytes": 3699104,
+    "bytes": 3728464,
     "problems": [],
     "jointCount": 31,
     "skinnedNodes": 12,
@@ -369,6 +373,7 @@
       "stepDown",
       "knockback",
       "recover",
+      "stepInPlace",
       "push",
       "pull",
       "laugh",
@@ -381,7 +386,7 @@
   },
   {
     "id": "sheet-06-floral-cutoffs",
-    "bytes": 3789852,
+    "bytes": 3819212,
     "problems": [],
     "jointCount": 31,
     "skinnedNodes": 11,
@@ -445,6 +450,7 @@
       "stepDown",
       "knockback",
       "recover",
+      "stepInPlace",
       "push",
       "pull",
       "laugh",
@@ -457,7 +463,7 @@
   },
   {
     "id": "sheet-07-puffer-balaclava",
-    "bytes": 3526320,
+    "bytes": 3555680,
     "problems": [],
     "jointCount": 31,
     "skinnedNodes": 8,
@@ -521,6 +527,7 @@
       "stepDown",
       "knockback",
       "recover",
+      "stepInPlace",
       "push",
       "pull",
       "laugh",
@@ -533,7 +540,7 @@
   },
   {
     "id": "trial-default",
-    "bytes": 3548628,
+    "bytes": 3577988,
     "problems": [],
     "jointCount": 31,
     "skinnedNodes": 7,
@@ -597,6 +604,7 @@
       "stepDown",
       "knockback",
       "recover",
+      "stepInPlace",
       "push",
       "pull",
       "laugh",
@@ -609,7 +617,7 @@
   },
   {
     "id": "trial-default-armed",
-    "bytes": 9664904,
+    "bytes": 9694388,
     "clips": [],
     "jointCount": 31,
     "skinnedNodes": 0,
@@ -626,7 +634,7 @@
           0.00009999999747378753
         ],
         "weaponTracks": 6,
-        "animations": 177
+        "animations": 178
       },
       "rifle_equip": {
         "ok": true,
@@ -639,7 +647,7 @@
           0.00009999999747378752
         ],
         "weaponTracks": 6,
-        "animations": 177
+        "animations": 178
       },
       "smg_equip": {
         "ok": true,
@@ -652,7 +660,7 @@
           0.00009999999747378752
         ],
         "weaponTracks": 6,
-        "animations": 177
+        "animations": 178
       }
     },
     "problems": []

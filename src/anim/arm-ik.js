@@ -41,10 +41,21 @@ export function handGripOffset(layout, side) {
  */
 export function solveArm(layout, pose, side, wrist, handWorld, elbowPole) {
   const fk = worldPose(layout, pose);
+  const r = solveArmFrom(layout, side, fk.pos[`${side}Arm`], fk.quat[`${side}Shoulder`], wrist, handWorld, elbowPole);
+  pose.bones[`${side}Arm`] = r.arm;
+  pose.bones[`${side}ForeArm`] = r.foreArm;
+  pose.bones[`${side}Hand`] = r.hand;
+  return { reachable: r.reachable, error: r.error };
+}
+
+/**
+ * The arm solve itself, from the shoulder joint position and the shoulder bone's world rotation (any
+ * consistent space): returns local rotations { arm, foreArm, hand } plus reachability and error.
+ */
+export function solveArmFrom(layout, side, root, shoulderWorld, wrist, handWorld, elbowPole) {
   const w = layout.world;
   const upper = w[`${side}Arm`].distanceTo(w[`${side}ForeArm`]);
   const lower = w[`${side}ForeArm`].distanceTo(w[`${side}Hand`]);
-  const root = fk.pos[`${side}Arm`];
   const toTarget = wrist.clone().sub(root);
   // Elbow flexion stops near 152°: a wrist target closer to the shoulder than that is held off.
   const minReach = (upper + lower) * MIN_REACH;
@@ -57,18 +68,19 @@ export function solveArm(layout, pose, side, wrist, handWorld, elbowPole) {
   const cosA = THREE.MathUtils.clamp((upper ** 2 + d ** 2 - lower ** 2) / (2 * upper * d), -1, 1);
   const elbow = root.clone().addScaledVector(dir, upper * cosA).addScaledVector(pole, upper * Math.sqrt(1 - cosA * cosA));
   const reached = root.clone().addScaledVector(dir, d);
-
   const restUpper = w[`${side}ForeArm`].clone().sub(w[`${side}Arm`]).normalize();
   const restLower = w[`${side}Hand`].clone().sub(w[`${side}ForeArm`]).normalize();
   const upperDir = elbow.clone().sub(root).normalize();
   const lowerDir = reached.clone().sub(elbow).normalize();
   const armGlobal = frameRotation(restUpper, orthoPole(restUpper, REST_ELBOW_POLE), upperDir, orthoPole(upperDir, pole));
   const foreGlobal = frameRotation(restLower, orthoPole(restLower, REST_ELBOW_POLE), lowerDir, orthoPole(lowerDir, pole));
-  const shoulderWorld = fk.quat[`${side}Shoulder`];
-  pose.bones[`${side}Arm`] = shoulderWorld.clone().invert().multiply(armGlobal);
-  pose.bones[`${side}ForeArm`] = armGlobal.clone().invert().multiply(foreGlobal);
-  pose.bones[`${side}Hand`] = foreGlobal.clone().invert().multiply(handWorld);
-  return { reachable: distance <= maxReach, error: reached.distanceTo(wrist) };
+  return {
+    arm: shoulderWorld.clone().invert().multiply(armGlobal),
+    foreArm: armGlobal.clone().invert().multiply(foreGlobal),
+    hand: foreGlobal.clone().invert().multiply(handWorld),
+    reachable: distance <= maxReach,
+    error: reached.distanceTo(wrist),
+  };
 }
 
 /** World rotation of a hand whose rest frame is mapped onto (fingers, palm) world directions. */

@@ -102,10 +102,31 @@ Tools:
 
 ---
 
+## W7: standing aim turns and runtime support-hand IK
+**Failed:**
+- standing aim spun the root with planted feet;
+- additive aim offsets left the support hand up to 62 mm off the weapon at combined yaw and pitch;
+- aim-offset weights stuck after releasing aim or switching weapons;
+- a rifle-first player held the pistol and the rifle at once (`attachWeapon` drew the first type by default).
+
+**Added and fixed:**
+- standing-aim dead zone of ±45° covered by the upper body and aim offsets, then a stepping-in-place turn (`stepInPlace`) until within 8°;
+- `src/anim/runtime-ik.js`: after the mixer, the left arm is re-solved onto the support rail of the drawn weapon on the live skeleton, weighted by a baked `supportIK` channel. The mixer crossfades it, it is 0 through reloads and one-hand stances, and it is stripped from glTF;
+- `solveArmFrom` split out of `solveArm`;
+- aim weights reset each frame;
+- `attachWeapon(…, { drawn })`, with the game starting unarmed;
+- the contact audit measures the drawn weapon.
+
+**Verified:**
+- both hands are within 1–2 mm across yaw ±44° and pitch −35…30° for pistol, rifle and SMG;
+- the IK releases during reloads;
+- 672 tests pass, the in-game run passes, and all 9 exports pass.
+
+---
+
 ## Still open (next highest-value first)
-1. **Hip/torso turn while aiming in place.** The feet stay planted while the torso twists up to 32°. Add turn-in-place steps when the aim yaw passes 45°.
-2. **Runtime aim stabilisation.** In layered walk-aim, the pelvis yaw (±6°) slightly sways the gun. Baked `*_walkAim` clips counter it; the runtime layer does not.
-3. **Foot IK at runtime.** Uneven ground and slopes aren't handled; the clips assume flat ground.
-4. **Weapon drop/pickup and first-person view** aren't built.
-5. **UniMate** is blocked (no CUDA GPU here); see `unimate_plan.md`.
-6. **Skirt sit poke-through** (pre-existing clothing issue, see `docs/character/gauntlet_log.md`).
+1. **Runtime aim stabilisation.** In layered walk-aim, the pelvis yaw (±6°) slightly sways the gun (the hands now stay on it). Baked `*_walkAim` clips counter the sway; the runtime layer does not.
+2. **Foot IK at runtime.** Uneven ground and slopes aren't handled; the clips assume flat ground.
+3. **Weapon drop/pickup and first-person view** aren't built.
+4. **UniMate** is blocked (no CUDA GPU here); see `unimate_plan.md`.
+5. **Skirt sit poke-through** (pre-existing clothing issue, see `docs/character/gauntlet_log.md`).

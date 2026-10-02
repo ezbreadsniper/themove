@@ -127,29 +127,31 @@ function boneNamed(rig, name) {
 }
 
 /**
- * Attaches weapons to a built character: for each type, the hand model under RightHand (hidden until a
- * clip draws it), the stowed copy on its mount bone, and the spare magazine under LeftHand. The first
- * type starts in hand. Returns character.userData.weapon = { type, types, model }.
+ * Attaches weapons to a built character: for each type, the hand model under RightHand, the stowed
+ * copy on its mount bone, and the spare magazine under LeftHand. `drawn` starts in hand (default: the
+ * first type; null = everything stowed). Returns character.userData.weapon = { type, types, model }.
  */
-export function attachWeapon(character, types) {
+export function attachWeapon(character, types, { drawn } = {}) {
   const list = Array.isArray(types) ? types : [types];
+  const inHand = drawn === undefined ? list[0] : drawn;
   const { layout, rig } = character.userData;
   const right = boneNamed(rig, 'RightHand');
   const left = boneNamed(rig, 'LeftHand');
   const models = {};
-  for (const [i, type] of list.entries()) {
+  for (const type of list) {
     const spec = WEAPONS[type];
     const model = buildWeaponModel(type);
     const grip = handToWeapon(layout, spec);
     model.position.copy(grip.position);
     model.quaternion.copy(grip.quaternion);
-    shown(model, i === 0);
+    shown(model, type === inHand);
+    model.supportIK = 0;
     right.add(model);
     const stowed = buildWeaponModel(type, { root: weaponNode(type, 'stowed'), moving: false });
     const mount = mountTransform(layout, spec);
     stowed.position.copy(mount.position);
     stowed.quaternion.copy(mount.quaternion);
-    shown(stowed, i !== 0);
+    shown(stowed, type !== inHand);
     boneNamed(rig, spec.mount.bone).add(stowed);
     if (spec.kind === 'pistol') {
       const holster = holsterMesh(spec);

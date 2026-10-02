@@ -191,6 +191,29 @@ export function makeExtraSamplers(bases) {
         return out;
       },
     },
+    /**
+     * Stepping in place (loop): what the feet do while the body turns on the spot (the controller rotates
+     * the root; alternating short steps re-plant the feet instead of letting them pivot).
+     */
+    stepInPlace: {
+      duration: 0.7,
+      loop: true,
+      meta: () => ({ syncGroup: 'stepInPlace' }),
+      events: [{ name: 'footstep', side: 'Left', time: 0.3 }, { name: 'footstep', side: 'Right', time: 0.65 }],
+      sample: (L, t, dur) => {
+        const u = t / dur;
+        const p = base(L, { armDown: 20, elbow: 16 });
+        const kk = k(L);
+        const ankles = {};
+        SIDES.forEach((side, i) => {
+          const lift = Math.sin(Math.PI * window01((u + i * 0.5) % 1, 0, 0.45)) ** 2;
+          ankles[side] = L.world[`${side}Foot`].clone().add(new THREE.Vector3(0, lift * 0.045 * kk, lift * 0.015 * kk));
+        });
+        const shift = Math.sin(u * Math.PI * 2) * 0.012 * kk;
+        plantLegs(L, p, { hips: new THREE.Vector3(shift, -0.018 * kk, 0), ankles });
+        return p;
+      },
+    },
     push: pushPull(1),
     pull: pushPull(-1),
     laugh: {

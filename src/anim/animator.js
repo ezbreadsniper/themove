@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applySupportIK } from './runtime-ik.js';
 
 /** Bones driven by the upper-body layer (weapon handling, gestures); everything else is the base. */
 export const UPPER_BONES = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'Jaw', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand'];
@@ -153,9 +154,10 @@ export class Animator {
     return true;
   }
 
-  /** Aim offsets: additive yaw / pitch poses weighted by the aim direction (degrees). */
+  /** Aim offsets: additive yaw / pitch poses weighted by the aim direction (degrees); others drop to 0. */
   setAim(yaw, pitch, { left, right, up, down }) {
     this.aim = { yaw, pitch };
+    for (const action of Object.values(this.aimActions)) action.setEffectiveWeight(0);
     const weights = { [left]: Math.max(0, yaw) / 45, [right]: Math.max(0, -yaw) / 45, [up]: Math.max(0, pitch) / 40, [down]: Math.max(0, -pitch) / 40 };
     for (const [name, w] of Object.entries(weights)) {
       if (!this.clips[name]) continue;
@@ -197,7 +199,9 @@ export class Animator {
     }
   }
 
+  /** Advances the mixer, then re-solves the support hand onto the weapon (layer / additive drift). */
   update(dt) {
     this.mixer.update(dt);
+    this.supportIK = applySupportIK(this.character);
   }
 }

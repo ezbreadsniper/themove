@@ -15,8 +15,16 @@ export function handGripWorld(character, side) {
   return offset.applyMatrix4(b.matrixWorld);
 }
 
+/** The weapon currently in hand (drawn copies are at scale 1, holstered ones hidden), else the first. */
+export function drawnWeapon(character) {
+  const w = character.userData.weapon;
+  if (!w) return null;
+  const type = (w.types ?? [w.type]).find((t) => w.models?.[t]?.scale.x > 0.5) ?? w.type;
+  return { type, model: w.models?.[type] ?? w.model };
+}
+
 export function socketWorldOf(character, name) {
-  const s = character.userData.weapon?.model.getObjectByName(`socket_${name}`);
+  const s = drawnWeapon(character)?.model.getObjectByName(`socket_${name}`);
   return s ? s.getWorldPosition(v()) : null;
 }
 
@@ -29,10 +37,10 @@ export function weaponContact(character) {
   const grip = socketWorldOf(character, 'grip');
   const support = socketWorldOf(character, 'support');
   const muzzle = socketWorldOf(character, 'muzzle');
-  const model = character.userData.weapon.model;
+  const { type, model } = drawnWeapon(character);
   const forward = new THREE.Vector3(0, 0, 1).transformDirection(model.matrixWorld);
   // The support hand may slide back along the handguard (short arms), so it is measured to that rail.
-  const slide = WEAPONS[character.userData.weapon.type].sockets.supportSlide ?? 0;
+  const slide = WEAPONS[type].sockets.supportSlide ?? 0;
   const rail = new THREE.Line3(support, support.clone().addScaledVector(forward, -slide));
   const left = handGripWorld(character, 'Left');
   return {

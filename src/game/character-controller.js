@@ -4,6 +4,12 @@ import { WEAPONS } from '../weapons/specs.js';
 
 const COMPASS = [['N', 0], ['NW', 45], ['W', 90], ['SW', 135], ['S', 180], ['SE', -135], ['E', -90], ['NE', -45]];
 const TURN_RATE = 9;
+/** Standing and aiming: the upper body covers this much yaw before the feet step round (degrees). */
+const AIM_DEAD_ZONE = 45;
+const AIM_SETTLE = 8;
+const STEP_TURN_RATE = 4.5;
+
+const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** Nearest compass clip suffix for a move direction in body space (degrees, 0 = forward, + = left). */
 function compass(deg) {
@@ -44,6 +50,7 @@ export class CharacterController {
 
   locomotionFor(input) {
     const speed = Math.hypot(input.move.x, input.move.z);
+    if (speed < 0.15 && this.turning && !input.crouch) return 'stepInPlace';
     if (speed < 0.15) return input.crouch ? 'crouchIdle' : 'idle';
     if (input.crouch) return `crouchWalk_${this.moveCompass}`;
     if (input.aim) return `walk_${this.moveCompass}`;
@@ -74,8 +81,20 @@ export class CharacterController {
     const move = new THREE.Vector3(input.move.x, 0, input.move.z);
     const speed = Math.min(1, move.length());
     const worldMove = move.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), input.cameraYaw ?? 0);
-    if (input.aim) this.turnTo(input.cameraYaw ?? 0, dt);
-    else if (speed > 0.15) this.turnTo(Math.atan2(worldMove.x, worldMove.z), dt);
+    const aimOffset = THREE.MathUtils.radToDeg(wrapAngle((input.cameraYaw ?? 0) - this.facing));
+    if (input.aim && speed > 0.15) {
+      this.turning = false;
+      this.turnTo(input.cameraYaw ?? 0, dt);
+    } else if (input.aim) {
+      // Standing aim: the torso / aim offsets take up to ±45°, beyond that the feet step the body round.
+      if (Math.abs(aimOffset) > AIM_DEAD_ZONE) this.turning = true;
+      if (this.turning && Math.abs(aimOffset) < AIM_SETTLE) this.turning = false;
+      if (this.turning) this.turnTo(input.cameraYaw ?? 0, dt, STEP_TURN_RATE);
+    } else {
+      this.turning = false;
+      if (speed > 0.15) this.turnTo(Math.atan2(worldMove.x, worldMove.z), dt);
+    }
+    this.aimOffset = THREE.MathUtils.radToDeg(wrapAngle((input.cameraYaw ?? 0) - this.facing));
     const bodyDeg = THREE.MathUtils.radToDeg(Math.atan2(worldMove.x, worldMove.z) - this.facing);
     this.moveCompass = compass(bodyDeg);
 
@@ -88,7 +107,8 @@ export class CharacterController {
     const upper = this.upperFor(input);
     if (!a.locked && upper && upper !== a.upperName) a.play(upper);
     if (!upper && a.upper && !a.locked) a.release();
-    if (this.weapon && input.aim) a.setAim(0, input.aimPitch ?? 0, { left: `${this.weapon}_aimLeft`, right: `${this.weapon}_aimRight`, up: `${this.weapon}_aimUp`, down: `${this.weapon}_aimDown` });
+    if (!this.weapon || !input.aim) a.setAim(0, 0, {});
+    if (this.weapon && input.aim) a.setAim(THREE.MathUtils.clamp(this.aimOffset, -AIM_DEAD_ZONE, AIM_DEAD_ZONE), input.aimPitch ?? 0, { left: `${this.weapon}_aimLeft`, right: `${this.weapon}_aimRight`, up: `${this.weapon}_aimUp`, down: `${this.weapon}_aimDown` });
 
     this.fireCooldown -= dt;
     if (this.weapon && input.fire && input.aim && this.fireCooldown <= 0 && !a.locked) {
@@ -123,8 +143,7 @@ export class CharacterController {
     this.state.upper = a.upperName;
   }
 
-  turnTo(target, dt) {
-    const delta = ((target - this.facing + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-    this.facing += delta * Math.min(1, dt * TURN_RATE);
+  turnTo(target, dt, rate = TURN_RATE) {
+    this.facing += wrapAngle(target - this.facing) * Math.min(1, dt * rate);
   }
 }

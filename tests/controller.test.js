@@ -10,7 +10,7 @@ const trial = JSON.parse(readFileSync('src/character/presets/trial-default.json'
 
 function game() {
   const c = buildCharacter(trial);
-  attachWeapon(c, ['pistol', 'rifle', 'smg']);
+  attachWeapon(c, ['pistol', 'rifle', 'smg'], { drawn: null });
   const root = new THREE.Group();
   root.add(c);
   const ctl = new CharacterController(c, bakeAllClips(c.userData.layout, { weapons: ['pistol', 'rifle', 'smg'] }), { root });
@@ -61,5 +61,38 @@ describe('gameplay controller', () => {
     const sprint = run({ aim: false, sprint: true, move: { x: 0, z: 1 } }, 0.8);
     expect(sprint.locomotion).toBe('sprint');
     expect(sprint.upper).toBe('pistol_sprint');
+  });
+});
+
+describe('aiming while standing', () => {
+  test('small aim turns stay in the upper body; past 45 deg the feet step the body round', () => {
+    const { run, ctl } = game();
+    run({ weapon: 'rifle' }, 2);
+    const small = run({ aim: true, cameraYaw: THREE.MathUtils.degToRad(30) }, 1);
+    expect(Math.abs(small.facing)).toBeLessThan(0.01);
+    expect(ctl.animator.aim.yaw).toBeCloseTo(30, 0);
+    run({ cameraYaw: THREE.MathUtils.degToRad(120) }, 0.3);
+    expect(ctl.state.locomotion).toBe('stepInPlace');
+    const settled = run({}, 2);
+    expect(THREE.MathUtils.radToDeg(settled.facing)).toBeGreaterThan(110);
+    expect(settled.locomotion).toBe('idle');
+  });
+});
+
+describe('runtime support-hand IK', () => {
+  test.each(['pistol', 'rifle', 'smg'])('%s: both hands stay on the weapon across aim offsets; the IK lets go for the reload', async (type) => {
+    const { weaponContact } = await import('../src/anim/weapon-audit.js');
+    const { run, ctl } = game();
+    run({ weapon: type }, 2.2);
+    for (const [yaw, pitch] of [[20, 0], [-44, 0], [0, 25], [30, 30], [-40, -35]]) {
+      run({ aim: true, cameraYaw: THREE.MathUtils.degToRad(yaw), aimPitch: pitch }, 0.8);
+      const k = weaponContact(ctl.character);
+      expect(k.left, `${yaw}/${pitch}`).toBeLessThan(0.002);
+      expect(k.right, `${yaw}/${pitch}`).toBeLessThan(0.001);
+    }
+    run({ cameraYaw: 0, aimPitch: 0, fire: true }, 0.5);
+    run({ fire: false, reload: true }, 0.1);
+    run({ reload: false }, 0.6);
+    expect(ctl.animator.supportIK).toBeLessThan(0.5);
   });
 });

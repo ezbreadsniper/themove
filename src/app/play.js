@@ -19,7 +19,7 @@ stage.setPreset(params.get('preset') ?? 'ps2');
 
 const character = buildCharacter(PRESETS_BY_ID[id]);
 const weapons = ['pistol', 'rifle', 'smg'];
-attachWeapon(character, weapons);
+attachWeapon(character, weapons, { drawn: null });
 const entry = stage.add(character);
 const clips = bakeAllClips(character.userData.layout, { weapons });
 const controller = new CharacterController(character, clips, { root: entry.holder });
