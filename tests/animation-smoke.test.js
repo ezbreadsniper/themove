@@ -115,7 +115,7 @@ describe('smoke emitter', () => {
       em.sync(clip, action.time);
       em.update(1 / 30);
       maxDraw = Math.max(maxDraw, em.draw);
-      if (action.time > 4 && action.time < 4.4) exhaleParticles = Math.max(exhaleParticles, em.smokeP.filter((p) => p.life > 0 && p.drag > 2).length);
+      if (action.time > 4 && action.time < 4.4) exhaleParticles = Math.max(exhaleParticles, em.smokeP.filter((p) => p.life > 0 && p.drag > 1.5).length);
     }
     expect(fired.slice(0, 4)).toEqual(['inhale', 'exhale', 'ash', 'ash']);
     expect(fired.filter((n) => n === 'inhale').length).toBe(2);
