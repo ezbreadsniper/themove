@@ -145,7 +145,8 @@ async function wireOptional() {
     const NpcManager = await findExport(npcModules, 'NpcManager');
     if (NpcManager) {
       npcs = new NpcManager({ world, scene: stage.scene, player, clipsFor: (c) => bakeAllClips(c.userData.layout), events });
-      npcs.spawnFromMarkers?.();
+      // The active world ships without NPCs while the framework is a skeleton; ?npcs=1 populates it for testing.
+      if (params.get('npcs') === '1') npcs.spawnFromMarkers?.();
       interaction.addSource(() => npcs.interactables?.() ?? []);
     }
   } catch (err) {
