@@ -4,7 +4,8 @@ import { DialogueRunner, makeContext, evalCondition, applyEffects } from '../src
 import { getTree, validateTree, BUILTIN_TREES, registerTree } from '../src/dialogue/loader.js';
 import { BarkSystem } from '../src/dialogue/barks.js';
 import BARK_RULES from '../src/dialogue/data/barks.json';
-import { frameShot, sideOf, DialogueCamera, SHOT_KINDS } from '../src/dialogue/camera.js';
+import { frameShot, frameClearShot, sideOf, DialogueCamera, SHOT_KINDS } from '../src/dialogue/camera.js';
+import { CollisionWorld } from '../src/world/physics/collision.js';
 import { DialogueDirector, pickShot } from '../src/dialogue/director.js';
 import { Relationships } from '../src/npc/disposition.js';
 import { createRng } from '../src/core/rng.js';
@@ -247,6 +248,22 @@ describe('dialogue camera', () => {
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
     expect(fwd.dot(b.clone().sub(cam.position).normalize())).toBeGreaterThan(0.98);
     expect(dc.cuts.every((c) => c.side === side)).toBe(true);
+  });
+
+  test('a wall behind the NPC swaps the blocked reverse angle for a clear shot on the same side', () => {
+    // NPC with its back to a wall (z = 2.0); the player stands in front of it.
+    const wall = new CollisionWorld({ solids: [{ poly: [[-6, 2.0], [6, 2.0], [6, 2.4], [-6, 2.4]], y0: 0, y1: 4 }] });
+    const ray = wall.raycast.bind(wall);
+    const a = new THREE.Vector3(0, 1.6, 0);
+    const b = new THREE.Vector3(0, 1.6, 1.5);
+    for (const side of [1, -1]) {
+      const blocked = frameShot('ots', { a, b, speaker: 'a', side });
+      expect(blocked.pos.z).toBeGreaterThan(2.0);
+      const s = frameClearShot('ots', { a, b, speaker: 'a', side }, ray);
+      expect(s.clear).toBeGreaterThanOrEqual(0.7);
+      expect(s.pos.z).toBeLessThan(2.0);
+      expect(sideOf(s.pos, a, b)).toBe(side);
+    }
   });
 
   test('shot choice follows hints, opening and emotion', () => {

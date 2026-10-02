@@ -9,11 +9,14 @@ import * as THREE from 'three';
  *   - 'ots'    over the listener's shoulder onto the speaker (shot / reverse shot)
  *   - 'close'  close-up on the speaker for emotional beats
  *   - 'medium' single, waist up
+ *   - 'profile' three-quarter single far off the line (fallback when a wall blocks the reverse angle)
  *   - cuts are hard (film), the entry and exit blend from / to the gameplay camera, and a slow
  *     handheld drift keeps held shots alive
  * a = player, b = NPC; each { head: Vector3 } (eye height world position).
  */
-export const SHOT_KINDS = ['two', 'ots', 'close', 'medium'];
+export const SHOT_KINDS = ['two', 'ots', 'close', 'medium', 'profile'];
+/** When a shot is blocked by a wall, try these instead (all on the same side of the line). */
+export const SHOT_FALLBACKS = { ots: ['profile', 'close', 'two'], medium: ['profile', 'close', 'two'], close: ['profile', 'two'], profile: ['close', 'two'], two: ['profile'] };
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Line of action between two heads: { mid, dir (a→b, XZ unit), normal (dir rotated +90° about Y), dist }. */
@@ -58,15 +61,22 @@ export function frameShot(kind, { a, b, speaker = 'b', side = 1 }) {
     }
     case 'ots': {
       // Behind the listener's shoulder that faces the camera side, slightly above eye level.
-      pos = new THREE.Vector3(other.x, other.y, other.z).addScaledVector(toOther, 0.8).addScaledVector(n, 0.5).addScaledVector(UP, 0.06);
-      target = new THREE.Vector3(subj.x, subj.y - 0.06, subj.z);
-      fov = 34;
+      pos = new THREE.Vector3(other.x, other.y, other.z).addScaledVector(toOther, 0.95).addScaledVector(n, 0.55).addScaledVector(UP, 0.08);
+      target = new THREE.Vector3(subj.x, subj.y - 0.08, subj.z);
+      fov = 38;
       break;
     }
     case 'close': {
       pos = new THREE.Vector3(subj.x, subj.y, subj.z).addScaledVector(toOther, 0.95).addScaledVector(n, 0.42).addScaledVector(UP, -0.02);
       target = new THREE.Vector3(subj.x, subj.y - 0.03, subj.z);
       fov = 28;
+      break;
+    }
+    case 'profile': {
+      // Clean three-quarter single from well off the line (used when a wall eats the reverse angle).
+      pos = new THREE.Vector3(subj.x, subj.y, subj.z).addScaledVector(toOther, 1.0).addScaledVector(n, 1.35).addScaledVector(UP, -0.05);
+      target = new THREE.Vector3(subj.x, subj.y - 0.1, subj.z);
+      fov = 34;
       break;
     }
     case 'medium':
@@ -91,8 +101,22 @@ export function clearShot(shot, raycast) {
   const len = d.length();
   d.divideScalar(len);
   const hit = raycast(shot.target.toArray(), d.toArray(), len);
+  shot.clear = Math.min(1, hit / len);
   if (hit < len) shot.pos = shot.target.clone().addScaledVector(d, Math.max(0.6, hit - 0.2));
   return shot;
+}
+
+/** frameShot + wall handling: a shot that loses over 30% of its distance falls back to a clearer one. */
+export function frameClearShot(kind, opts, raycast) {
+  const first = clearShot(frameShot(kind, opts), raycast);
+  if (!raycast || first.clear >= 0.7) return first;
+  let best = first;
+  for (const alt of SHOT_FALLBACKS[kind] ?? []) {
+    const s = clearShot(frameShot(alt, opts), raycast);
+    if (s.clear >= 0.7) return s;
+    if (s.clear > best.clear) best = s;
+  }
+  return best;
 }
 
 const smooth = (t) => t * t * (3 - 2 * t);
@@ -154,7 +178,7 @@ export class DialogueCamera {
 
   /** Current shot's camera pose (with drift), on the chosen side. */
   shotPose() {
-    const f = clearShot(frameShot(this.shot?.kind ?? 'two', { a: this.a, b: this.b, speaker: this.shot?.speaker ?? 'b', side: this.side }), this.raycast);
+    const f = frameClearShot(this.shot?.kind ?? 'two', { a: this.a, b: this.b, speaker: this.shot?.speaker ?? 'b', side: this.side }, this.raycast);
     const t = this.time;
     const h = this.handheld;
     const drift = new THREE.Vector3(Math.sin(t * 0.7) * 0.012 + Math.sin(t * 1.9) * 0.004, Math.sin(t * 0.53 + 1) * 0.009, Math.sin(t * 0.61 + 2) * 0.01).multiplyScalar(h);

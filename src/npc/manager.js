@@ -244,7 +244,9 @@ export class NpcManager {
       npc.drives[k] = Math.max(0, Math.min(1, npc.drives[k] + v * gain));
     }
     const threat = STIMULI[stim.type].threat;
-    if (r.state) npc.intent = { id: r.state, weight: 1, hold: threat >= 0.5 ? 8 : 4 };
+    // A weaker reaction (a startle after a gunshot) does not overwrite a stronger live intent (flee).
+    const groupOf = (id) => GROUPS[npc.brain.states[id]?.group] ?? 0;
+    if (r.state && (!npc.intent || npc.intent.weight < 0.3 || groupOf(r.state) >= groupOf(npc.intent.id))) npc.intent = { id: r.state, weight: 1, hold: threat >= 0.5 ? 8 : 4 };
     if (threat >= 0.3) npc.threat = { type: stim.type, pos: { ...stim.pos }, time: npc.clock };
     if (npc.inDialogue && threat >= 0.4) this.interruptDialogue(npc, stim.type);
     const sameState = r.state && r.state === npc.brain.state;
@@ -442,7 +444,8 @@ export class NpcManager {
 
   /** Pairs nearby sociable idle NPCs into conversations; breaks pairs that drift or get busy. */
   pairSocial() {
-    const ambient = (n) => !n.inDialogue && ['idle', 'social', null, undefined].includes(n.brain.state) && n.drives.fear < 0.2 && n.drives.alarm < 0.3;
+    // NPCs holding a scenario point (leaning, behind a counter) stay put; free ones pair up.
+    const ambient = (n) => !n.home.scenario && !n.inDialogue && ['idle', 'social', null, undefined].includes(n.brain.state) && n.drives.fear < 0.2 && n.drives.alarm < 0.3;
     for (const n of this.npcs) {
       if (n.partner && (!ambient(n) || !ambient(n.partner) || Math.hypot(n.pos.x - n.partner.pos.x, n.pos.z - n.partner.pos.z) > 4)) {
         n.partner.partner = null;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Animator } from '../anim/animator.js';
 import { handRestFrame } from '../anim/arm-ik.js';
 import { createRng } from '../core/rng.js';
+import { updateCorrectives } from '../garment/correctives.js';
 import { Perception } from './perception.js';
 import { Brain } from './brain.js';
 import { LookAt } from './look-at.js';
@@ -333,6 +334,7 @@ export class Npc {
     if (this.lookTime > 0) this.lookTime -= dt;
     this.lookAt.setTarget(this.lookTime > 0 ? this.lookTarget : null);
     this.lookAt.update(dt, this.facing, this.headPos());
+    if (this.lod.tier !== 'far') updateCorrectives(this.character);
   }
 
   sync() {

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Move — NPC &amp; dialogue harness</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0c0c3a; overflow: hidden; font-family: "Courier New", monospace; color: #d9d9e4; }
+  #view { position: absolute; inset: 0; }
+  #view canvas { display: block; }
+  #hud { position: absolute; left: 10px; top: 10px; font-size: 12px; text-shadow: 1px 1px 0 #000; white-space: pre; pointer-events: none; background: #0007; padding: 6px 8px; }
+  #help { position: absolute; right: 10px; bottom: 10px; font-size: 12px; text-shadow: 1px 1px 0 #000; white-space: pre; pointer-events: none; background: #0007; padding: 6px 8px; }
+  #prompt { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); font-size: 15px; text-shadow: 1px 1px 0 #000; background: #000a; padding: 4px 10px; display: none; }
+  #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #8a8ac8; }
+  body.cine #hud, body.cine #help, body.cine #prompt { display: none !important; }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="hud"></div>
+<div id="help">WASD move   Shift sprint   C crouch
+1 draw pistol   0 holster
+RMB / F aim     LMB / Space fire
+E talk / interact   V melee shove
+mouse drag: camera   Tab: debug panel
+in dialogue: 1-9 / W S + E, Space skip, H log, Esc leave</div>
+<div id="prompt"></div>
+<div id="loading">building Foundry St. and the cast…</div>
+<script type="module" src="/src/app/npc-demo.js"></script>
+</body>
+</html>

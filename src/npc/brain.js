@@ -324,7 +324,7 @@ export class Brain {
         // then competes as if the commitment bonus were its own.
         const up = GROUPS[s.group] > GROUPS[cur.group];
         if (!(up && raw > INTERRUPT)) continue;
-        v += COMMIT;
+        v += COMMIT + INERTIA;
       }
       if (v > bestScore) {
         bestScore = v;

@@ -8,7 +8,6 @@ export const TONE_COLORS = {
   friendly: '#8fe08f', neutral: '#c8c8d8', rude: '#ff7a6a', aggressive: '#ff5a4a', curious: '#8fd3ff', flirty: '#ff9ad5',
   apologetic: '#d8c48f', intimidate: '#ffa04a', bribe: '#e8d24a', defuse: '#a0e0c0', calm: '#a0e0c0', firm: '#d0b0ff', charming: '#ffb0e0',
 };
-export const EMOTION_GLYPH = { happy: '+', angry: '!', afraid: '!!', worried: '~', annoyed: '-', amused: '+', cold: '.', curious: '?' };
 
 const CSS = `
 .dlg-root{position:absolute;inset:0;pointer-events:none;font-family:"Courier New",monospace;color:#e8e8f0;text-shadow:1px 1px 0 #000;z-index:20;overflow:hidden}
@@ -76,7 +75,8 @@ export class DialogueHud {
   showLine({ name, color = '#fff', text, emotion }, { cps = 55 } = {}) {
     this.hideChoices();
     this.sub.innerHTML = '';
-    const n = el('span', 'dlg-name', this.sub, `${name}${emotion && EMOTION_GLYPH[emotion] ? ` ${EMOTION_GLYPH[emotion]}` : ''}`);
+    const n = el('span', 'dlg-name', this.sub, name);
+    this.sub.dataset.emotion = emotion ?? '';
     n.style.color = color;
     this.textEl = el('span', null, this.sub, '');
     this.reveal = { text, shown: 0, cps };
