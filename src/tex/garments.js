@@ -3,7 +3,8 @@ import { hexToRgb, mix, scale } from '../core/color.js';
 import { GARMENT_UV } from '../geo/parts/garments.js';
 import { applyFabric } from './fabric.js';
 
-const SIZE = 128;
+export const GARMENT_TEX_SIZE = 128;
+const SIZE = GARMENT_TEX_SIZE;
 export const px = (rect) => ({ x: rect[0] * SIZE, y: rect[1] * SIZE, w: (rect[2] - rect[0]) * SIZE, h: (rect[3] - rect[1]) * SIZE });
 
 export function finish(r, rng, grain = 0.06) {
@@ -227,9 +228,9 @@ export function paintBottom(style, rng) {
     if (style.sideStripe) paintSideStripe(r, L, outer, hexToRgb(style.sideStripe));
     if (style.carpenter) paintCarpenter(r, L, outer, base, thread);
     if (style.rips && style.rips !== 'none') paintRips(r, L, style.rips, base, noise);
-    paintLegTop(r, L, key === 'legL' ? 1 : -1, { base, faded, deep, thread, isDenim });
+    if (!style.dressSkirt) paintLegTop(r, L, key === 'legL' ? 1 : -1, { base, faded, deep, thread, isDenim });
   }
-  paintWaist(r, style, base, faded, deep, thread, isDenim);
+  if (!style.dressSkirt) paintWaist(r, style, base, faded, deep, thread, isDenim);
   return finish(r, rng, 0.07);
 }
 

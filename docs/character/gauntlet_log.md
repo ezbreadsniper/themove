@@ -85,6 +85,28 @@ Evidence: `passA3-legs.png`.
 
 ---
 
+## Pass C2: women's clothing library, batch 1
+**Added:**
+- **Dresses:** the `dress` slot composes a bodice (cami, tank, tube or tee with sleeves) with a skirt (pencil, A-line, flared or pleated) joined at the natural waist. The bodice overlaps the skirt by 3 cm, and dress skirts drop trouser details (fly, pockets).
+- **Tops:** `sweater` (rib hem, cuffs and neck, knit courses) and `buttonUp` (placket, buttons, collar, cuffs).
+- **Prints:** `floral`, `gingham` and `polka`, with an `accent` colour, on tops, bottoms and dresses.
+- **Leggings and bike shorts:** `bottom.type: 'leggings'`, skin-tight jersey with flatlock seams, a wide waistband and an optional side stripe.
+
+**Defects found and fixed:**
+- prints were painted at a 256 px scale on 128 px textures, so they covered only a corner;
+- a skin sliver showed at the dress waist: the bare midriff band was still built under a skirt whose waistband rose over the top's hem. It is now dropped whenever the bottom's rise covers the hem.
+
+**Verified:**
+- `tests/womenswear.test.js`: 5 dresses build with skirt correctives; sweater and button-up build; leggings show 0% poke on the base, woman and heavy bodies;
+- the creator exposes every dress field (schema coverage test);
+- dress motion sheet (walk, run, sit, crouch) and front/back boards.
+
+Evidence: `dresses-front.png`, `womenswear-separates.png`, `dress-motion.png`.
+
+**Next for clothing:** blazers and coats over dresses, jumpsuits, wrap and slip shapes beyond the four skirt cuts, heeled and ankle boots, bags.
+
+---
+
 ## Queue (in order)
 1. **Skirt sit poke** (pre-existing, 4–7% on this machine): add the skirt matrix to `tests/fit.test.js` as the status doc planned, then fix it.
 2. **Elbow/shoulder correctives**, plus a real armpit stitch (the arm is still a tube sunk into the torso).

@@ -25,6 +25,8 @@ function buildSkirtFor(layout, style, overHemY = null) {
   return buildSkirt(layout, style, { riseY: layout.measures.hipsY + (style.rise ?? 0.04) * k, ease: 0.008 + (style.fit ?? 0.5) * 0.03, overHemY });
 }
 import { paintJacket, outerFabric } from '../tex/outerwear.js';
+import { paintStyledTop, paintLeggings, paintPrint, PRINTS } from '../tex/womenswear.js';
+import { expandDress } from './dress.js';
 import { paintHairTexture } from '../tex/hair.js';
 import { FABRICS } from '../tex/fabric.js';
 import { paintSkin } from '../tex/skin.js';
@@ -87,7 +89,7 @@ export function createContext(input) {
   const { value: authored, errors } = normalizeDefinition(input);
   const rng = createRng(authored.seed);
   const layout = computeJointLayout(authored.body);
-  const def = applyAge(authored, layout.measures);
+  const def = expandDress(applyAge(authored, layout.measures), layout);
   const face = { ...FACE_PRESETS[def.face.preset], ...def.face };
   const shape = createHeadShape(layout.measures, face);
   shape.recession = def.hair.recession ?? layout.measures.older * 0.55;
@@ -96,6 +98,11 @@ export function createContext(input) {
 
 const hasCap = (def) => def.accessories.some((a) => ['cap', 'beanie', 'bucket', 'durag'].includes(a.type));
 const BULKY_UNDER_CAP = ['afro', 'messy', 'twists', 'curlyMop'];
+
+/** Tee-family painter for plain tops; sweaters, button-ups and printed tops use the styled painter. */
+function topRaster(style, rng) {
+  return style.type === 'sweater' || style.type === 'buttonUp' || PRINTS.includes(style.pattern) ? paintStyledTop(style, rng) : paintTop(style, rng);
+}
 
 /**
  * Part recipes. Each returns [{ name, mb, raster, opts }] and optional cover info.
@@ -125,13 +132,14 @@ const RECIPES = {
     if (STRAP_TOPS[def.top.type]) {
       const res = buildStrapTop(layout, def.top, { overPants: bottomUnder(ctx) });
       ctx.topLayer = { surface: res.surface, collar: null, hemY: res.hemY };
-      const raster = paintTop({ ...def.top, sleeve: 'none' }, rng.fork('topTex'));
+      const raster = topRaster({ ...def.top, sleeve: 'none' }, rng.fork('topTex'));
       return { parts: [{ name: 'top', mb: res.mb, raster, opts: { doubleSide: true, fabric: def.top.fabric } }], cover: { torsoFrom: 'chest', topHemY: res.hemY } };
     }
     const underJacket = !!def.outer && !['vest', 'puffer'].includes(def.outer.type);
-    const res = buildTop(layout, def.top, { overPants: bottomUnder(ctx), hiddenSleeves: underJacket });
+    const top = def.top.type === 'buttonUp' ? { ...def.top, collar: 'polo' } : def.top;
+    const res = buildTop(layout, top, { overPants: bottomUnder(ctx), hiddenSleeves: underJacket });
     ctx.topLayer = { surface: res.surface, collar: res.collar, hemY: res.hemY };
-    const raster = paintTop({ ...def.top, pattern: def.top.type === 'rugby' ? 'rugby' : def.top.pattern }, rng.fork('topTex'));
+    const raster = topRaster({ ...top, pattern: top.type === 'rugby' ? 'rugby' : top.pattern }, rng.fork('topTex'));
     return { parts: [{ name: 'top', mb: res.mb, raster, opts: { doubleSide: true, fabric: def.top.fabric } }], cover: { torsoFrom: def.top.sleeve === 'none' ? 'upperChest' : 'trapezius', armFromS: res.coversArmToS, topHemY: res.hemY } };
   },
   outer(ctx) {
@@ -162,11 +170,16 @@ const RECIPES = {
     const { def, layout, rng } = ctx;
     if (!def.bottom) return { parts: [] };
     const skirt = def.bottom.type === 'skirt';
-    const res = skirt ? buildSkirtFor(layout, def.bottom, overHem(ctx)) : buildBottom(layout, def.bottom, rng.fork('bottomGeo'), { under: ctx.topLayer, shoes: def.shoes, socks: def.socks });
-    const legsBelowY = skirt ? layout.world.LeftUpLeg.y - 0.06 * (layout.measures.height / 1.78) : def.bottom.length === 'full' ? null : Math.min(layout.world.LeftUpLeg.y - 0.04, res.hemY + 0.12);
-    const parts = [{ name: 'bottom', mb: res.mb, raster: paintBottom(def.bottom, rng.fork('bottomTex')), opts: { doubleSide: true, fabric: def.bottom.kind } }];
+    const leggings = def.bottom.type === 'leggings';
+    // Leggings / bike shorts: skin-tight stretch trousers (no stack, cuff or turn-up).
+    const style = leggings ? { ...def.bottom, type: 'pants', cut: 'skinny', fit: 0, kind: def.bottom.kind === 'denim' ? 'jersey' : def.bottom.kind, stack: 0, cuff: 0, cinch: false, cargo: false } : def.bottom;
+    const res = skirt ? buildSkirtFor(layout, style, overHem(ctx)) : buildBottom(layout, style, rng.fork('bottomGeo'), { under: ctx.topLayer, shoes: def.shoes, socks: def.socks });
+    const legsBelowY = skirt ? layout.world.LeftUpLeg.y - 0.06 * (layout.measures.height / 1.78) : style.length === 'full' ? null : Math.min(layout.world.LeftUpLeg.y - 0.04, res.hemY + 0.12);
+    const raster = leggings ? paintLeggings(style, rng.fork('bottomTex')) : paintBottom(style, rng.fork('bottomTex'));
+    if (PRINTS.includes(style.pattern)) paintPrint(raster, { x: 0, y: 0, w: raster.width, h: raster.height }, style.pattern, hexToRgb(style.color), hexToRgb(style.accent ?? '#f4f0e6'), rng.fork('bottomPrint'));
+    const parts = [{ name: 'bottom', mb: res.mb, raster, opts: { doubleSide: true, fabric: style.kind } }];
     if (def.bottom.belt) parts.push({ name: 'belt', mb: buildBelt(layout, { riseY: res.riseY, ease: res.ease }), raster: paintBelt(def.bottom.belt, rng.fork('beltTex')), opts: { shiny: true } });
-    return { parts, cover: { legsBelowY, legHemY: res.hemY, legCorrectives: !skirt, torsoFrom: 'pelvisTop', lowerFrom: 'pelvisTop' } };
+    return { parts, cover: { legsBelowY, legHemY: res.hemY, legCorrectives: !skirt, torsoFrom: 'pelvisTop', lowerFrom: 'pelvisTop', riseY: res.riseY } };
   },
   socks(ctx) {
     const { def, layout, rng } = ctx;
@@ -270,9 +283,12 @@ function buildRecipeParts(ctx) {
     if (res.cover && 'feet' in res.cover) cover.feet = res.cover.feet;
     if (res.cover?.footLift) cover.footLift = res.cover.footLift;
     if (res.cover?.neckHidden) cover.neckHidden = true;
+    if (res.cover?.riseY != null) cover.riseY = res.cover.riseY;
     if (res.cover?.legHemY != null) cover.legHemY = res.cover.legHemY;
     if (res.cover && 'legCorrectives' in res.cover) cover.legCorrectives = res.cover.legCorrectives;
   }
+  // No bare midriff band when the bottom's waistband rises over the top's hem (dresses, high rises).
+  if (cover.topHemY != null && cover.riseY != null && cover.riseY >= cover.topHemY) cover.topHemY = null;
   return { parts, cover };
 }
 

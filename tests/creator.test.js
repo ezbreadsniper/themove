@@ -74,6 +74,7 @@ describe('creator menu coverage', () => {
       ...PRESETS[0],
       outer: {},
       socks: {},
+      dress: {},
       bottom: { ...PRESETS[0].bottom, belt: {} },
       accessories: Object.keys(ACCESSORY_SCHEMAS).map((type) => ({ type })),
     }).value;
@@ -85,7 +86,7 @@ describe('creator menu coverage', () => {
   test('optional slots and accessories always have an on/off toggle', () => {
     const plan = planControls(normalizeDefinition({ id: 'bare' }).value);
     const toggles = plan.filter((c) => c.kind === 'toggle').map((c) => c.path.join('.'));
-    expect(toggles).toEqual(expect.arrayContaining(['top', 'outer', 'bottom', 'socks']));
+    expect(toggles).toEqual(expect.arrayContaining(['top', 'outer', 'bottom', 'dress', 'socks']));
     expect(plan.filter((c) => c.kind === 'accessory').map((c) => c.accessory)).toEqual(Object.keys(ACCESSORY_SCHEMAS));
   });
 });
