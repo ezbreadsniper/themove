@@ -58,7 +58,8 @@ function exportableUserData(object, root) {
     const { definition, collider, stats } = object.userData;
     return { definition, collider, stats: { triangles: stats.triangles, drawCalls: stats.drawCalls } };
   }
-  return object.userData.slot ? { slot: object.userData.slot } : {};
+  const { slot, correctives } = object.userData;
+  return { ...(slot ? { slot } : {}), ...(correctives?.length ? { correctives } : {}) };
 }
 
 /** Exports a built character plus its procedural clips as binary glTF with Mixamo joint names. */

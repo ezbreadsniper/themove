@@ -29,7 +29,7 @@ function validateStructure(json) {
 }
 
 const presetDir = 'src/character/presets';
-const ids = readdirSync(presetDir).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(readFileSync(`${presetDir}/${f}`, 'utf8')).id);
+const ids = readdirSync(presetDir).filter((f) => f.endsWith('.json') && f !== 'meta.json').map((f) => JSON.parse(readFileSync(`${presetDir}/${f}`, 'utf8')).id);
 
 mkdirSync('exports', { recursive: true });
 mkdirSync('docs/evidence', { recursive: true });

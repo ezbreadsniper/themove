@@ -10,6 +10,7 @@ import { buildHair, hairlineFor, HAIR_STYLES } from '../geo/parts/hair.js';
 import { buildTop, buildVest, buildBottom, buildSocks } from '../geo/parts/garments.js';
 import { buildShoes, shoeCoversFoot, shoeIsShiny, shoeFootLift, shoeDoubleSided, shoeCollider, SHOE_TYPES } from '../geo/parts/shoes.js';
 import { bakeAnkleCorrectives, bakeHipCorrectives } from '../garment/correctives.js';
+import { bakeBodyCorrectives } from '../rig/body-correctives.js';
 import { collisionMargin } from '../garment/fabric-physics.js';
 import { LAYER_GAP } from '../garment/layers.js';
 import { buildCap, buildGlasses, buildWrapShades, buildChains, buildBeanie, buildBucket, buildDurag, buildHeadband, buildEarrings, buildWristwear, buildCigarette, buildBalaclava } from '../geo/parts/accessories.js';
@@ -316,6 +317,7 @@ export function buildCharacter(input) {
   meshes.push(skinnedMesh({ name: 'mouth', slot: 'mouth', mb: buildMouth(shape), raster: mouthTex, opts: { doubleSide: true } }, rig.skeleton));
   for (const part of parts) meshes.push(skinnedMesh(part, rig.skeleton));
   meshes.forEach((m) => group.add(m));
+  bakeBodyCorrectives(meshes[0], rig);
   const bottomMesh = meshes.find((m) => m.name === 'bottom');
   if (bottomMesh && def.bottom.type === 'skirt') {
     const shoes = def.shoes && SHOE_TYPES.includes(def.shoes.type) && def.shoes.type !== 'barefoot' ? shoeCollider(layout, def.shoes.type, { size: def.shoes.size }) : null;

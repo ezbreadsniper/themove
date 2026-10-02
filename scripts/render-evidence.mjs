@@ -14,7 +14,7 @@ import { ensureServer, openPage } from './lib/browser.mjs';
 
 const OUT = 'docs/evidence';
 const presetDir = 'src/character/presets';
-const ids = readdirSync(presetDir).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(readFileSync(`${presetDir}/${f}`, 'utf8')).id);
+const ids = readdirSync(presetDir).filter((f) => f.endsWith('.json') && f !== 'meta.json').map((f) => JSON.parse(readFileSync(`${presetDir}/${f}`, 'utf8')).id);
 const only = process.argv.includes('--quick');
 
 mkdirSync(OUT, { recursive: true });

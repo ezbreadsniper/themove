@@ -9,7 +9,7 @@ import { ensureServer, openPage } from './lib/browser.mjs';
 const OUT = 'docs/evidence/orbit';
 const YAWS = [0, 45, 90, 135, 180, 225, 270, 315];
 const presetDir = 'src/character/presets';
-const all = readdirSync(presetDir).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(readFileSync(`${presetDir}/${f}`, 'utf8')).id);
+const all = readdirSync(presetDir).filter((f) => f.endsWith('.json') && f !== 'meta.json').map((f) => JSON.parse(readFileSync(`${presetDir}/${f}`, 'utf8')).id);
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const ids = args.length ? args : all;
 const zoneArg = process.argv.find((a) => a.startsWith('--zones='));

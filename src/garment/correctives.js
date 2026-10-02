@@ -25,7 +25,7 @@ export const HIP_DRIVERS = [
 
 const X = new THREE.Vector3(1, 0, 0);
 
-function boneByName(skeleton, name) {
+export function boneByName(skeleton, name) {
   return skeleton.bones.find((b) => b.name === name || b.name.endsWith(`:${name}`));
 }
 
@@ -253,7 +253,7 @@ export function bakeHipCorrectives(mesh, rig, layout, { margin = 0.006, extra = 
 }
 
 /** Appends baked targets to the mesh's morph attributes and driver table. */
-function attach(mesh, targets) {
+export function attach(mesh, targets) {
   if (!targets.length) return null;
   const geo = mesh.geometry;
   const prev = geo.morphAttributes.position ?? [];
