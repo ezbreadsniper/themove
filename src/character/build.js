@@ -9,8 +9,9 @@ import { createHeadShape, buildHead, buildMouth } from '../geo/parts/head.js';
 import { buildHair, hairlineFor, HAIR_STYLES } from '../geo/parts/hair.js';
 import { buildTop, buildVest, buildBottom, buildSocks } from '../geo/parts/garments.js';
 import { buildShoes, shoeCoversFoot, shoeIsShiny, shoeFootLift, shoeDoubleSided, shoeCollider, SHOE_TYPES } from '../geo/parts/shoes.js';
-import { bakeAnkleCorrectives } from '../garment/correctives.js';
+import { bakeAnkleCorrectives, bakeHipCorrectives } from '../garment/correctives.js';
 import { collisionMargin } from '../garment/fabric-physics.js';
+import { LAYER_GAP } from '../garment/layers.js';
 import { buildCap, buildGlasses, buildWrapShades, buildChains, buildBeanie, buildBucket, buildDurag, buildHeadband, buildEarrings, buildWristwear, buildCigarette, buildBalaclava } from '../geo/parts/accessories.js';
 import { Raster } from '../tex/raster.js';
 import { buildBelt } from '../geo/parts/belt.js';
@@ -18,9 +19,9 @@ import { buildJacket, buildPuffer } from '../geo/parts/outerwear.js';
 import { buildBeard } from '../geo/parts/beard.js';
 import { STRAP_TOPS, buildStrapTop, buildSkirt } from '../geo/parts/womenswear.js';
 
-function buildSkirtFor(layout, style) {
+function buildSkirtFor(layout, style, overHemY = null) {
   const k = layout.measures.height / 1.78;
-  return buildSkirt(layout, style, { riseY: layout.measures.hipsY + (style.rise ?? 0.04) * k, ease: 0.008 + (style.fit ?? 0.5) * 0.03 });
+  return buildSkirt(layout, style, { riseY: layout.measures.hipsY + (style.rise ?? 0.04) * k, ease: 0.008 + (style.fit ?? 0.5) * 0.03, overHemY });
 }
 import { paintJacket, outerFabric } from '../tex/outerwear.js';
 import { paintHairTexture } from '../tex/hair.js';
@@ -98,18 +99,35 @@ const BULKY_UNDER_CAP = ['afro', 'messy', 'twists', 'curlyMop'];
  * Part recipes. Each returns [{ name, mb, raster, opts }] and optional cover info.
  * Order matters only for `cover`, which the body reads to skip hidden skin.
  */
+/** Lowest hem of the upper-body layers that hang over the waistband (null when nothing does). */
+function overHem(ctx) {
+  const hems = [ctx.topLayer?.hemY, ctx.outerHemY].filter((y) => y != null);
+  return hems.length ? Math.min(...hems) : null;
+}
+
+/** What an untucked top / jacket must clear at the waist: the trouser fit, or a skirt's real surface. */
+function bottomUnder(ctx) {
+  const { def, layout } = ctx;
+  if (!def.bottom) return null;
+  if (def.bottom.type === 'skirt') {
+    ctx.skirtSurface ??= buildSkirtFor(layout, def.bottom).surface;
+    return { surface: ctx.skirtSurface, gap: LAYER_GAP };
+  }
+  return def.bottom.fit ?? 0.7;
+}
+
 const RECIPES = {
   top(ctx) {
     const { def, layout, rng } = ctx;
     if (!def.top) return { parts: [] };
     if (STRAP_TOPS[def.top.type]) {
-      const res = buildStrapTop(layout, def.top, { overPants: def.bottom ? def.bottom.fit ?? 0.7 : null });
+      const res = buildStrapTop(layout, def.top, { overPants: bottomUnder(ctx) });
       ctx.topLayer = { surface: res.surface, collar: null, hemY: res.hemY };
       const raster = paintTop({ ...def.top, sleeve: 'none' }, rng.fork('topTex'));
       return { parts: [{ name: 'top', mb: res.mb, raster, opts: { doubleSide: true, fabric: def.top.fabric } }], cover: { torsoFrom: 'chest', topHemY: res.hemY } };
     }
     const underJacket = !!def.outer && !['vest', 'puffer'].includes(def.outer.type);
-    const res = buildTop(layout, def.top, { overPants: def.bottom ? def.bottom.fit ?? 0.7 : null, hiddenSleeves: underJacket });
+    const res = buildTop(layout, def.top, { overPants: bottomUnder(ctx), hiddenSleeves: underJacket });
     ctx.topLayer = { surface: res.surface, collar: res.collar, hemY: res.hemY };
     const raster = paintTop({ ...def.top, pattern: def.top.type === 'rugby' ? 'rugby' : def.top.pattern }, rng.fork('topTex'));
     return { parts: [{ name: 'top', mb: res.mb, raster, opts: { doubleSide: true, fabric: def.top.fabric } }], cover: { torsoFrom: def.top.sleeve === 'none' ? 'upperChest' : 'trapezius', armFromS: res.coversArmToS, topHemY: res.hemY } };
@@ -124,14 +142,15 @@ const RECIPES = {
     }
     const underHemY = def.top ? layout.measures.hipsY - (def.top.length ?? 0.07) * (layout.measures.height / 1.78) : null;
     if (def.outer.type === 'puffer') {
-      const res = buildPuffer(layout, def.outer, { underFit: def.top?.fit ?? 0.2, overPants: def.bottom ? def.bottom.fit ?? 0.7 : null, underHemY });
+      const res = buildPuffer(layout, def.outer, { underFit: def.top?.fit ?? 0.2, overPants: bottomUnder(ctx), underHemY });
       ctx.outerLayer = { surface: res.surface, gap: 0 };
       return {
         parts: [{ name: 'outer', mb: res.mb, raster: paintJacket(def.outer, rng.fork('jacketTex')), opts: { doubleSide: true, fabric: outerFabric(def.outer) } }],
         cover: { torsoFrom: 'trapezius', topHemY: res.hemY },
       };
     }
-    const res = buildJacket(layout, def.outer, { underFit: def.top?.fit ?? 0.2, overPants: def.bottom ? def.bottom.fit ?? 0.7 : null, underHemY });
+    const res = buildJacket(layout, def.outer, { underFit: def.top?.fit ?? 0.2, overPants: bottomUnder(ctx), underHemY });
+    ctx.outerHemY = res.hemY;
     return {
       parts: [{ name: 'outer', mb: res.mb, raster: paintJacket(def.outer, rng.fork('jacketTex')), opts: { doubleSide: true, fabric: outerFabric(def.outer) } }],
       cover: { torsoFrom: 'trapezius', armFromS: res.coversArmToS, topHemY: res.hemY },
@@ -141,8 +160,8 @@ const RECIPES = {
     const { def, layout, rng } = ctx;
     if (!def.bottom) return { parts: [] };
     const skirt = def.bottom.type === 'skirt';
-    const res = skirt ? buildSkirtFor(layout, def.bottom) : buildBottom(layout, def.bottom, rng.fork('bottomGeo'), { under: ctx.topLayer, shoes: def.shoes, socks: def.socks });
-    const legsBelowY = skirt ? res.hemY + 0.05 : def.bottom.length === 'full' ? null : Math.min(layout.world.LeftUpLeg.y - 0.04, res.hemY + 0.12);
+    const res = skirt ? buildSkirtFor(layout, def.bottom, overHem(ctx)) : buildBottom(layout, def.bottom, rng.fork('bottomGeo'), { under: ctx.topLayer, shoes: def.shoes, socks: def.socks });
+    const legsBelowY = skirt ? layout.world.LeftUpLeg.y - 0.06 * (layout.measures.height / 1.78) : def.bottom.length === 'full' ? null : Math.min(layout.world.LeftUpLeg.y - 0.04, res.hemY + 0.12);
     const parts = [{ name: 'bottom', mb: res.mb, raster: paintBottom(def.bottom, rng.fork('bottomTex')), opts: { doubleSide: true, fabric: def.bottom.kind } }];
     if (def.bottom.belt) parts.push({ name: 'belt', mb: buildBelt(layout, { riseY: res.riseY, ease: res.ease }), raster: paintBelt(def.bottom.belt, rng.fork('beltTex')), opts: { shiny: true } });
     return { parts, cover: { legsBelowY, torsoFrom: 'pelvisTop', lowerFrom: 'pelvisTop' } };
@@ -298,7 +317,10 @@ export function buildCharacter(input) {
   for (const part of parts) meshes.push(skinnedMesh(part, rig.skeleton));
   meshes.forEach((m) => group.add(m));
   const bottomMesh = meshes.find((m) => m.name === 'bottom');
-  if (bottomMesh && def.shoes && SHOE_TYPES.includes(def.shoes.type) && def.shoes.type !== 'barefoot') {
+  if (bottomMesh && def.bottom.type === 'skirt') {
+    const shoes = def.shoes && SHOE_TYPES.includes(def.shoes.type) && def.shoes.type !== 'barefoot' ? shoeCollider(layout, def.shoes.type, { size: def.shoes.size }) : null;
+    bakeHipCorrectives(bottomMesh, rig, layout, { margin: collisionMargin(def.bottom.kind ?? 'cotton') + 0.006, shoes, topY: overHem(ctx) });
+  } else if (bottomMesh && def.shoes && SHOE_TYPES.includes(def.shoes.type) && def.shoes.type !== 'barefoot') {
     const colliders = shoeCollider(layout, def.shoes.type, { size: def.shoes.size });
     bakeAnkleCorrectives(bottomMesh, rig, colliders, { margin: collisionMargin(def.bottom.kind ?? 'denim') + 0.003 });
   }

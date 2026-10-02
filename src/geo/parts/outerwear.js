@@ -22,12 +22,13 @@ export function buildJacket(layout, style, { underFit = 0.3, overPants = null, u
   const hemY = underHemY !== null ? Math.min(wanted, underHemY - 0.012) : wanted;
   const over = 0.016 + fit * 0.02;
   const rows = topBodyRings(layout, { fit: Math.max(underFit, fit * 0.6), hemY, neckScale: style.type === 'bomber' ? 1.25 : 1.45, collarGap: 0.02, over });
-  if (overPants !== null) clearPants(layout, rows, overPants + 0.15);
+  if (overPants !== null) clearPants(layout, rows, typeof overPants === 'object' ? { ...overPants, gap: overPants.gap * 2 } : overPants + 0.15);
   const body = style.type === 'hoodie' ? rows : rows.filter((r) => !r.collar || r.neckBase);
   const open = style.open && style.type !== 'hoodie';
   const gap = open ? 0.06 : 0;
-  if (open) loftTop(mb, layout, body, GARMENT_UV.top.body, { arc: [gap, 1 - gap], uOffset: 0.5, sides: 16 });
-  else loftTop(mb, layout, body, GARMENT_UV.top.body, { sides: 14 });
+  const legPull = overPants && typeof overPants === 'object' ? 0 : 1;
+  if (open) loftTop(mb, layout, body, GARMENT_UV.top.body, { arc: [gap, 1 - gap], uOffset: 0.5, sides: 16, legPull });
+  else loftTop(mb, layout, body, GARMENT_UV.top.body, { sides: 14, legPull });
   const endFrac = (m.upperArm + m.foreArm * 0.97) / m.upperArm;
   for (const [side] of SIDES) {
     buildSleeve(mb, layout, side, { endFrac, fit: Math.min(1, Math.max(underFit, fit) + 0.2), armhole: armholeFor(rows, side), bodyRows: rows, cuff: 0.008, uvRect: GARMENT_UV.top[side === 'Left' ? 'sleeveL' : 'sleeveR'] });
@@ -50,9 +51,9 @@ export function buildPuffer(layout, style, { underFit = 0.3, overPants = null, u
   const hemY = underHemY !== null ? Math.min(wanted, underHemY - 0.012) : wanted;
   const over = 0.03 + (style.fit ?? 0.5) * 0.015;
   const base = topBodyRings(layout, { fit: Math.max(underFit, 0.35), hemY, neckScale: 1.5, collarGap: 0.024, over, sleeveless: true });
-  if (overPants !== null) clearPants(layout, base, overPants + 0.15);
+  if (overPants !== null) clearPants(layout, base, typeof overPants === 'object' ? { ...overPants, gap: overPants.gap * 2.5 } : overPants + 0.15);
   const body = quilt(base.filter((r) => !r.collar || r.neckBase), m.shoulderY - 0.07 * k);
-  loftTop(mb, layout, body, GARMENT_UV.top.body, { sides: 16 });
+  loftTop(mb, layout, body, GARMENT_UV.top.body, { sides: 16, legPull: overPants && typeof overPants === 'object' ? 0 : 1 });
   buildStandCollar(mb, layout, { open: false, height: 0.06 * k, base: m.neckRadius * 1.55 + 0.026, puff: 0.006 });
   return { mb, coversArmToS: null, hemY, surface: bodySurface(base) };
 }

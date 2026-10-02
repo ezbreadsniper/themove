@@ -1,0 +1,10 @@
+import { buildCharacter } from '../../src/character/build.js';
+import { shoeCollider } from '../../src/geo/parts/shoes.js';
+import { BODY_VARIANTS } from '../../src/garment/audit.js';
+import { readFileSync } from 'node:fs';
+const trial = JSON.parse(readFileSync('src/character/presets/trial-default.json','utf8'));
+globalThis.__drapeLog = [];
+const g = buildCharacter({ ...trial, body: { ...trial.body, ...BODY_VARIANTS[process.argv[2]] }, bottom: { length: 'full', type: 'pants', kind: 'twill', fit: 0.9, cut: 'wide', stack: 0.4 }, socks: { color: '#ddd', height: 0.16 } });
+const SIDE = process.argv[3] ?? 'Left'; const col = shoeCollider(g.userData.layout, trial.shoes.type)[SIDE];
+const { rows } = globalThis.__drapeLog[SIDE === 'Left' ? 0 : 1];
+for (const r of rows.slice(-3)) console.log('row', r.row, r.points.slice(0,10).map((p,k)=>`${k}:${p.y.toFixed(3)}/${(p.y-col.topAt(p.x,p.z)).toFixed(3)} z${p.z.toFixed(2)}`).join(' '));

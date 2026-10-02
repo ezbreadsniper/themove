@@ -7,6 +7,7 @@ import { fabricPhysics, collisionMargin } from '../../garment/fabric-physics.js'
 import { draftTrousers } from '../../garment/pattern.js';
 import { drapeTube, resampleDrape } from '../../garment/drape.js';
 import { legCollider } from '../../garment/colliders.js';
+import { clearUnder, LAYER_GAP } from '../../garment/layers.js';
 
 const smoothstep = (a, b, x) => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
@@ -105,7 +106,9 @@ export function loftTop(mb, layout, rows, uvRect, opts = {}) {
     z: Z,
     n: r.n ?? 2.4,
     v: r.collar ? 0.97 + i * 0.001 : ((r.y - yMin) / (yMax - yMin)) * 0.94,
-    w: torsoWeights(layout, r.y, r.y < hipsY ? Math.min(0.35, (hipsY - r.y) * 4) : 0),
+    // Below the hips a loose hem drifts with the thighs, except over a skirt, which hangs from the
+    // pelvis under the hem; matching the layer underneath keeps the two from crossing in motion.
+    w: torsoWeights(layout, r.y, r.y < hipsY ? Math.min(0.35, (hipsY - r.y) * 4) * (opts.legPull ?? 1) : 0),
   }));
   mb.loft(rings, { sides: opts.sides ?? 12, uv: uvRect, arc: opts.arc, uOffset: opts.uOffset });
 }
@@ -159,6 +162,7 @@ export function bodySurface(rows) {
     return { r: ringRadius(ring, theta), cz: l('cz', 0) };
   };
   fn.top = sorted[sorted.length - 1].y;
+  fn.bottom = sorted[0].y;
   fn.shoulderY = (sorted.find((r) => r.key === 'upperChest') ?? sorted[sorted.length - 1]).y;
   return fn;
 }
@@ -177,6 +181,10 @@ function snapUnder(surface, p, inset) {
  * the waistband instead of the trousers poking through or being pinched in.
  */
 export function clearPants(layout, rows, pantsFit) {
+  if (pantsFit && typeof pantsFit === 'object') {
+    clearUnder(rows, pantsFit.surface, pantsFit.gap);
+    return;
+  }
   const by = Object.fromEntries(torsoRings(layout).map((r) => [r.key, r]));
   const infl = 0.008 + pantsFit * 0.037;
   const clear = 0.009;
@@ -250,7 +258,7 @@ export function buildTop(layout, style, { overPants = null, hiddenSleeves = fals
   const hemY = m.hipsY - (style.length ?? 0.07) * (m.height / 1.78);
   const rows = topBodyRings(layout, { fit, hemY, neckScale: style.collar === 'polo' ? 1.35 : 1.25, sleeveless: style.sleeve === 'none' });
   if (overPants) clearPants(layout, rows, overPants);
-  loftTop(mb, layout, rows, GARMENT_UV.top.body);
+  loftTop(mb, layout, rows, GARMENT_UV.top.body, { legPull: overPants && typeof overPants === 'object' ? 0 : 1 });
   const sleeveEnd = { short: 0.62 + fit * 0.28, long: (m.upperArm + m.foreArm * 0.94) / m.upperArm, none: 0 }[style.sleeve ?? 'short'];
   if (sleeveEnd > 0 && !hiddenSleeves) {
     for (const [side] of SIDES) {

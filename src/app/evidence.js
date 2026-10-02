@@ -87,7 +87,15 @@ async function render(opts) {
   if (zone) {
     const { measures: m, world } = stage.entries[0].character.userData.layout;
     const z = zone(m, world);
-    stage.frame({ target: new THREE.Vector3(placements[0].x + (z.x ?? 0), z.y, 0), height: z.h, yaw: camYaw, pitch: opts.pitch ?? z.pitch ?? 3 });
+    // Body zones follow the pelvis when a clip lowers or moves it (sit, crouch); feet zones stay on the ground.
+    const ch = stage.entries[0].character;
+    const hips = ch.userData.rig.bones.find((b) => b.name === 'Hips');
+    const posed = new THREE.Vector3();
+    hips.getWorldPosition(posed);
+    ch.parent.worldToLocal(posed);
+    const follow = ['hips', 'torso', 'shoulders', 'legs'].includes(opts.zone) ? posed.y - world.Hips.y : 0;
+    const fz = ['hips', 'torso', 'shoulders', 'legs'].includes(opts.zone) ? posed.z - world.Hips.z : 0;
+    stage.frame({ target: new THREE.Vector3(placements[0].x + (z.x ?? 0), z.y + follow * (opts.zone === 'legs' ? 0.5 : 1), fz), height: z.h, yaw: camYaw, pitch: opts.pitch ?? z.pitch ?? 3 });
   } else if (framing === 'full') {
     const tall = clip === 'jump' || clip === 'cheer' ? 1.25 : 1;
     const h = Math.max(2.05 * tall, span / aspect * 1.05);

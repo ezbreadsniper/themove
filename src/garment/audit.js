@@ -126,7 +126,7 @@ export function shoeContact(group, { colliders, zoneY = 0.3 } = {}) {
  * Skin poke-through in pose: every covered body vertex casts a ray outward along its posed normal; it
  * must hit the posed garment within `reach`. Covered = bind position inside `filter`.
  */
-export function pokeThrough(group, garmentName, filter, { reach = 0.06, stride = 2 } = {}) {
+export function pokeThrough(group, garmentName, filter, { reach = 0.35, stride = 2 } = {}) {
   const body = meshNamed(group, 'body');
   const garment = meshNamed(group, garmentName);
   if (!body || !garment) return { ratio: 0, checked: 0 };
@@ -143,11 +143,15 @@ export function pokeThrough(group, garmentName, filter, { reach = 0.06, stride =
   bgeo.setIndex(new THREE.BufferAttribute(body.geometry.index.array, 1));
   bgeo.computeVertexNormals();
   const nrm = bgeo.attributes.normal;
+  bgeo.computeBoundingSphere();
+  const bMesh = new THREE.Mesh(bgeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
   const bind = body.geometry.attributes.position;
   const ray = new THREE.Raycaster();
+  const back = new THREE.Raycaster();
   const p = new THREE.Vector3();
   const n = new THREE.Vector3();
   const b = new THREE.Vector3();
+  let exposed = 0;
   let checked = 0;
   let out = 0;
   const offenders = [];
@@ -161,13 +165,31 @@ export function pokeThrough(group, garmentName, filter, { reach = 0.06, stride =
     ray.far = reach + 0.02;
     checked += 1;
     const hits = ray.intersectObject(gMesh);
-    // Outside = the garment's first hit is behind the skin (skin already past the fabric).
-    if (!hits.length || hits[0].distance < 0.02 - 0.003) {
+    // Skin facing other skin (inner thighs, calves) is occluded before it could reach the fabric.
+    if (!hits.length) {
+      const self = ray.intersectObject(bMesh).filter((h) => h.distance > 0.035);
+      if (self.length) continue;
+    }
+    // Penetration = the skin is past the fabric: the garment is found just *behind* the skin (within
+    // 6 cm inward) and not in front of it. Skin with no garment on either side is merely exposed (a
+    // short skirt riding up), which `exposed` counts separately.
+    const front = hits.filter((h) => h.distance > 0.02 - 0.003);
+    let behind = hits.some((h) => h.distance <= 0.02 - 0.003);
+    if (!behind) {
+      back.set(p, n.clone().negate());
+      back.far = 0.06;
+      behind = back.intersectObject(gMesh).length > 0;
+    }
+    if (!front.length && !behind) {
+      exposed += 1;
+      continue;
+    }
+    if (!front.length || (behind && front[0].distance > 0.2)) {
       out += 1;
       if (offenders.length < 12) offenders.push(b.toArray().map((x) => +x.toFixed(3)));
     }
   }
-  return { ratio: checked ? out / checked : 0, checked, offenders };
+  return { ratio: checked ? out / checked : 0, checked, offenders, exposed: checked ? exposed / checked : 0 };
 }
 
 /** Standing: the front of each hem should rest on (not float above) the shoe upper. */
