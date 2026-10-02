@@ -10,6 +10,8 @@
   #view { position: absolute; inset: 0; }
   #view canvas { display: block; }
   #hud { position: absolute; left: 12px; bottom: 12px; color: #d9d9e4; font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; white-space: pre; }
+  #save { position: absolute; left: 12px; bottom: 66px; color: #9fd89f; font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+  #save.bad { color: #ff8a6a; }
   #errors { position: absolute; left: 12px; top: 12px; color: #ffd34a; font-size: 12px; text-shadow: 1px 1px 0 #000; white-space: pre; }
 </style>
 </head>
@@ -17,6 +19,7 @@
 <div id="view"></div>
 <div id="errors"></div>
 <div id="hud"></div>
+<div id="save"></div>
 <script type="module" src="/src/app/creator.js"></script>
 </body>
 </html>
