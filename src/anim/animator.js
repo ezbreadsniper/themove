@@ -58,6 +58,7 @@ export class Animator {
     this.full = null;
     this.aim = { yaw: 0, pitch: 0 };
     this.aimActions = {};
+    this.sustained = {};
     this.stabilizeWeight = 0;
     this.stabilizeTarget = 0;
     this.mixer.addEventListener('finished', (e) => this.onFinished(e.action));
@@ -106,6 +107,8 @@ export class Animator {
     if (prev && group && prev.getClip().userData.syncGroup === group) next.time = (prev.time / prev.getClip().duration) * next.getClip().duration;
     this.base = next;
     this.baseName = name;
+    // Keep a gait-synced upper loop (weapon walk / run) in phase with the new gait.
+    if (this.upper && !this.locked && group && this.upper.getClip().userData.syncGroup === group) this.upper.time = (next.time / next.getClip().duration) * this.upper.getClip().duration;
     return this;
   }
 
@@ -121,6 +124,9 @@ export class Animator {
     const next = this.action(name, 'upper');
     if (!this.upper) this.splitBase();
     this.swap(this.upper, next, fade ?? (oneShot ? BLEND.upperOneShot : BLEND.upper), { loop: !oneShot });
+    // An upper loop over the same gait (weapon walk / run) starts in phase with the legs.
+    const group = clip.userData.syncGroup;
+    if (!oneShot && group && this.base && this.base.getClip().userData.syncGroup === group) next.time = (this.base.time / this.base.getClip().duration) * clip.duration;
     this.upper = next;
     this.upperName = name;
     if (oneShot) this.locked = next;
@@ -172,6 +178,40 @@ export class Animator {
     return this;
   }
 
+  /**
+   * Sustained additive loop (automatic fire): call every frame with on = trigger held. The loop's weight
+   * eases up while on (the muzzle climbs onto the clip's plateau) and back down when released (the
+   * recovery), and is forced off while a one-shot locks the upper body (reload, draw).
+   */
+  sustain(name, on, { rise = 7, fall = 5 } = {}) {
+    if (!this.clips[name]) return this;
+    const s = this.sustained[name] ?? (this.sustained[name] = { action: null, weight: 0, target: 0, rise, fall });
+    s.target = on && !this.locked ? 1 : 0;
+    s.rise = rise;
+    s.fall = fall;
+    if (s.target && !s.action) {
+      s.action = this.action(name, 'additive');
+      s.action.setLoop(THREE.LoopRepeat, Infinity);
+      s.action.reset().setEffectiveWeight(0).play();
+    }
+    return this;
+  }
+
+  updateSustained(dt) {
+    for (const s of Object.values(this.sustained)) {
+      if (!s.action) continue;
+      if (this.locked) s.target = 0;
+      s.weight += (s.target - s.weight) * Math.min(1, dt * (s.target > s.weight ? s.rise : s.fall));
+      if (!s.target && s.weight < 0.002) {
+        s.action.stop();
+        s.action = null;
+        s.weight = 0;
+        continue;
+      }
+      s.action.setEffectiveWeight(s.weight);
+    }
+  }
+
   /** Full-body one-shot (jump, land, hit, death) over every layer; afterwards the layers resume. */
   oneShot(name) {
     const a = this.action(name, 'full');
@@ -210,6 +250,7 @@ export class Animator {
     // foot IK, support IK) is undone before each mixer step; otherwise it would compound on frames
     // where a clip holds still.
     this.restorePose();
+    this.updateSustained(dt);
     this.mixer.update(dt);
     this.snapshotPose();
     this.stabilizeWeight += (this.stabilizeTarget - this.stabilizeWeight) * Math.min(1, dt * STABILIZE_RATE);

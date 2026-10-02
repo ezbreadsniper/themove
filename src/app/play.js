@@ -158,7 +158,7 @@ for (const c of COURSE) {
   }
 }
 const controller = new PlayController(character, clips, { root: entry.holder, ground });
-const smoke = new SmokeEmitter(stage.scene, character, { autoHide: true });
+const smoke = new SmokeEmitter(stage.scene, character, { autoHide: true, animator: controller.animator });
 
 /** A seat appears under the character when it sits (chair: a stool; sofa: a seat block with a back). */
 const seatMesh = new THREE.Group();
@@ -235,7 +235,6 @@ function step(dt) {
   if (controller.seat !== wasSeated && controller.seat) placeSeat();
   if (!controller.seat && controller.state.locomotion !== 'idle') seatMesh.clear();
   const a = controller.animator;
-  smoke.syncActions([a.full, a.upper, a.base]);
   smoke.update(dt);
   stage.update(dt);
   frameCamera();

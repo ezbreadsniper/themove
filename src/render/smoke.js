@@ -147,8 +147,11 @@ export class SmokeEmitter {
   /**
    * opts.autoHide: show the cigarette only while a smoking clip plays (or a lit butt is out); the
    * game uses it, the evidence stage leaves the accessory always visible.
+   * opts.animator (or emitter.animator = ...): an Animator whose layers update() syncs by itself, so a
+   * game loop only has to call update(dt) after the animator has stepped.
    */
-  constructor(scene, character, { seed = character.name || 'smoke', autoHide = false } = {}) {
+  constructor(scene, character, { seed = character.name || 'smoke', autoHide = false, animator = null } = {}) {
+    this.animator = animator;
     this.scene = scene;
     this.character = character;
     this.rng = createRng(`smoke:${seed}`);
@@ -397,6 +400,7 @@ export class SmokeEmitter {
   }
 
   update(dt) {
+    if (this.animator) this.syncActions([this.animator.full, this.animator.upper, this.animator.base]);
     this.time += dt;
     if (this.autoHide && this.cigMesh) this.cigMesh.visible = this.held && !!this.smokingSeen;
     const smoking = !this.autoHide || this.smokingSeen;

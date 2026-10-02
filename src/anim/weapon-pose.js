@@ -120,7 +120,7 @@ export function offsetXform(base, spec, { cant = 0, tilt = 0, yaw = 0, lift = 0 
 
 /** Weapon-local recoil offset: kick back along −Z and muzzle rise about the grip. */
 export function recoilXform(base, spec, kick) {
-  const k = spec.kind === 'pistol' ? { back: 0.03, rise: 9 } : { back: 0.035, rise: 4 };
+  const k = spec.kind === 'pistol' ? { back: 0.038, rise: 12 } : { back: 0.035, rise: 4.5 };
   const pivot = socket(spec, spec.kind === 'pistol' ? 'grip' : 'butt');
   const rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -THREE.MathUtils.degToRad(k.rise * kick));
   const q = base.quaternion.clone().multiply(rot);
@@ -165,11 +165,15 @@ export function handTarget(spec, wx, marks, side, name) {
     return { grip: marks.hips.clone().add(new THREE.Vector3(0.14 * k, 0.07 * k, 0.1 * k)), fingers: new THREE.Vector3(0.1, -1, 0.25).normalize(), palm: new THREE.Vector3(-1, 0, 0) };
   }
   if (name === 'magWell') {
-    const depth = spec.kind === 'pistol' ? 0.075 : 0.11;
+    const depth = spec.magWellDepth ?? (spec.kind === 'pistol' ? 0.075 : 0.11);
     return { grip: socketWorld(spec, wx, 'magazine').add(along(q, 0.012, -depth, 0)), fingers: along(q, 0, 0.25, 1).normalize(), palm: along(q, -0.3, 1, 0).normalize() };
   }
   if (name === 'slide') {
     return { grip: socketWorld(spec, wx, 'sight').add(along(q, 0.004, 0.004, -0.035)), fingers: along(q, -1, 0, 0), palm: along(q, 0, -1, 0) };
+  }
+  if (name === 'bolt' && spec.sockets.cock) {
+    // Top-mounted cocking knob: the hand comes over the top cover, palm down, fingers across.
+    return { grip: socketWorld(spec, wx, 'cock').add(along(q, 0.006, 0.022, -0.01)), fingers: along(q, -1, -0.15, 0.1).normalize(), palm: along(q, 0, -1, 0) };
   }
   if (name === 'bolt') {
     return { grip: socketWorld(spec, wx, 'ejection').add(along(q, 0.01, 0.035, -0.08)), fingers: along(q, -1, -0.2, 0).normalize(), palm: along(q, 0, -1, 0) };
