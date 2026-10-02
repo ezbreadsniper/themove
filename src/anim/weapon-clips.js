@@ -337,7 +337,7 @@ function longGunClips(T, type) {
     // Both flanks with the eyes following, then a chamber check: the bolt eased back a little and let go.
     [n('inspect')]: T(type, [[0, ready], [0.45, { stance: 'longInspect', spin: [60, 20], blade: 10, look: 10, lookTurn: 6 }], [1.15, { spin: [60, 20] }], [1.55, { spin: [-25, 35], lookTurn: -4 }], [2.05, { spin: [-25, 35] }], [2.35, { spin: [0, 12], L: 'bolt', look: 12, lookTurn: 0 }], [2.5, { L: 'bolt', slide: 0.35 }], [2.7, { L: 'bolt', slide: 0.35 }], [2.78, { slide: 0 }], [3.25, { ...ready, ...square, spin: [0, 0] }]], { events: [{ name: 'boltRelease', time: 2.78 }] }),
     // Rifle shove: the gun turned across the chest at port arms and driven out with both arms and the hips.
-    [n('melee')]: T(type, [[0, ready], [0.3, { stance: 'longPortWind', aim: [-6, 0], blade: 8, lean: -2, cheek: 0 }], [0.44, { stance: 'longPortStrike', aim: [4, 0], blade: 0, lean: 12 }], [0.56, { lean: 13 }], [1.0, ready]], { events: [{ name: 'hit', time: 0.42 }] }),
+    [n('melee')]: T(type, [[0, ready], [0.18, { spin: [55, 25], blade: 14 }], [0.42, { stance: 'longPortWind', spin: [0, 0], aim: [-6, 0], blade: 8, lean: -2, cheek: 0 }], [0.56, { stance: 'longPortStrike', aim: [4, 0], blade: 0, lean: 12 }], [0.68, { lean: 13 }], [0.94, { ...ready, spin: [55, 25], blade: 14 }], [1.16, { ...ready, spin: [0, 0] }]], { events: [{ name: 'hit', time: 0.54 }] }),
     [n('hitReact')]: T(type, [[0, aim], [0.07, { flinch: 1, kick: 0.6 }], [0.6, { flinch: 0, kick: 0 }]], { events: [{ name: 'hit', time: 0 }] }),
     [n('walk')]: T(type, [[0, ready]], { duration: 1, loop: true, body: 'walk', bob: 1 }),
     [n('walkAim')]: T(type, [[0, aim]], { duration: 1, loop: true, body: 'walk', bob: 0.25 }),

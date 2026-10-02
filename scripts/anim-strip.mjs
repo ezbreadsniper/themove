@@ -10,7 +10,8 @@ const dur = await page.evaluate(([i, c, b]) => {
   return window.evidence.clipDuration(p, c);
 }, [id, clip, JSON.parse(body)]);
 const n = +count;
-const frames = Array.from({ length: n }, (_, i) => ({ chars: [{ __preset: id, body: JSON.parse(body) }], clip, time: (i / n) * dur, camYaw: +camYaw }));
+const weapon = ['pistol', 'rifle', 'smg'].find((w) => clip.startsWith(`${w}_`));
+const frames = Array.from({ length: n }, (_, i) => ({ chars: [{ __preset: id, body: JSON.parse(body) }], clip, time: (i / n) * dur, camYaw: +camYaw, ...(weapon ? { weapon } : {}) }));
 const url = await page.evaluate(([f, o]) => window.evidence.strip(f, o), [frames, { width: 220, height: 420, labels: frames.map((f) => `${clip} ${f.time.toFixed(2)}s`) }]);
 writeFileSync(out, Buffer.from(url.split(',')[1], 'base64'));
 await browser.close();
