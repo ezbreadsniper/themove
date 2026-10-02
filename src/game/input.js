@@ -4,15 +4,18 @@
  * set on key-down and cleared by consume() after the game step reads them. In scripted mode (tests)
  * the key set is ignored and callers write the input object directly.
  *
- * Bindings: WASD move · Shift sprint · CapsLock walk/run toggle · Alt walk (hold) · C / Ctrl crouch
- * (toggle) · Space jump · E interact · F / RMB aim · LMB fire (hip-aims when not aiming) · R reload ·
- * 1 / 2 / 3 weapons, 0 holster · Q / MMB shoulder swap · X inspect · V melee · G smoke.
+ * Bindings: WASD run (the default gait) · Alt held or CapsLock toggle walk · Shift sprint (outdoors) ·
+ * C / Ctrl crouch (toggle) · Space jump · E interact · F / RMB aim · LMB fire (hip-aims when not
+ * aiming; held = full auto on automatic guns) · R reload · 1 pistol / 2 SMG / 3 rifle (only once
+ * owned, see Loadout), 0 holster · Q / MMB shoulder swap · X inspect · V melee · G smoke.
  * Mouse look uses pointer lock (click the view); without the lock, dragging looks around.
  */
 export const BINDINGS = Object.freeze({
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   sprint: ['ShiftLeft', 'ShiftRight'], walk: ['AltLeft', 'AltRight'], aim: ['KeyF'],
 });
+
+import { Loadout } from '../combat/loadout.js';
 
 const EDGES = ['jump', 'interact', 'reload', 'inspect', 'melee', 'smoke', 'shoulder'];
 
@@ -24,8 +27,27 @@ export function createInput() {
   };
 }
 
+/**
+ * Stick from the held keys: full deflection (run) by default, half (walk) while Alt is held or the
+ * CapsLock toggle is on; sprint only when not walking.
+ */
+export function moveFromKeys(keys, { walkToggle = false } = {}) {
+  const k = (list) => list.some((c) => keys.has(c));
+  let x = (k(BINDINGS.left) ? 1 : 0) - (k(BINDINGS.right) ? 1 : 0);
+  let z = (k(BINDINGS.forward) ? 1 : 0) - (k(BINDINGS.back) ? 1 : 0);
+  const len = Math.hypot(x, z);
+  if (len > 1) {
+    x /= len;
+    z /= len;
+  }
+  const walk = k(BINDINGS.walk) !== walkToggle;
+  const scale = walk ? 0.5 : 1;
+  return { x: x * scale, z: z * scale, walk, sprint: k(BINDINGS.sprint) && !walk };
+}
+
 export class GameInput {
-  constructor(element, { onLook = null } = {}) {
+  constructor(element, { onLook = null, loadout = new Loadout() } = {}) {
+    this.loadout = loadout;
     this.element = element;
     this.state = createInput();
     this.keys = new Set();
@@ -59,10 +81,8 @@ export class GameInput {
       if (e.code === 'KeyQ') s.shoulder = true;
       if (e.code === 'KeyC' || e.code === 'ControlLeft') s.crouch = !s.crouch;
       if (e.code === 'CapsLock') this.walkToggle = !this.walkToggle;
-      if (e.code === 'Digit1') s.weapon = 'pistol';
-      if (e.code === 'Digit2') s.weapon = 'rifle';
-      if (e.code === 'Digit3') s.weapon = 'smg';
-      if (e.code === 'Digit0') s.weapon = null;
+      const pick = this.loadout.select(e.code);
+      if (pick !== undefined) s.weapon = pick;
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => {
@@ -100,18 +120,11 @@ export class GameInput {
     if (this.scripted) return this.state;
     const s = this.state;
     const k = (list) => list.some((c) => this.keys.has(c));
-    let x = (k(BINDINGS.left) ? 1 : 0) - (k(BINDINGS.right) ? 1 : 0);
-    let z = (k(BINDINGS.forward) ? 1 : 0) - (k(BINDINGS.back) ? 1 : 0);
-    const len = Math.hypot(x, z);
-    if (len > 1) {
-      x /= len;
-      z /= len;
-    }
-    s.walk = k(BINDINGS.walk) !== this.walkToggle;
-    const scale = s.walk ? 0.5 : 1;
-    s.move.x = x * scale;
-    s.move.z = z * scale;
-    s.sprint = k(BINDINGS.sprint) && !s.walk;
+    const m = moveFromKeys(this.keys, { walkToggle: this.walkToggle });
+    s.walk = m.walk;
+    s.move.x = m.x;
+    s.move.z = m.z;
+    s.sprint = m.sprint;
     s.aim = k(BINDINGS.aim) || this.mouse.right || (this.mouse.left && !!s.weapon);
     s.fire = this.mouse.left;
     return s;

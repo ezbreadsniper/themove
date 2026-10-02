@@ -1,0 +1,1338 @@
+diff --git a/src/world/kit/builder.js b/src/world/kit/builder.js
+index e204e0e..dba4429 100644
+--- a/src/world/kit/builder.js
++++ b/src/world/kit/builder.js
+@@ -54,6 +54,9 @@ class Accum {
+   }
+ }
+ 
++/** Solid tags that are furniture (physics may treat their tops / sides as prop-supporting statics). */
++export const FURNITURE_TAGS = new Set(['sofa', 'table', 'console', 'counter', 'fridge', 'cube', 'cart', 'bed', 'nightstand', 'dresser', 'vanity', 'toilet', 'shower', 'rack', 'bench', 'shelf', 'radiator', 'mirror', 'case', 'speaker', 'chair', 'stool', 'lamp']);
++
+ const tmpV = new THREE.Vector3();
+ const tmpN = new THREE.Vector3();
+ const tmpNM = new THREE.Matrix3();
+@@ -75,6 +78,7 @@ export class Kit {
+     this.layers = new Map();
+     this.emitLayer = -1;
+     this.interactables = [];
++    this.surfaces = [];
+   }
+ 
+   get m() {
+@@ -128,6 +132,13 @@ export class Kit {
+     return tmpV.set(p[0], p[1], p[2]).applyMatrix4(this.m).toArray();
+   }
+ 
++  /** World position even inside a dynamic (whose frame stack is pivot-local). */
++  toWorldAbs(p) {
++    tmpV.set(p[0], p[1], p[2]).applyMatrix4(this.m);
++    if (this.dynamic) tmpV.applyMatrix4(this.dynamic.pivotMatrix);
++    return tmpV.toArray();
++  }
++
+   /** Appends frame-local triangles. verts: [{p:[x,y,z], n:[x,y,z], uv?:[u,v]}], tris: index triples. */
+   append(mat, verts, tris, { uv = 'box', uvScale = [1, 1], uvOffset = [0, 0] } = {}) {
+     const a = this.accum(mat);
+@@ -367,7 +378,9 @@ export class Kit {
+     const target = this.dynamic ? this.dynamic.solids : this.solids;
+     const p = this.dynamic ? poly.map((q) => [...q]) : this.polyToWorld(poly);
+     const off = this.dynamic ? 0 : this.m.elements[13];
+-    target.push({ poly: p, y0: y0 + off, y1: y1 + off, tag });
++    const s = { poly: p, y0: y0 + off, y1: y1 + off, tag };
++    if (FURNITURE_TAGS.has(tag)) s.furniture = true;
++    target.push(s);
+     return this;
+   }
+ 
+@@ -417,17 +430,20 @@ export class Kit {
+    * of its own). `fill` scales the light's crude same-zone bounce; `on: false` starts it off.
+    */
+   light({ name, pos, color = '#ffd8a0', intensity = 1, range = 6, dir = null, cone = null, dynamic = false, zone = null, switchable = false, flicker = null, layer = null, shadow = false, fill = 1, on = true }) {
+-    const p = this.toWorld(pos);
++    const p = this.toWorldAbs(pos);
++    const follow = this.dynamic ? { dynamic: this.dynamic.name, offset: this.toWorld(pos) } : null;
+     let d = null;
+     if (dir) {
+-      tmpN.set(dir[0], dir[1], dir[2]).applyMatrix3(tmpNM.getNormalMatrix(this.m)).normalize();
++      const full = this.dynamic ? this.dynamic.pivotMatrix.clone().multiply(this.m) : this.m;
++      tmpN.set(dir[0], dir[1], dir[2]).applyMatrix3(tmpNM.getNormalMatrix(full)).normalize();
+       d = tmpN.toArray();
+     }
+     if (this.lights.some((l) => l.name === name)) throw new Error(`duplicate light ${name}`);
++    if (this.dynamic?.data.physical) this.dynamic.data.physical.light ??= name;
+     const layerName = layer ?? (switchable || flicker || shadow ? name : null);
+     const layerIndex = layerName ? this.layerIndex(layerName, color) : -1;
+     if (layerName) this.layers.get(layerName).lights.push(name);
+-    this.lights.push({ name, pos: p, color, intensity, range, dir: d, cone, dynamic, zone, switchable: !!switchable, flicker, layer: layerIndex, layerName, shadow, fill, on });
++    this.lights.push({ name, pos: p, color, intensity, range, dir: d, cone, dynamic, zone, switchable: !!switchable, flicker, layer: layerIndex, layerName, shadow, fill, on, follow });
+     return this;
+   }
+ 
+@@ -457,38 +473,101 @@ export class Kit {
+    */
+   interactable({ id, kind, pos, yaw = 0, radius = 1.2, prompt = 'Use', data = {} }) {
+     if (this.interactables.some((i) => i.id === id)) throw new Error(`duplicate interactable ${id}`);
+-    const out = { id, kind, pos: this.toWorld(pos), yaw: yaw + this.frameYaw(), radius, prompt, data: { ...data } };
+-    if (data.exit) out.data.exit = this.toWorld(data.exit);
++    const out = { id, kind, pos: this.toWorldAbs(pos), yaw: yaw + this.frameYaw(), radius, prompt, data: { ...data } };
++    if (data.exit) out.data.exit = this.toWorldAbs(data.exit);
++    if (this.dynamic) out.data.prop ??= this.dynamic.name;
+     this.interactables.push(out);
+     return this;
+   }
+ 
++  /** Yaw of the current frame (including a dynamic's pivot). */
+   frameYaw() {
+-    return Math.atan2(this.m.elements[8], this.m.elements[0]);
++    const e = this.m.elements;
++    const own = Math.atan2(e[8], e[0]);
++    if (!this.dynamic) return own;
++    const p = this.dynamic.pivotMatrix.elements;
++    return own + Math.atan2(p[8], p[0]);
+   }
+ 
+   /**
+-   * Loose prop simulated by the physics owner (contracts §3): geometry built in fn (local to `pos`,
+-   * y = 0 its base) becomes a dynamic with data.physical = { shape: 'box' | 'cylinder',
+-   * size: [w, h, d] | radius + height, mass }. A matching local solid is generated from the shape.
++   * Loose, simulated prop (contracts §3/§8): `kit.physical(name, buildFn, opts)` builds buildFn's
++   * geometry as its own dynamic node (pivot at opts.pos / opts.yaw in the current frame, y = 0 its
++   * resting base) with data.physical = { shape: 'box' | 'cylinder' | 'sphere' | 'hull', mass,
++   * material, breakable, anchored: 'wall' | 'ceiling' | null, anchor (world point it hangs from),
++   * light (name of the light it carries), bounds { min, max } (pivot-local), size | radius + height,
++   * offset (bounds centre) }. Unspecified sizes are fitted to the built geometry, and a matching
++   * local collision solid is generated. Legacy form: physical(name, pos, spec, fn, yaw).
+    */
+-  physical(name, pos, spec, fn, yaw = 0) {
+-    const physical = { shape: 'box', mass: 2, ...spec };
++  physical(name, a, b, c, d) {
++    let fn;
++    let opts;
++    if (typeof a === 'function') {
++      fn = a;
++      opts = { ...(b ?? {}) };
++    } else {
++      fn = c;
++      opts = { ...b, pos: a, yaw: d ?? 0 };
++    }
++    const { pos = [0, 0, 0], yaw = 0, anchor = null, ...spec } = opts;
++    const physical = { shape: 'box', mass: 1, material: 'plastic', breakable: false, anchored: null, ...spec };
+     this.beginDynamic(name, pos, yaw, { physical });
+     fn(this);
++    const bb = this.dynamicBounds(name);
++    physical.bounds = bb;
++    const size = [0, 1, 2].map((i) => bb.max[i] - bb.min[i]);
++    const cx = (bb.min[0] + bb.max[0]) / 2;
++    const cz = (bb.min[2] + bb.max[2]) / 2;
++    physical.offset ??= [cx, (bb.min[1] + bb.max[1]) / 2, cz];
+     if (physical.shape === 'cylinder') {
++      physical.radius ??= Math.max(size[0], size[2]) / 2;
++      physical.height ??= size[1];
++    } else if (physical.shape === 'sphere') {
++      physical.radius ??= Math.max(...size) / 2;
++    } else {
++      physical.size ??= size;
++    }
++    const y0 = bb.min[1];
++    const y1 = bb.max[1];
++    if (physical.shape === 'cylinder' || physical.shape === 'sphere') {
+       const r = physical.radius;
+-      this.solid(Array.from({ length: 8 }, (_, i) => [Math.cos((i / 8) * Math.PI * 2) * r, -Math.sin((i / 8) * Math.PI * 2) * r]), 0, physical.height, 'prop');
++      this.solid(Array.from({ length: 8 }, (_, i) => [cx + Math.cos((i / 8) * Math.PI * 2) * r, cz - Math.sin((i / 8) * Math.PI * 2) * r]), y0, y1, 'prop');
+     } else {
+-      const [w, h, d] = physical.size;
+-      this.solid([[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]], 0, h, 'prop');
++      const [w, , dd] = physical.size;
++      this.solid([[cx - w / 2, cz - dd / 2], [cx + w / 2, cz - dd / 2], [cx + w / 2, cz + dd / 2], [cx - w / 2, cz + dd / 2]], y0, y1, 'prop');
+     }
+     this.endDynamic();
++    if (anchor) physical.anchor = this.toWorld(anchor);
++    return this;
++  }
++
++  /** Pivot-local AABB of everything built so far into dynamic `name`. */
++  dynamicBounds(name) {
++    const min = [Infinity, Infinity, Infinity];
++    const max = [-Infinity, -Infinity, -Infinity];
++    for (const a of this.buckets.get(`dyn:${name}`)?.values() ?? []) {
++      for (let i = 0; i < a.pos.length; i += 3) {
++        for (let k = 0; k < 3; k++) {
++          min[k] = Math.min(min[k], a.pos[i + k]);
++          max[k] = Math.max(max[k], a.pos[i + k]);
++        }
++      }
++    }
++    if (min[0] === Infinity) return { min: [0, 0, 0], max: [0, 0, 0] };
++    return { min, max };
++  }
++
++  /**
++   * Support surface for loose props (contracts §8): a horizontal XZ polygon at height y (frame-local)
++   * that physics can rest things on (shelves, table tops, counters, console top, cart shelves).
++   */
++  surface(name, poly, y, data = {}) {
++    if (this.dynamic) throw new Error('surfaces cannot live on dynamic objects');
++    this.surfaces.push({ name, poly: this.polyToWorld(poly), y: this.yToWorld(y), ...data });
+     return this;
+   }
+ 
+   marker(name, pos, data = {}) {
+-    const p = this.toWorld(pos);
++    const p = this.toWorldAbs(pos);
+     const yaw = data.yaw !== undefined ? data.yaw + this.frameYaw() : undefined;
+     this.markers.set(name, { name, pos: p, ...data, yaw });
+     return this;
+@@ -567,7 +646,7 @@ export class Kit {
+       root, buckets, dynamics,
+       solids: this.solids, walkables: this.walkables, occluders: this.occluders,
+       lights: this.lights, layers: [...this.layers.values()], markers: Object.fromEntries(this.markers),
+-      interactables: this.interactables,
++      interactables: this.interactables, surfaces: this.surfaces,
+       stats: { triangles, drawCalls },
+     };
+   }
+diff --git a/src/world/kit/materials.js b/src/world/kit/materials.js
+index 72227da..3266aca 100644
+--- a/src/world/kit/materials.js
++++ b/src/world/kit/materials.js
+@@ -124,6 +124,8 @@ export const MATERIALS = {
+   paper: { color: '#e8e4da' },
+   bottleGreen: { color: '#24442c' },
+   bottleBrown: { color: '#4a2a14' },
++  glassLager: { color: '#c9d3a4' },
++  oliveDrab: { color: '#4b5233' },
+   candleJar: { color: '#c9b48c' },
+   wire: { color: '#151515', cast: false },
+   glass: { kind: 'glass', color: '#9fb4bf', opacity: 0.22 },
+diff --git a/src/world/lighting/dusk.js b/src/world/lighting/dusk.js
+index abf41a5..ff9b94d 100644
+--- a/src/world/lighting/dusk.js
++++ b/src/world/lighting/dusk.js
+@@ -1,13 +1,27 @@
+ import * as THREE from 'three';
+ 
+ /**
+- * Late-dusk ("blue hour") lighting shared by every exterior location: the sun has just set, so it
+- * is a weak orange grazing light (still the only live shadowed light on world geometry), the sky is
+- * a deep blue gradient with a last orange band toward the sun that feeds the bake, haze fog is cool
+- * and close, and practical lights (streetlights, windows, lamps) carry the scene. NIGHT is the
+- * fully dark variant; World.setTimeOfDay(k) blends the live parts (sky dome, fog, sun, baked sky
+- * scale) between them without re-baking.
++ * Night lighting shared by every exterior location (contracts §5: the game is set at night). The
++ * bake sees a moonlit sky — deep blue zenith, a cool band toward the moon and a faint warm city
++ * glow on the far horizon — so interiors only get a whisper of window light and their practicals
++ * carry them. The live directional light is the moon (cool, high, shadowed); sodium streetlights,
++ * lit windows and lamps do the rest. DUSK (blue hour) remains as an alternative:
++ * World.setTimeOfDay(k) blends the live parts (sky dome, fog, sun/moon, baked sky scale) between
++ * DUSK (k = 0) and NIGHT (k = 1, the default) without re-baking.
+  */
++export const NIGHT = Object.freeze({
++  sky: { zenith: '#0b1128', horizon: '#26324e', horizonAway: '#2a2330', ground: '#15130f', intensity: 0.42 },
++  sunDir: new THREE.Vector3(-0.35, 0.62, -0.7).normalize().toArray(),
++  sunColor: '#a8bce6',
++  sunIntensity: 0.55,
++  fog: { color: '#141826', near: 18, far: 115 },
++  below: '#0d0c12',
++  glow: 0.12,
++  moon: 1,
++  skyScale: 1,
++  exposure: 1.0,
++});
++
+ export const DUSK = Object.freeze({
+   sky: { zenith: '#1a2346', horizon: '#b0684e', horizonAway: '#4c4d6e', ground: '#2c2824', intensity: 0.55 },
+   sunDir: new THREE.Vector3(0.42, 0.07, -0.88).normalize().toArray(),
+@@ -16,19 +30,8 @@ export const DUSK = Object.freeze({
+   fog: { color: '#4c4a62', near: 22, far: 130 },
+   below: '#2a2430',
+   glow: 0.8,
+-  skyScale: 1,
+-  exposure: 1.0,
+-});
+-
+-export const NIGHT = Object.freeze({
+-  sky: { zenith: '#05070f', horizon: '#2a1f2a', horizonAway: '#11131f', ground: '#100f0d', intensity: 0.3 },
+-  sunDir: DUSK.sunDir,
+-  sunColor: '#7d8fc0',
+-  sunIntensity: 0.12,
+-  fog: { color: '#14141d', near: 16, far: 110 },
+-  below: '#0c0b10',
+-  glow: 0.1,
+-  skyScale: 0.28,
++  moon: 0,
++  skyScale: 2.0,
+   exposure: 1.0,
+ });
+ 
+@@ -38,7 +41,8 @@ export function blendPresets(a, b, k) {
+   const n = (x, y) => x + (y - x) * k;
+   return {
+     sky: { zenith: c(a.sky.zenith, b.sky.zenith), horizon: c(a.sky.horizon, b.sky.horizon), horizonAway: c(a.sky.horizonAway, b.sky.horizonAway), ground: c(a.sky.ground, b.sky.ground), intensity: n(a.sky.intensity, b.sky.intensity) },
+-    sunDir: a.sunDir,
++    sunDir: new THREE.Vector3(...a.sunDir).lerp(new THREE.Vector3(...b.sunDir), k).normalize().toArray(),
++    moon: n(a.moon ?? 0, b.moon ?? 0),
+     sunColor: c(a.sunColor, b.sunColor),
+     sunIntensity: n(a.sunIntensity, b.sunIntensity),
+     fog: { color: c(a.fog.color, b.fog.color), near: n(a.fog.near, b.fog.near), far: n(a.fog.far, b.fog.far) },
+@@ -91,10 +95,28 @@ export function paintSkyDome(mesh, preset) {
+     colors.set([c.r, c.g, c.b], i * 3);
+   }
+   g.attributes.color.needsUpdate = true;
++  let moon = mesh.getObjectByName('moon');
++  if (!moon) {
++    moon = new THREE.Mesh(new THREE.CircleGeometry(7, 12), new THREE.MeshBasicMaterial({ color: '#e4e9f4', fog: false, transparent: true, depthWrite: false }));
++    moon.name = 'moon';
++    moon.renderOrder = -9;
++    mesh.add(moon);
++  }
++  const r = mesh.geometry.parameters.radius * 0.95;
++  moon.position.set(sun.x * r, sun.y * r, sun.z * r);
++  moon.lookAt(0, 0, 0);
++  moon.material.opacity = preset.moon ?? 0;
++  moon.visible = (preset.moon ?? 0) > 0.02;
++}
++
++/** Points a directional light (sun or moon) along `dir` at its target. */
++export function aimSun(sun, dir) {
++  const t = sun.target.position;
++  sun.position.set(t.x + dir[0] * 80, dir[1] * 80, t.z + dir[2] * 80);
+ }
+ 
+ /** Directional sun with a shadow frustum covering `bounds` (world XZ box). */
+-export function createSun(bounds, preset = DUSK) {
++export function createSun(bounds, preset = NIGHT) {
+   const sun = new THREE.DirectionalLight(preset.sunColor, preset.sunIntensity);
+   const cx = (bounds.minX + bounds.maxX) / 2;
+   const cz = (bounds.minZ + bounds.maxZ) / 2;
+diff --git a/src/world/locations/foundry/loft-dressing.js b/src/world/locations/foundry/loft-dressing.js
+index d45aaee..9a5e2dc 100644
+--- a/src/world/locations/foundry/loft-dressing.js
++++ b/src/world/locations/foundry/loft-dressing.js
+@@ -2,12 +2,12 @@ import { UNIT as U, GROUND } from './layout.js';
+ import {
+   sofaSection, throwBlanket, coffeeTable, tableTop, rug, mediaConsole, consoleDressing, lavaLamp, wallTV, floorLamp, orbPendant, trackLight, spiralDuct, register,
+   kitchenRun, fridge, toilet, vanity, shower, towel, bed, nightstand, tableLamp, clothesRack, cubeTable, tolixStool, shellChair, artFrame, leaningMirror, flightCase,
+-  metalCart, speaker, basketball, bookStack, bookRow, broom, waterBottle,
++  metalCart, speaker, hifi, basketball, bookStack, bookRow, broom, waterBottle,
+ } from '../../props/interior-props.js';
+ import { lightSwitch, sprinklers, conduit, smokeDetector } from '../../props/fixtures.js';
+-import { trashBin, bottle, cardboardBox, kitchenChair } from '../../props/clutter.js';
++import { trashBin, bottle, cardboardBox, kitchenChair, loose, beerBottle, shoes, bookBlock, recordCrate } from '../../props/clutter.js';
+ import { spiderPlant, snakePlant, palm, pothos, hangingVines } from '../../props/plants.js';
+-import { slab, softBox, front } from '../../kit/shapes.js';
++import { slab, softBox, front, rect } from '../../kit/shapes.js';
+ 
+ /**
+  * Loft 1B furnished from the reference photos (docs/world/pass03.md lists them by file name).
+@@ -16,72 +16,84 @@ import { slab, softBox, front } from '../../kit/shapes.js';
+  * and black marble table, maple cube + red stool with palm at the end of the sofa, spiral stair and
+  * mezzanine at the back with the kitchen and bath beneath.
+  *
+- * Lighting circuits: 'loft-track' (both track rails), 'orb-high' / 'orb-low' (pendants, shadowed),
+- * 'floor-lamp', 'tv-glow', 'lava-lamp', 'neon-sign', 'kitchen' (cans + under-cabinet), 'bath',
+- * 'mezz-lamp'. Switches by the door drive them; lamps and the TV have their own interactables.
++ * Every loose item is a `kit.physical` body (contracts §8); furniture tops register `kit.surface`.
++ * Lighting circuits: 'loft-track' (both track rails), 'orb-high' / 'orb-low' (pendants, shadowed,
++ * swing on their chains), 'floor-lamp', 'tv-glow', 'lava-lamp', 'neon-sign', 'kitchen' (cans +
++ * under-cabinet), 'bath', 'mezz-lamp', 'hifi'. Seats + `act_*` markers host the five resident NPCs
++ * (contracts §5/§7); `speaker_L` / `speaker_R` place the music.
+  */
+ const F = GROUND.floor;
+ const FACE_X = Math.PI / 2;
+ const FACE_NEG_X = -Math.PI / 2;
++const POT = { material: 'ceramic', breakable: true, shape: 'cylinder' };
+ 
+ function livingRoom(kit, rng) {
+   kit.at(10.95, F, U.z0 + 0.03, 0, () => {
+     sofaSection(kit, 3.92, { armLeft: true, armRight: false, cornerRight: true, id: 'loft.sofa.a', seats: 4 });
+-    throwBlanket(kit, 'knit', { x: 3.0, front: 0.91 });
++    loose(kit, 'blanket', [3.0, 0.43, 0.65], { mass: 1.2, material: 'fabric' }, () => throwBlanket(kit, 'knit', { x: 3.0, front: 0.91 }));
+   });
+   kit.at(U.x1 - 0.03, F, U.z0 + 0.95, FACE_NEG_X, () => sofaSection(kit, 3.05, { armLeft: false, armRight: true, id: 'loft.sofa.b', seats: 3 }));
+   kit.at(12.45, F, 2.95, 0, () => rug(kit, 2.5, 3.3));
+   kit.at(12.55, F + 0.012, 2.7, 0, () => coffeeTable(kit));
+   kit.at(12.55, F + 0.392, 2.7, 0, () => tableTop(kit, rng.fork('table')));
+-  kit.interactable({ id: 'loft.item.magazine', kind: 'item', pos: [12.43, F + 0.4, 2.52], radius: 0.9, prompt: 'Read', data: { item: 'magazine' } });
+-  kit.interactable({ id: 'loft.item.phone', kind: 'item', pos: [12.8, F + 0.4, 3.05], radius: 0.9, prompt: 'Take', data: { item: 'phone' } });
+-  kit.at(12.8, F + 0.392, 3.05, 0.4, () => slab(kit, 'plasticBlack', [-0.038, 0, -0.075], [0.038, 0.009, 0.075], { r: 0.003, occlude: false }));
+-  kit.at(11.75, F + 0.012, 4.35, Math.PI + 0.25, () => shellChair(kit, { id: 'loft.chair' }));
+-  for (const [x, z, r] of [[12.95, 4.2, 0.2], [13.12, 4.28, -0.1]]) kit.at(x, F + 0.012, z, r, () => softBox(kit, 'plasticBlack', [-0.05, 0, -0.14], [0.05, 0.08, 0.14], { r: 0.025, occlude: false }));
+-  kit.at(12.35, F + 1.62, U.z0 + 0.005, 0, () => {
+-    kit.glow('neon-sign', () => kit.panel('worldIsYours', [0, 0, 0.02], [0.8, 0.3], '+z'));
+-    kit.box('steelGray', [-0.38, -0.12, 0], [0.38, 0.12, 0.018], { seg: 9, occlude: false });
+-  });
+-  kit.light({ name: 'neon-sign', pos: [12.35, F + 1.6, U.z0 + 0.3], color: '#cfe4ff', intensity: 0.45, range: 2.2, switchable: true, zone: 'unit', fill: 0.3 });
++  kit.at(12.8, F + 0.392, 3.05, 0.4, () => kit.physical('phone', () => {
++    slab(kit, 'plasticBlack', [-0.038, 0, -0.075], [0.038, 0.009, 0.075], { r: 0.003, occlude: false });
++    kit.interactable({ id: 'loft.item.phone', kind: 'item', pos: [0, 0.01, 0], radius: 0.9, prompt: 'Take', data: { item: 'phone' } });
++  }, { mass: 0.2, material: 'electronics' }));
++  kit.interactable({ id: 'loft.item.magazine', kind: 'item', pos: [12.43, F + 0.4, 2.52], radius: 0.9, prompt: 'Read', data: { item: 'magazine', prop: 'table-mag-0' } });
++  for (let i = 0; i < 2; i++) beerBottle(kit, `beer-table-${i}`, [12.3 + i * 0.09, F + 0.392, 3.15 - i * 0.05], { lime: i === 0 });
++  kit.at(11.75, F + 0.012, 4.35, Math.PI + 0.25, () => kit.physical('shell-chair', () => shellChair(kit, { id: 'loft.chair' }), { mass: 4.5, material: 'plastic' }));
++  shoes(kit, 'shoes-rug', [12.95, F + 0.012, 4.25], 0.15);
++  kit.at(12.35, F + 1.62, U.z0, 0, () => kit.physical('neon-sign', () => {
++    kit.glow('neon-sign', () => kit.panel('worldIsYours', [0, 0, 0.025], [0.8, 0.3], '+z'));
++    kit.box('steelGray', [-0.38, -0.12, 0.005], [0.38, 0.12, 0.022], { seg: 9, occlude: false });
++    kit.light({ name: 'neon-sign', pos: [0, 0, 0.3], color: '#cfe4ff', intensity: 0.45, range: 2.2, switchable: true, zone: 'unit', fill: 0.3 });
++  }, { mass: 2, material: 'glass', breakable: true, anchored: 'wall', anchor: [0, 0.12, 0] }));
+   kit.at(10.8, F, U.z0 + 0.05, -0.15, () => broom(kit));
+   kit.at(10.5, F, 0.8, 0.9, () => floorLamp(kit, 'floor-lamp', { id: 'loft.lamp.floor' }));
+   bottle(kit, 'bottle-sofa', [13.35, F + 0.012, 1.62], { mat: 'bottleBrown', h: 0.24, r: 0.032 });
+-  for (const [x, z, r] of [[12.0, 4.75, 0.3], [12.12, 4.8, 0.15]]) kit.at(x, F + 0.012, z, r, () => softBox(kit, 'plasticBlack', [-0.045, 0, -0.13], [0.045, 0.09, 0.13], { r: 0.03, occlude: false }));
+ }
+ 
+ function tvWall(kit, rng) {
+   kit.at(U.x0, F, 4.85, FACE_X, () => {
+     mediaConsole(kit, 3);
+-    kit.at(0, 0.48, 0, 0, () => consoleDressing(kit));
++    kit.at(0, 0.48, 0, 0, () => {
++      consoleDressing(kit, 'console');
++      hifi(kit, { id: 'loft.music', turntableX: 1.45, mixerX: 1.02 });
++      loose(kit, 'snake-plant', [2.17, 0, 0.25], POT, () => kit.at(2.17, 0, 0.25, 0, () => snakePlant(kit)));
++      loose(kit, 'pothos-console', [0.17, 0, 0.2], POT, () => kit.at(0.17, 0, 0.2, 0, () => pothos(kit, { trail: 0.55 })));
++      kit.at(1.9, 0, 0.25, 0, () => lavaLamp(kit, 'lava-lamp'));
++    });
+   });
+   kit.at(U.x0, F + 1.78, 3.65, FACE_X, () => wallTV(kit, { id: 'loft.tv' }));
+-  const top = F + 0.48;
+-  kit.at(10.35, top, 2.95, 0, () => lavaLamp(kit, 'lava-lamp'));
+-  kit.at(10.35, top, 2.68, 0, () => snakePlant(kit));
+-  kit.at(10.33, top, 4.68, 0, () => pothos(kit, { trail: 0.55 }));
+-  kit.at(U.x0 + 0.35, F, 4.98, 0, () => speaker(kit));
+-  kit.at(U.x0 + 0.02, F, 2.3, FACE_X, () => metalCart(kit, 0.62, 0.45, 1.0, { dress: true }));
+-  kit.interactable({ id: 'loft.item.camera', kind: 'item', pos: [10.42, F + 1.06, 1.85], radius: 0.9, prompt: 'Take', data: { item: 'camcorder' } });
+-  kit.at(U.x0, F + 2.4, 1.85, FACE_X, () => artFrame(kit, 'artPhoto', 0.8, 1.05));
+-  kit.at(U.x0, F, 5.75, FACE_X, () => leaningMirror(kit));
+-  kit.at(10.4, F, 5.25, FACE_X, () => flightCase(kit));
+-  basketball(kit, [10.75, F + 0.12, 5.55]);
+-  kit.at(10.75, F, 6.05, 0, () => kit.lathe('terracotta', [0, 0, 0], [[0.13, 0], [0.18, 0.2], [0.2, 0.24], [0.17, 0.24]], { sides: 10 }));
++  // tall speakers either side of the console (audio markers speaker_L / speaker_R)
++  kit.at(U.x0 + 0.2, F, 2.13, FACE_X, () => kit.physical('speaker-L', () => speaker(kit, { marker: 'speaker_L' }), { mass: 18, material: 'wood' }));
++  kit.at(U.x0 + 0.2, F, 5.12, FACE_X, () => kit.physical('speaker-R', () => speaker(kit, { marker: 'speaker_R' }), { mass: 18, material: 'wood' }));
++  kit.at(U.x0 + 0.02, F, 1.95, FACE_X, () => metalCart(kit, 0.62, 0.45, 1.0, { dress: true }));
++  kit.interactable({ id: 'loft.item.camera', kind: 'item', pos: [10.42, F + 1.06, 1.5], radius: 0.9, prompt: 'Take', data: { item: 'camcorder', prop: 'cart-camcorder' } });
++  kit.at(U.x0, F + 2.4, 1.6, FACE_X, () => kit.physical('art-photo', () => artFrame(kit, 'artPhoto', 0.8, 1.05), { mass: 4, material: 'wood', breakable: true, anchored: 'wall', anchor: [0, 0.5, 0] }));
++  kit.at(U.x0, F, 5.8, FACE_X, () => kit.physical('mirror', () => leaningMirror(kit), { mass: 14, material: 'glass', breakable: true }));
++  kit.at(10.45, F, 5.75, FACE_X, () => kit.physical('flight-case', () => flightCase(kit), { mass: 11, material: 'wood' }));
++  basketball(kit, [10.85, F + 0.12, 5.45]);
++  loose(kit, 'pot-under-stair', [10.75, F, 6.05], POT, () => kit.lathe('terracotta', [10.75, F, 6.05], [[0.13, 0], [0.18, 0.2], [0.2, 0.24], [0.17, 0.24]], { sides: 10 }));
++  recordCrate(kit, 'records-floor', [10.55, F, 2.62], FACE_X);
+ }
+ 
+-function rightWall(kit) {
+-  kit.at(U.x1, F + 2.55, 3.0, FACE_NEG_X, () => artFrame(kit, 'artPop', 1.3, 0.98));
+-  kit.at(U.x1, F + 1.9, 6.7, FACE_NEG_X, () => artFrame(kit, 'artAbstract', 0.75, 0.9, { matWidth: 0.0 }));
++function rightWall(kit, rng) {
++  kit.at(U.x1, F + 2.55, 3.0, FACE_NEG_X, () => kit.physical('art-pop', () => artFrame(kit, 'artPop', 1.3, 0.98), { mass: 6, material: 'wood', breakable: true, anchored: 'wall', anchor: [0, 0.45, 0] }));
++  kit.at(U.x1, F + 1.9, 6.7, FACE_NEG_X, () => kit.physical('art-abstract', () => artFrame(kit, 'artAbstract', 0.75, 0.9, { matWidth: 0.0 }), { mass: 3, material: 'wood', anchored: 'wall', anchor: [0, 0.4, 0] }));
+   kit.at(U.x1 - 0.57, F, 4.45, 0, () => cubeTable(kit, 0.55, 0.92, 0.62));
+-  kit.at(U.x1 - 0.22, F + 0.62, 5.15, 0, () => spiderPlant(kit, { r: 0.12, size: 0.55, mat: 'ceramic' }));
+-  kit.at(U.x1 - 0.02, F + 0.62, 4.5, FACE_NEG_X, () => bookRow(kit, 0.45));
+-  waterBottle(kit, [U.x1 - 0.42, F + 0.62, 4.75]);
+-  kit.box('ceramic', [U.x1 - 0.5, F + 0.62, 4.95], [U.x1 - 0.3, F + 0.64, 5.15], { seg: 9, occlude: false });
+-  kit.at(U.x1 - 0.4, F + 0.62, 4.95, 0.3, () => kit.box('chrome', [-0.03, 0, -0.012], [0.03, 0.006, 0.012], { seg: 9, occlude: false }));
+-  kit.interactable({ id: 'loft.item.keys', kind: 'item', pos: [U.x1 - 0.4, F + 0.63, 4.95], radius: 0.9, prompt: 'Take', data: { item: 'keys' } });
+-  kit.at(U.x1 - 0.42, F, 5.95, 0, () => tolixStool(kit));
+-  kit.at(U.x1 - 0.42, F + 0.76, 5.95, 0, () => palm(kit));
+-  kit.at(U.x1 - 0.35, F, 6.75, 0, () => spiderPlant(kit, { r: 0.16, size: 0.6 }));
++  loose(kit, 'spider-cube', [U.x1 - 0.22, F + 0.62, 5.15], POT, () => kit.at(U.x1 - 0.22, F + 0.62, 5.15, 0, () => spiderPlant(kit, { r: 0.12, size: 0.55, mat: 'ceramic' })));
++  bookBlock(kit, 'books-cube-top', [U.x1 - 0.5, F + 0.62, 4.62], rng.fork('cube-top'), { count: 6, yaw: FACE_NEG_X });
++  waterBottle(kit, [U.x1 - 0.42, F + 0.62, 4.85]);
++  kit.physical('key-dish', () => {
++    kit.lathe('ceramic', [0, 0, 0], [[0.001, 0], [0.07, 0], [0.09, 0.02], [0.085, 0.022], [0.065, 0.006], [0.001, 0.006]], { sides: 8 });
++    kit.at(0.01, 0.008, 0, 0.3, () => kit.box('chrome', [-0.03, 0, -0.012], [0.03, 0.006, 0.012], { seg: 9, occlude: false }));
++    kit.interactable({ id: 'loft.item.keys', kind: 'item', pos: [0, 0.02, 0], radius: 0.9, prompt: 'Take', data: { item: 'keys' } });
++  }, { pos: [U.x1 - 0.32, F + 0.62, 5.05], shape: 'cylinder', mass: 0.4, material: 'ceramic', breakable: true });
++  kit.at(U.x1 - 0.42, F, 5.95, 0, () => kit.physical('stool-palm', () => tolixStool(kit), { mass: 3.5, material: 'metal' }));
++  loose(kit, 'palm', [U.x1 - 0.42, F + 0.76, 5.95], { ...POT, mass: 9 }, () => kit.at(U.x1 - 0.42, F + 0.76, 5.95, 0, () => palm(kit)));
++  loose(kit, 'spider-floor', [U.x1 - 0.35, F, 6.75], POT, () => kit.at(U.x1 - 0.35, F, 6.75, 0, () => spiderPlant(kit, { r: 0.16, size: 0.6 })));
+   const y = 5.55;
+   spiralDuct(kit, [[U.x1 - 0.42, y, U.z1 - 0.05], [U.x1 - 0.42, y, 2.3]], 0.28, {
+     hangers: [3.5, 6.0, 8.5, 10.8].map((z) => [U.x1 - 0.42, U.ceiling, z, y + 0.28]),
+@@ -117,39 +129,54 @@ function stairVines(kit) {
+     pts.push([S.cx + Math.cos(a) * (S.r - 0.02), F + rise * (s + 1) + 0.95, S.cz + Math.sin(a) * (S.r - 0.02), -a]);
+   }
+   hangingVines(kit, pts, 0.55);
++  // a seat on the second tread (feet on the floor), facing down the flight
++  const a = -1.5 * step;
++  const top = F + 2 * rise;
++  kit.interactable({ id: 'loft.stair.seat', kind: 'seat', pos: [S.cx + Math.cos(a) * 0.55, top, S.cz + Math.sin(a) * 0.55], yaw: Math.atan2(-Math.sin(a), Math.cos(a)) + Math.PI / 2, radius: 1.1, prompt: 'Sit', data: { seatHeight: top - F, variant: 'stair', exit: [12.2, F, 6.95] } });
+ }
+ 
+ function kitchen(kit) {
+   kit.at(U.x0, F, 11.35, FACE_X, () => kitchenRun(kit, 2.85, { fridge: false, layer: 'kitchen' }));
+   kit.light({ name: 'kitchen-under', pos: [U.x0 + 0.3, F + 1.38, 10.0], color: '#ffd8a0', intensity: 0.7, range: 2.2, dir: [0, -1, 0], cone: 0.0, zone: 'unit', layer: 'kitchen', fill: 0.4 });
+-  kit.at(U.x0, F, 8.09, FACE_X, () => fridge(kit));
+-  kit.interactable({ id: 'loft.fridge', kind: 'container', pos: [U.x0 + 1.0, F + 1.0, 8.09], yaw: -Math.PI / 2, radius: 1.1, prompt: 'Open', data: { contents: ['beer', 'leftovers', 'hot sauce'] } });
++  kit.at(U.x0, F, 8.09, FACE_X, () => fridge(kit, { id: 'loft.fridge', contents: ['beer', 'lime', 'leftovers', 'hot sauce'] }));
+   const top = F + 0.91;
+-  kit.sphere('yellowPaint', [10.45, top + 0.05, 9.9], 0.06, { w: 6, h: 4, scale: [2, 0.7, 1] });
+-  kit.lathe('stainless', [10.4, top, 10.45], [[0.001, 0], [0.085, 0], [0.09, 0.14], [0.06, 0.2], [0.001, 0.21]], { sides: 8 });
+-  kit.tube('plasticBlack', [[10.4, top + 0.17, 10.37], [10.4, top + 0.2, 10.31], [10.4, top + 0.08, 10.31]], 0.01, { sides: 3 });
+-  kit.box('woodDark', [10.25, top, 8.7], [10.6, top + 0.02, 9.1], { seg: 9, occlude: false });
+-  kit.at(10.2, top, 9.35, 0, () => {
++  const counter = (name, pos, opts, fn) => loose(kit, name, pos, opts, () => fn(pos));
++  counter('banana', [10.45, top, 9.9], { mass: 0.2, material: 'fabric' }, (p) => kit.sphere('yellowPaint', [p[0], p[1] + 0.03, p[2]], 0.06, { w: 6, h: 4, scale: [2, 0.6, 1] }));
++  counter('kettle', [10.4, top, 10.45], { mass: 1.2, material: 'metal', shape: 'cylinder' }, (p) => {
++    kit.lathe('stainless', p, [[0.001, 0], [0.085, 0], [0.09, 0.14], [0.06, 0.2], [0.001, 0.21]], { sides: 8 });
++    kit.tube('plasticBlack', [[p[0], p[1] + 0.17, p[2] - 0.08], [p[0], p[1] + 0.2, p[2] - 0.14], [p[0], p[1] + 0.08, p[2] - 0.14]], 0.01, { sides: 3 });
++  });
++  counter('cutting-board', [10.42, top, 8.9], { mass: 0.8, material: 'wood' }, (p) => kit.box('woodDark', [p[0] - 0.17, p[1], p[2] - 0.2], [p[0] + 0.18, p[1] + 0.02, p[2] + 0.2], { seg: 9, occlude: false }));
++  counter('knife-block', [10.2, top, 9.35], { mass: 1.5, material: 'wood' }, (p) => kit.at(p[0], p[1], p[2], 0, () => {
+     kit.box('woodDark', [-0.06, 0, -0.04], [0.06, 0.2, 0.04], { seg: 9, occlude: false });
+     for (const z of [-0.02, 0.0, 0.02]) kit.box('plasticBlack', [-0.01, 0.2, z - 0.004], [0.01, 0.27, z + 0.004], { seg: 9, occlude: false });
+-  });
+-  kit.at(10.2, top + 0.3, 10.9, 0, () => {
+-    kit.cylinder('chrome', [0, 0, 0], 0.01, 0.3, { sides: 4 });
+-    kit.cylinder('paper', [0, 0.02, 0], 0.055, 0.26, { sides: 8 });
+-  });
+-  kit.cylinder('bottleGreen', [10.32, top, 10.05], 0.03, 0.2, { sides: 6 });
++  }));
++  kit.at(10.2, top + 0.3, 10.9, 0, () => kit.cylinder('chrome', [0, 0, 0], 0.01, 0.3, { sides: 4 }));
++  counter('paper-towel', [10.2, top + 0.32, 10.9], { mass: 0.3, material: 'paper', shape: 'cylinder' }, (p) => kit.cylinder('paper', p, 0.055, 0.26, { sides: 8 }));
++  counter('dish-soap', [10.3, top, 10.05], { mass: 0.5, material: 'plastic', shape: 'cylinder' }, (p) => kit.cylinder('bottleGreen', p, 0.03, 0.2, { sides: 6 }));
++  // beer on the counter: a few loose bottles and a six-pack carton
++  [[10.52, 9.62], [10.6, 9.73], [10.47, 9.78], [10.58, 11.0]].forEach(([x, z], i) => beerBottle(kit, `beer-counter-${i}`, [x, top, z], { mat: i === 3 ? 'bottleBrown' : 'glassLager' }));
++  kit.physical('six-pack', () => {
++    slab(kit, 'cardboard', [-0.09, 0, -0.13], [0.09, 0.13, 0.13], { r: 0.006, occlude: false });
++    for (let i = 0; i < 6; i++) kit.cylinder('glassLager', [(i % 2 ? 0.04 : -0.04), 0.13, -0.08 + Math.floor(i / 2) * 0.08], 0.013, 0.09, { sides: 5 });
++  }, { pos: [10.32, top, 11.05], mass: 2.4, material: 'paper' });
+   for (const z of [8.3, 9.7]) {
+     kit.cylinder('steelBlack', [11.4, U.mezz.top - U.mezz.thick - 0.03, z], 0.075, 0.03, { sides: 10 });
+     kit.glow('kitchen', () => kit.panel('bulbWarm', [11.4, U.mezz.top - U.mezz.thick - 0.032, z], [0.11, 0.11], '-y'));
+     kit.light({ name: `kitchen-can-${z}`, pos: [11.4, U.mezz.top - U.mezz.thick - 0.2, z], color: '#ffd9a8', intensity: 1.5, range: 3.5, dir: [0, -1, 0], cone: 0.25, zone: 'unit', layer: 'kitchen', fill: 0.7 });
+   }
+-  trashBin(kit, 'bin-kitchen', [10.95, F, 8.0], { r: 0.15, h: 0.5 });
++  trashBin(kit, 'bin-kitchen', [10.93, F, 11.05], { r: 0.15, h: 0.5 });
+   kitchenChair(kit, 'chair-kitchen', [12.45, F, 8.25], -Math.PI / 2 - 0.25, { id: 'loft.kitchen-chair' });
++  // a red stool pulled up to the counter (sits facing the room, back to the counter)
++  kit.at(11.0, F, 9.95, FACE_X, () => kit.physical('stool-kitchen', () => tolixStool(kit, 0.66, { id: 'loft.stool.kitchen' }), { mass: 3.5, material: 'metal' }));
+ }
+ 
+ function bathroom(kit) {
+   kit.at(14.3, F, U.z1, Math.PI, () => toilet(kit));
+-  kit.at(U.x1, F, 9.75, FACE_NEG_X, () => vanity(kit));
++  kit.at(U.x1, F, 9.75, FACE_NEG_X, () => {
++    vanity(kit);
++    [[0.26, 'bottleGreen', 0.16, 'glass'], [0.3, 'plasticWhite', 0.12, 'plastic'], [-0.28, 'ceramic', 0.08, 'ceramic']].forEach(([x, mat, h, material], i) => kit.physical(`vanity-bottle-${i}`, () => kit.cylinder(mat, [0, 0, 0], 0.025, h, { sides: 6 }), { pos: [x, 0.86, 0.1], shape: 'cylinder', mass: 0.3, material, breakable: material !== 'plastic' }));
++  });
+   kit.at(U.bath.x0 + 0.05, F, U.z1 - 0.95, 0, () => shower(kit));
+   kit.at(U.x1, F + 1.2, 10.75, FACE_NEG_X, () => towel(kit, 'knit', 0.4));
+   kit.at(13.9, F, 9.45, 0, () => slab(kit, 'sage', [-0.3, 0, -0.2], [0.3, 0.012, 0.2], { r: 0.004, occlude: false }));
+@@ -162,6 +189,34 @@ function bathroom(kit) {
+   kit.light({ name: 'bath', pos: [13.9, 2.5, 10.1], color: '#fff0d8', intensity: 1.7, range: 3.5, zone: 'unit', switchable: true, dynamic: true, fill: 0.8 });
+ }
+ 
++/** Open steel bookshelf on the mezzanine: four shelves of books (blocks), records and a plant. */
++function bookshelf(kit, rng) {
++  const y0 = U.mezz.top;
++  kit.at(U.x0, y0, 8.1, FACE_X, () => {
++    const w = 1.0;
++    const d = 0.32;
++    const shelves = [0.06, 0.48, 0.9, 1.32, 1.72];
++    for (const x of [-w / 2, w / 2 - 0.03]) for (const z of [0.0, d - 0.03]) kit.box('steelBlack', [x, 0, z], [x + 0.03, 1.78, z + 0.03], { seg: 9, occlude: false });
++    for (const y of shelves) {
++      slab(kit, 'woodDark', [-w / 2, y - 0.025, 0], [w / 2, y, d], { r: 0.004, occlude: false });
++      kit.surface(`mezz-shelf-${y}`, rect(-w / 2, 0, w / 2, d), y);
++    }
++    kit.solid(rect(-w / 2, 0, w / 2, d), 0, 1.78, 'shelf');
++    const r = rng.fork('books');
++    bookBlock(kit, 'shelf-books-0', [-0.45, shelves[1], 0.16], r, { count: 7 });
++    bookBlock(kit, 'shelf-books-1', [0.05, shelves[1], 0.16], r, { count: 5, lean: 0.3 });
++    bookBlock(kit, 'shelf-books-2', [-0.42, shelves[2], 0.16], r, { count: 9 });
++    bookBlock(kit, 'shelf-books-3', [-0.2, shelves[3], 0.16], r, { count: 6 });
++    recordCrate(kit, 'shelf-records', [0.0, shelves[0], 0.16], 0);
++    kit.physical('shelf-records-loose', () => {
++      for (let i = 0; i < 12; i++) kit.box(i % 2 ? 'plasticBlack' : 'magazines', [-0.006 + i * 0.012, 0, -0.155], [0.004 + i * 0.012, 0.31, 0.155], { seg: 9, occlude: false, uv: 'fit' });
++    }, { pos: [0.25, shelves[0], 0.16], mass: 3, material: 'paper' });
++    loose(kit, 'shelf-plant', [0.3, shelves[3], 0.16], POT, () => kit.at(0.3, shelves[3], 0.16, 0, () => pothos(kit, { trail: 0.4, r: 0.1 })));
++    kit.physical('shelf-candle', () => kit.cylinder('candleJar', [0, 0, 0], 0.04, 0.08, { sides: 8 }), { pos: [0.3, shelves[2], 0.16], shape: 'cylinder', mass: 0.4, material: 'glass', breakable: true });
++    kit.physical('shelf-box', () => slab(kit, 'cardboard', [-0.14, 0, -0.12], [0.14, 0.2, 0.12], { r: 0.006, occlude: false }), { pos: [0.3, shelves[4], 0.15], mass: 1, material: 'paper' });
++  });
++}
++
+ function mezzanine(kit, rng) {
+   const y = U.mezz.top;
+   kit.at(12.6, y, U.z1 - 0.1, Math.PI, () => bed(kit, { id: 'loft.bed' }));
+@@ -169,20 +224,22 @@ function mezzanine(kit, rng) {
+   kit.at(11.38, y + 0.52, 11.12, 0, () => tableLamp(kit, 'mezz-lamp', { id: 'loft.lamp.bedside' }));
+   kit.at(U.x1 - 0.32, y, 9.5, FACE_NEG_X, () => clothesRack(kit, 1.2, rng.fork('rack')));
+   kit.at(12.6, y, 9.0, 0, () => kit.box('rug', [-0.9, 0, -0.6], [0.9, 0.01, 0.6], { seg: 9, uv: 'fit', occlude: false }));
+-  // jeans hung over the mezzanine guard (reference IMG_5)
++  // jeans hung over the mezzanine guard (reference 4.jpg)
+   kit.at(10.78, y + 1.05, U.mezz.z0 - 0.03, 0, () => {
+     softBox(kit, 'denim', [-0.17, -0.62, -0.02], [0.17, 0.02, 0.005], { r: 0.012, occlude: false });
+     softBox(kit, 'denim', [-0.17, -0.2, 0.0], [0.17, 0.02, 0.03], { r: 0.012, occlude: false });
+   });
+-  kit.at(14.4, y, 8.0, 0, () => spiderPlant(kit, { r: 0.13 }));
++  loose(kit, 'spider-mezz', [14.4, y, 8.0], POT, () => kit.at(14.4, y, 8.0, 0, () => spiderPlant(kit, { r: 0.13 })));
+   // low dresser: three drawers with bar pulls
+   kit.at(U.x0, y, 9.7, FACE_X, () => {
+-    slab(kit, 'plasticBlack', [-0.5, 0.08, 0], [0.5, 0.75, 0.4], { r: 0.006, collide: true });
++    slab(kit, 'plasticBlack', [-0.5, 0.08, 0], [0.5, 0.75, 0.4], { r: 0.006, collide: true, tag: 'dresser' });
+     kit.box('steelBlack', [-0.46, 0, 0.04], [0.46, 0.08, 0.36], { seg: 9, occlude: false });
+     for (let i = 0; i < 3; i++) front(kit, 'plasticBlack', [-0.49, 0.09 + i * 0.22, 0.49, 0.09 + (i + 1) * 0.22], 0.4, { handle: 'bar', place: 'mid', handleMat: 'brass' });
+     kit.walkable([[-0.5, 0], [0.5, 0], [0.5, 0.4], [-0.5, 0.4]], 0.75);
+-    bookStack(kit, 2, rng.fork('dresser'));
++    kit.surface('dresser-top', rect(-0.5, 0, 0.5, 0.4), 0.75);
++    kit.at(0.2, 0.75, 0.2, 0, () => bookStack(kit, 3, rng.fork('dresser'), 'dresser-books'));
+   });
++  bookshelf(kit, rng.fork('shelf'));
+   cardboardBox(kit, 'box-mezz', [13.9, y, 10.9], [0.5, 0.35, 0.4], 0.1);
+ }
+ 
+@@ -196,15 +253,38 @@ function switches(kit) {
+   kit.at(U.bath.x0 - 0.05, F, U.bath.z0 + 0.15, -Math.PI / 2, () => lightSwitch(kit, 'loft.switch.bath', 0, ['bath'], { y: 1.2 }));
+ }
+ 
++/**
++ * Standing / activity spots for the resident NPCs (contracts §7): forward = (sin yaw, 0, cos yaw).
++ * act_dance_* by the speakers, act_tv_* facing the TV, act_counter_* leaning on the kitchen counter,
++ * act_window_* looking out, act_rail_* on the mezzanine guard, act_fridge_1, act_console_1 (records).
++ */
++function activities(kit) {
++  const m = (name, x, y, z, yaw, role) => kit.marker(name, [x, y, z], { yaw, role });
++  m('act_dance_1', 11.05, F, 2.35, -Math.PI / 2 + 0.35, 'dance');
++  m('act_dance_2', 11.1, F, 4.95, -Math.PI / 2 - 0.3, 'dance');
++  m('act_dance_3', 11.45, F, 3.05, -Math.PI / 2, 'dance');
++  m('act_tv_1', 11.7, F, 3.65, -Math.PI / 2, 'game');
++  m('act_tv_2', 11.75, F, 3.15, -Math.PI / 2 + 0.2, 'game');
++  m('act_console_1', 10.95, F, 3.4, -Math.PI / 2, 'records');
++  m('act_counter_1', 11.0, F, 10.75, Math.PI / 2, 'lean');
++  m('act_counter_2', 11.0, F, 9.05, Math.PI / 2 + 0.25, 'lean');
++  m('act_fridge_1', 11.2, F, 8.1, -Math.PI / 2, 'fridge');
++  m('act_window_1', 10.7, F, 1.62, Math.PI, 'window');
++  m('act_window_2', 13.25, F, 1.75, Math.PI - 0.2, 'window');
++  m('act_rail_1', 13.6, U.mezz.top, 7.75, Math.PI, 'rail');
++  m('act_rail_2', 10.75, U.mezz.top, 7.75, Math.PI + 0.15, 'rail');
++}
++
+ export function dressLoft(kit, rng) {
+   kit.bucket('clutter');
+   livingRoom(kit, rng.fork('living'));
+   tvWall(kit, rng.fork('tv'));
+-  rightWall(kit);
++  rightWall(kit, rng.fork('right'));
+   ceiling(kit);
+   stairVines(kit);
+   kitchen(kit);
+   bathroom(kit);
+   mezzanine(kit, rng.fork('mezz'));
+   switches(kit);
++  activities(kit);
+ }
+diff --git a/src/world/props/clutter.js b/src/world/props/clutter.js
+index c92d165..accfd8b 100644
+--- a/src/world/props/clutter.js
++++ b/src/world/props/clutter.js
+@@ -72,7 +72,7 @@ export function debris(kit, rng, { x0, x1, z0, z1, y = 0, count = 8, mix = { pap
+ 
+ /** Taped cardboard box (physical). */
+ export function cardboardBox(kit, name, pos, [w, h, d] = [0.45, 0.32, 0.35], yaw = 0, mass = 3) {
+-  kit.physical(name, pos, { shape: 'box', size: [w, h, d], mass }, () => {
++  kit.physical(name, pos, { shape: 'box', size: [w, h, d], mass, material: 'paper' }, () => {
+     slab(kit, 'cardboard', [-w / 2, 0, -d / 2], [w / 2, h, d / 2], { r: 0.006, occlude: false });
+     kit.box('candleJar', [-0.03, h, -d / 2 - 0.002], [0.03, h + 0.002, d / 2 + 0.002], { seg: 9, occlude: false });
+     kit.box('candleJar', [-0.03, h * 0.7, d / 2], [0.03, h + 0.001, d / 2 + 0.002], { seg: 9, occlude: false });
+@@ -82,7 +82,7 @@ export function cardboardBox(kit, name, pos, [w, h, d] = [0.45, 0.32, 0.35], yaw
+ 
+ /** Small pedal / kitchen bin with a liner lip (physical cylinder). */
+ export function trashBin(kit, name, pos, { r = 0.15, h = 0.42, mat = 'stainless', mass = 2 } = {}) {
+-  kit.physical(name, pos, { shape: 'cylinder', radius: r, height: h, mass }, () => {
++  kit.physical(name, pos, { shape: 'cylinder', radius: r, height: h, mass, material: 'metal' }, () => {
+     kit.lathe(mat, [0, 0, 0], [[0.001, 0], [r * 0.9, 0], [r, 0.02], [r, h - 0.02], [r * 1.02, h]], { sides: 10 });
+     kit.lathe('trashBag', [0, h - 0.04, 0], [[r * 1.03, 0], [r * 1.04, 0.05], [r * 0.9, 0.05]], { sides: 10 });
+     kit.cylinder('plasticBlack', [0, 0, r * 0.95], 0.03, 0.02, { sides: 4 });
+@@ -91,24 +91,100 @@ export function trashBin(kit, name, pos, { r = 0.15, h = 0.42, mat = 'stainless'
+ 
+ /** Glass bottle (physical cylinder). */
+ export function bottle(kit, name, pos, { mat = 'bottleGreen', h = 0.3, r = 0.036, mass = 0.6 } = {}) {
+-  kit.physical(name, pos, { shape: 'cylinder', radius: r, height: h, mass }, () => {
++  kit.physical(name, pos, { shape: 'cylinder', radius: r, height: h, mass, material: 'glass', breakable: true }, () => {
+     kit.lathe(mat, [0, 0, 0], [[0.001, 0], [r, 0], [r, h * 0.62], [r * 0.4, h * 0.8], [r * 0.38, h], [0.001, h]], { sides: 7 });
+   });
+ }
+ 
+ /** Paint bucket (physical cylinder) with a wire bail and paint drips. */
+ export function bucket(kit, name, pos, mass = 4) {
+-  kit.physical(name, pos, { shape: 'cylinder', radius: 0.15, height: 0.3, mass }, () => {
++  kit.physical(name, pos, { shape: 'cylinder', radius: 0.15, height: 0.3, mass, material: 'plastic' }, () => {
+     kit.lathe('plasticWhite', [0, 0, 0], [[0.001, 0], [0.13, 0], [0.15, 0.29], [0.155, 0.3]], { sides: 10 });
+     kit.tube('steelGray', [[-0.15, 0.25, 0], [-0.1, 0.38, 0], [0.1, 0.38, 0], [0.15, 0.25, 0]], 0.004, { sides: 3 });
+     kit.decal('drip', [0, 0.2, 0.146], [0.16, 0.18], '+z');
+   });
+ }
+ 
++/**
++ * Makes whatever `fn` builds (in the *current* frame's coordinates) a loose physical prop whose
++ * pivot sits at `base` (its resting point, frame-local) — so existing prop builders and placements
++ * can be wrapped without re-authoring them around the origin (contracts §8).
++ */
++export function loose(kit, name, base, opts, fn) {
++  kit.physical(name, () => kit.at(-base[0], -base[1], -base[2], 0, () => fn(kit)), { ...opts, pos: base });
++}
++
++/** Lager / beer bottle: clear, green or brown glass, long neck, cap (physical, breakable). */
++export function beerBottle(kit, name, pos, { mat = 'glassLager', lime = false } = {}) {
++  kit.physical(name, () => {
++    kit.lathe(mat, [0, 0, 0], [[0.001, 0], [0.031, 0], [0.032, 0.012], [0.031, 0.14], [0.014, 0.19], [0.0125, 0.225], [0.001, 0.226]], { sides: 7 });
++    kit.cylinder('steelGray', [0, 0.222, 0], 0.014, 0.008, { sides: 6 });
++    kit.box('paper', [-0.024, 0.05, 0.026], [0.024, 0.1, 0.0325], { seg: 9, occlude: false });
++    if (lime) kit.sphere('greenPaint', [0, 0.23, 0.006], 0.012, { w: 5, h: 3, scale: [1.3, 0.6, 1] });
++  }, { pos, shape: 'cylinder', mass: 0.55, material: 'glass', breakable: true });
++}
++
++/** A pair of shoes (one physical body each), toes toward +Z. */
++export function shoes(kit, name, pos, yaw = 0, mat = 'plasticBlack') {
++  kit.at(pos[0], pos[1], pos[2], yaw, () => {
++    for (const s of [-1, 1]) {
++      kit.physical(`${name}-${s > 0 ? 'r' : 'l'}`, () => {
++        softBox(kit, mat, [-0.045, 0, -0.13], [0.045, 0.06, 0.14], { r: 0.025, puff: 0.01, occlude: false });
++        kit.box('rubber', [-0.047, 0, -0.132], [0.047, 0.012, 0.142], { seg: 9, occlude: false });
++        softBox(kit, mat, [-0.04, 0.05, -0.13], [0.04, 0.1, -0.03], { r: 0.02, occlude: false });
++      }, { pos: [s * 0.07, 0, s * 0.03], yaw: s * 0.08, mass: 0.45, material: 'fabric' });
++    }
++  });
++}
++
++/** A block of upright books (one body), spines toward +Z, `count` volumes of varied height. */
++export function bookBlock(kit, name, pos, rng, { count = 5, yaw = 0, mat = 'books', lean = 0 } = {}) {
++  kit.physical(name, () => {
++    let x = 0;
++    for (let i = 0; i < count; i++) {
++      const t = 0.025 + rng.next() * 0.025;
++      const h = 0.18 + rng.next() * 0.09;
++      const d = 0.13 + rng.next() * 0.05;
++      kit.box(mat, [x, 0, -d / 2], [x + t, h, d / 2], { seg: 9, occlude: false, uv: 'box' });
++      x += t + 0.002;
++    }
++    if (lean) kit.at(x + 0.02, 0, 0, 0, () => kit.geometry(mat, new THREE.BoxGeometry(0.03, 0.22, 0.15).translate(0.11 * Math.sin(lean), 0.11 * Math.cos(lean), 0).rotateZ(-lean)));
++  }, { pos, yaw, mass: 0.35 * count, material: 'paper' });
++}
++
++/** Wooden crate of LPs (one body): slatted box with record spines and two sleeves leaning out. */
++export function recordCrate(kit, name, pos, yaw = 0) {
++  kit.physical(name, () => {
++    const w = 0.36;
++    const d = 0.34;
++    const h = 0.3;
++    kit.box('maple', [-w / 2, 0, -d / 2], [w / 2, 0.015, d / 2], { seg: 9, occlude: false });
++    for (const s of [-1, 1]) {
++      kit.box('maple', [s > 0 ? w / 2 - 0.015 : -w / 2, 0, -d / 2], [s > 0 ? w / 2 : -w / 2 + 0.015, h, d / 2], { seg: 9, occlude: false });
++      for (const y of [0.04, 0.16]) kit.box('maple', [-w / 2, y, s > 0 ? d / 2 - 0.012 : -d / 2], [w / 2, y + 0.08, s > 0 ? d / 2 : -d / 2 + 0.012], { seg: 9, occlude: false });
++    }
++    for (let i = 0; i < 16; i++) kit.box(i % 3 ? 'plasticBlack' : 'magazines', [-w / 2 + 0.02 + i * 0.02, 0.015, -0.155], [-w / 2 + 0.034 + i * 0.02, 0.32, 0.155], { seg: 9, occlude: false, uv: 'fit' });
++  }, { pos, yaw, mass: 9, material: 'wood' });
++}
++
++/** TV remote / game controller (small physical items lying on a surface). */
++export function remote(kit, name, pos, yaw = 0, kind = 'remote') {
++  kit.physical(name, () => {
++    if (kind === 'remote') {
++      softBox(kit, 'plasticBlack', [-0.022, 0, -0.08], [0.022, 0.018, 0.08], { r: 0.008, occlude: false });
++      for (let i = 0; i < 4; i++) kit.box('plasticGrey', [-0.012, 0.018, -0.04 + i * 0.025], [0.012, 0.021, -0.03 + i * 0.025], { seg: 9, occlude: false });
++    } else {
++      softBox(kit, 'plasticWhite', [-0.075, 0, -0.035], [0.075, 0.035, 0.04], { r: 0.015, puff: 0.006, occlude: false });
++      for (const s of [-1, 1]) softBox(kit, 'plasticWhite', [s * 0.05 - 0.025, 0, -0.06], [s * 0.05 + 0.025, 0.03, 0.01], { r: 0.012, occlude: false });
++      for (const s of [-1, 1]) kit.cylinder('plasticBlack', [s * 0.025, 0.035, 0.012], 0.009, 0.006, { sides: 6 });
++    }
++  }, { pos, yaw, mass: 0.2, material: 'electronics' });
++}
++
+ /** Simple bentwood kitchen chair (physical box), facing +Z; registers a seat when `id` is set. */
+ export function kitchenChair(kit, name, pos, yaw = 0, { id = null } = {}) {
+   const S = FURNITURE.seat;
+-  kit.physical(name, pos, { shape: 'box', size: [0.44, 0.88, 0.46], mass: 5 }, () => {
++  kit.physical(name, pos, { shape: 'box', size: [0.44, 0.88, 0.46], mass: 5, material: 'wood' }, () => {
+     slab(kit, 'woodDark', [-0.21, S - 0.03, -0.2], [0.21, S, 0.22], { r: 0.008 });
+     for (const [x, z] of [[-0.18, -0.17], [0.18, -0.17], [0.18, 0.19], [-0.18, 0.19]]) taperLeg(kit, 'woodDark', [x, 0, z], S - 0.03, { top: 0.018, bottom: 0.013, sides: 6, splay: [x * 0.1, z * 0.1] });
+     for (const x of [-0.18, 0.18]) kit.tube('woodDark', [[x, S, -0.17], [x, 0.86, -0.22]], 0.014, { sides: 5 });
+@@ -117,6 +193,6 @@ export function kitchenChair(kit, name, pos, yaw = 0, { id = null } = {}) {
+     kit.tube('woodDark', [[0.18, 0.16, -0.17], [0.18, 0.16, 0.19]], 0.008, { sides: 4 });
+   }, yaw);
+   if (id) {
+-    kit.at(pos[0], pos[1], pos[2], yaw, () => kit.interactable({ id, kind: 'seat', pos: [0, S, 0.02], yaw: 0, radius: 1.2, prompt: 'Sit', data: { seatHeight: S, variant: 'chair', exit: [0, 0, 0.6], physical: name } }));
++    kit.at(pos[0], pos[1], pos[2], yaw, () => kit.interactable({ id, kind: 'seat', pos: [0, S, 0.02], yaw: 0, radius: 1.2, prompt: 'Sit', data: { seatHeight: S, variant: 'chair', exit: [0, 0, 0.6], prop: name } }));
+   }
+ }
+diff --git a/src/world/props/interior-props.js b/src/world/props/interior-props.js
+index 0eab009..d515637 100644
+--- a/src/world/props/interior-props.js
++++ b/src/world/props/interior-props.js
+@@ -79,24 +79,25 @@ export function coffeeTable(kit, w = 0.95, d = 1.25, h = 0.38) {
+   kit.panel('floorSheen', [0.05, h + 0.002, 0], [w * 0.45, d * 0.9], '+y', { rot: 0.4 });
+   kit.solid(rect(-w / 2, -d / 2, w / 2, d / 2), 0, h, 'table');
+   kit.walkable(rect(-w / 2, -d / 2, w / 2, d / 2), h);
++  kit.surface('coffee-table', rect(-w / 2, -d / 2, w / 2, d / 2), h);
+   kit.occluder([-w / 2 + 0.09, 0, -d / 2 + 0.09], [w / 2 - 0.09, h, d / 2 - 0.09]);
+ }
+ 
+-/** Table-top still life: magazines fanned, a candle jar with wooden lid, a black tray. */
+-export function tableTop(kit, rng) {
++/** Table-top still life, every piece loose: fanned magazines, a candle jar, a black tray with a lighter. */
++export function tableTop(kit, rng, prefix = 'table') {
+   const mags = [['magazines', 0.24, 0.32, 0.25], ['magazines', 0.21, 0.28, -0.35], ['books', 0.2, 0.26, 0.05]];
+-  let y = 0;
+-  mags.forEach(([mat, w, d, rot], i) => kit.at(-0.12 + i * 0.05, y, -0.18 + i * 0.03, rot, () => {
++  mags.forEach(([mat, w, d, rot], i) => kit.physical(`${prefix}-mag-${i}`, () => {
+     kit.box(mat, [-w / 2, 0, -d / 2], [w / 2, 0.008, d / 2], { seg: 9, uv: 'fit', occlude: false });
+-    y += 0.008;
+-  }));
+-  kit.cylinder('candleJar', [0.2, 0, 0.12], 0.045, 0.09, { sides: 8 });
+-  kit.cylinder('maple', [0.2, 0.09, 0.12], 0.047, 0.018, { sides: 8 });
+-  kit.at(0.05, 0, 0.32, 0.2 + rng.next() * 0.2, () => {
++  }, { pos: [-0.12 + i * 0.05, i * 0.0085, -0.18 + i * 0.03], yaw: rot, mass: 0.3, material: 'paper' }));
++  kit.physical(`${prefix}-candle`, () => {
++    kit.cylinder('candleJar', [0, 0, 0], 0.045, 0.09, { sides: 8 });
++    kit.cylinder('maple', [0, 0.09, 0], 0.047, 0.018, { sides: 8 });
++  }, { pos: [0.2, 0, 0.12], shape: 'cylinder', mass: 0.5, material: 'glass', breakable: true });
++  kit.physical(`${prefix}-tray`, () => {
+     slab(kit, 'plasticBlack', [-0.16, 0, -0.1], [0.16, 0.008, 0.1], { r: 0.002, occlude: false });
+     for (const [a, b] of [[[-0.16, 0, -0.1], [0.16, 0.025, -0.092]], [[-0.16, 0, 0.092], [0.16, 0.025, 0.1]], [[-0.16, 0, -0.1], [-0.152, 0.025, 0.1]], [[0.152, 0, -0.1], [0.16, 0.025, 0.1]]]) kit.box('plasticBlack', a, b, { seg: 9, occlude: false });
+-    kit.box('plasticBlack', [-0.04, 0.008, -0.03], [0.05, 0.03, 0.05], { seg: 9, occlude: false });
+-  });
++    kit.box('redPaint', [-0.04, 0.008, -0.03], [-0.02, 0.07, -0.015], { seg: 9, occlude: false });
++  }, { pos: [0.05, 0, 0.32], yaw: 0.2 + rng.next() * 0.2, mass: 0.4, material: 'plastic' });
+ }
+ 
+ /** Persian rug with a fringe at both short ends (fringe = cut-out strips). */
+@@ -133,16 +134,20 @@ export function mediaConsole(kit, modules = 3) {
+   }
+   kit.solid(rect(0, 0, modules * w, D + 0.02), 0, H, 'console');
+   kit.walkable(rect(0, 0, modules * w, D), H);
++  kit.surface('console-top', rect(0, 0, modules * w, D), H);
+   kit.occluder([0, 0, 0], [modules * w, H, D]);
+ }
+ 
+-/** Console top kit: white games tower (original), headphones on a stand, small box speaker, controller. */
+-export function consoleDressing(kit) {
+-  kit.at(0.32, 0, 0.18, 0.12, () => {
++/**
++ * Console top kit (frame: console top, x along it, z depth), every piece loose: white games tower
++ * (original), headphones on a stand, controller, remote. Names are prefixed with `prefix`.
++ */
++export function consoleDressing(kit, prefix = 'console') {
++  kit.physical(`${prefix}-tower`, () => {
+     softBox(kit, 'plasticWhite', [-0.05, 0, -0.13], [0.05, 0.39, 0.13], { r: 0.02, occlude: false });
+     kit.box('plasticBlack', [-0.012, 0.01, -0.131], [0.012, 0.37, 0.131], { seg: 9, occlude: false });
+-  });
+-  kit.at(0.75, 0, 0.2, 0, () => {
++  }, { pos: [0.32, 0, 0.18], yaw: 0.12, mass: 4, material: 'electronics' });
++  kit.physical(`${prefix}-headphones`, () => {
+     kit.cylinder('plasticBlack', [0, 0, 0], 0.06, 0.012, { sides: 8 });
+     kit.cylinder('steelGray', [0, 0.012, 0], 0.008, 0.28, { sides: 4 });
+     for (const s of [-1, 1]) softBox(kit, 'plasticBlack', [s * 0.07 - 0.02, 0.17, -0.04], [s * 0.07 + 0.02, 0.25, 0.04], { r: 0.012, occlude: false });
+@@ -150,38 +155,57 @@ export function consoleDressing(kit) {
+       const a = Math.PI - (i / 6) * Math.PI;
+       return [Math.cos(a) * 0.075, 0.22 + Math.sin(a) * 0.09, 0];
+     }), 0.01, { sides: 4 });
+-  });
+-  kit.at(1.25, 0, 0.2, 0, () => {
+-    softBox(kit, 'plasticBlack', [-0.1, 0, -0.07], [0.1, 0.1, 0.07], { r: 0.01, occlude: false });
+-    kit.cylinder('steelGray', [0, 0.04, 0.071], 0.03, 0.002, { sides: 8 });
+-  });
+-  kit.at(0.95, 0, 0.3, -0.3, () => {
+-    softBox(kit, 'plasticWhite', [-0.07, 0, -0.04], [0.07, 0.04, 0.04], { r: 0.015, occlude: false });
+-  });
++  }, { pos: [0.62, 0, 0.2], mass: 0.6, material: 'plastic' });
++  remoteBody(kit, `${prefix}-controller`, [0.82, 0, 0.32], -0.3, 'controller');
++  remoteBody(kit, `${prefix}-remote`, [2.05, 0, 0.33], 0.4, 'remote');
++}
++
++function remoteBody(kit, name, pos, yaw, kind) {
++  kit.physical(name, () => {
++    if (kind === 'remote') {
++      softBox(kit, 'plasticBlack', [-0.022, 0, -0.08], [0.022, 0.018, 0.08], { r: 0.008, occlude: false });
++      for (let i = 0; i < 4; i++) kit.box('plasticGrey', [-0.012, 0.018, -0.04 + i * 0.025], [0.012, 0.021, -0.03 + i * 0.025], { seg: 9, occlude: false });
++    } else {
++      softBox(kit, 'plasticWhite', [-0.075, 0, -0.035], [0.075, 0.035, 0.04], { r: 0.015, puff: 0.006, occlude: false });
++      for (const s of [-1, 1]) softBox(kit, 'plasticWhite', [s * 0.05 - 0.025, 0, -0.06], [s * 0.05 + 0.025, 0.03, 0.01], { r: 0.012, occlude: false });
++      for (const s of [-1, 1]) kit.cylinder('plasticBlack', [s * 0.025, 0.035, 0.012], 0.009, 0.006, { sides: 6 });
++    }
++  }, { pos, yaw, mass: 0.2, material: 'electronics' });
+ }
+ 
+-/** Lava lamp: tapered emissive glass body on a chrome cone base with a cap. */
++/** Lava lamp (loose, breakable): tapered emissive glass body on a chrome cone base with a cap. */
+ export function lavaLamp(kit, name) {
+-  kit.lathe('chrome', [0, 0, 0], [[0.001, 0], [0.05, 0], [0.032, 0.09], [0.022, 0.1]], { sides: 8 });
+-  kit.glow(name, () => kit.lathe('lavaLamp', [0, 0.1, 0], [[0.022, 0], [0.034, 0.12], [0.02, 0.24], [0.001, 0.24]], { sides: 8 }));
+-  kit.lathe('chrome', [0, 0.34, 0], [[0.02, 0], [0.012, 0.05], [0.001, 0.055]], { sides: 8 });
+-  kit.light({ name, pos: [0.08, 0.25, 0], color: '#ff5a6a', intensity: 0.4, range: 1.8, switchable: true, fill: 0.2, zone: 'unit' });
++  kit.physical(`${name}-body`, () => {
++    kit.lathe('chrome', [0, 0, 0], [[0.001, 0], [0.05, 0], [0.032, 0.09], [0.022, 0.1]], { sides: 8 });
++    kit.glow(name, () => kit.lathe('lavaLamp', [0, 0.1, 0], [[0.022, 0], [0.034, 0.12], [0.02, 0.24], [0.001, 0.24]], { sides: 8 }));
++    kit.lathe('chrome', [0, 0.34, 0], [[0.02, 0], [0.012, 0.05], [0.001, 0.055]], { sides: 8 });
++    kit.light({ name, pos: [0.08, 0.25, 0], color: '#ff5a6a', intensity: 0.4, range: 1.8, switchable: true, fill: 0.2, zone: 'unit' });
++  }, { shape: 'cylinder', mass: 1.2, material: 'glass', breakable: true });
+ }
+ 
+-/** Wall-mounted TV: thin black bezel, screen glowing on the TV's layer. Back on z = 0, faces +Z. */
++/**
++ * Wall-mounted TV (anchored to the wall, breakable): thin black bezel, screen glowing on the TV's
++ * layer. Back on z = 0, faces +Z, origin at the screen centre.
++ */
+ export function wallTV(kit, { w = 1.45, h = 0.84, name = 'tv-glow', id = null } = {}) {
+-  slab(kit, 'plasticBlack', [-w / 2, -h / 2, 0.02], [w / 2, h / 2, 0.055], { r: 0.004, occlude: false });
+-  kit.box('plasticBlack', [-0.2, -0.15, 0], [0.2, 0.15, 0.02], { seg: 9, occlude: false });
+-  kit.glow(name, () => kit.panel('tv', [0, 0.005, 0.0555], [w - 0.024, h - 0.034], '+z'));
+-  kit.light({ name, pos: [0, 0, 0.6], color: '#9a8cf0', intensity: 1.0, range: 3.4, dir: [0, -0.15, 1], cone: 0.1, zone: 'unit', switchable: true, fill: 0.4 });
+-  if (id) kit.interactable({ id, kind: 'tv', pos: [0, -0.4, 0.3], yaw: Math.PI, radius: 2.4, prompt: 'TV', data: { lights: [name], on: true } });
++  kit.physical('tv', () => {
++    slab(kit, 'plasticBlack', [-w / 2, -h / 2, 0.02], [w / 2, h / 2, 0.055], { r: 0.004, occlude: false });
++    kit.box('plasticBlack', [-0.2, -0.15, 0], [0.2, 0.15, 0.02], { seg: 9, occlude: false });
++    kit.glow(name, () => kit.panel('tv', [0, 0.005, 0.0555], [w - 0.024, h - 0.034], '+z'));
++    kit.light({ name, pos: [0, 0, 0.6], color: '#9a8cf0', intensity: 1.0, range: 3.4, dir: [0, -0.15, 1], cone: 0.1, zone: 'unit', switchable: true, fill: 0.4 });
++    if (id) kit.interactable({ id, kind: 'tv', pos: [0, -0.4, 0.3], yaw: Math.PI, radius: 2.4, prompt: 'TV', data: { lights: [name], on: true } });
++  }, { mass: 14, material: 'electronics', breakable: true, anchored: 'wall', anchor: [0, 0, 0] });
+ }
+ 
+ /**
+  * Hektar-style floor lamp: weighted disc base, thin stem, angled matte grey dome shade glowing on
+  * its own layer (and a shadowed rig candidate).
+  */
+-export function floorLamp(kit, name, { id = null } = {}) {
++export function floorLamp(kit, name, opts = {}) {
++  kit.physical(`${name}-stand`, () => floorLampBody(kit, name, opts), { mass: 7, material: 'metal', shape: 'cylinder', radius: 0.17 });
++}
++
++function floorLampBody(kit, name, { id = null } = {}) {
+   kit.lathe('steelGray', [0, 0, 0], [[0.001, 0], [0.17, 0], [0.17, 0.02], [0.14, 0.035], [0.02, 0.04]], { sides: 10 });
+   kit.cylinder('steelGray', [0, 0.04, 0], 0.012, 1.55, { sides: 5 });
+   kit.cylinder('steelGray', [0, 1.4, 0], 0.016, 0.06, { sides: 5 });
+@@ -192,7 +216,6 @@ export function floorLamp(kit, name, { id = null } = {}) {
+   kit.geometry('steelGray', new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r - 0.004, y)).reverse(), 10), m);
+   kit.glow(name, () => kit.geometry('bulbWarm', new THREE.CircleGeometry(0.15, 10).rotateX(Math.PI / 2), m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.004, 0))));
+   const dir = new THREE.Vector3(0, -1, 0).applyMatrix4(new THREE.Matrix4().makeRotationX(-0.55)).toArray();
+-  kit.solid(rect(-0.17, -0.17, 0.17, 0.17), 0, 1.8, 'lamp');
+   kit.light({ name, pos: [0.2, 1.52, 0.2], color: '#ffd09a', intensity: 2.0, range: 5, dir, cone: 0.15, dynamic: true, zone: 'unit', switchable: true, shadow: true, fill: 0.8 });
+   if (id) kit.interactable({ id, kind: 'lamp', pos: [0, 1.0, 0], yaw: 0, radius: 1.2, prompt: 'Lamp', data: { lights: [name], on: true } });
+ }
+@@ -202,17 +225,20 @@ export function floorLamp(kit, name, { id = null } = {}) {
+  * (reference: two banded spheres at different heights). Origin is the ceiling attachment.
+  */
+ export function orbPendant(kit, name, { drop = 2.2, r = 0.32 } = {}) {
+-  const c = [0, -drop, 0];
+-  const band = (yaw, tilt) => strapRing(kit, 'bronze', r, 0.045, 0.006, new THREE.Matrix4().makeRotationY(yaw).multiply(new THREE.Matrix4().makeRotationZ(tilt)).setPosition(...c), 16);
+-  for (let i = 0; i < 6; i++) band((i / 6) * Math.PI, Math.PI / 2 - 0.18 * (i % 3));
+-  band(0, 0);
+-  band(0.4, 0.5);
+-  band(-0.6, -0.5);
+-  kit.cylinder('bronze', [0, c[1] + r - 0.02, 0], 0.03, 0.05, { sides: 6 });
+-  kit.glow(name, () => kit.sphere('bulbWarm', [0, c[1] - 0.02, 0], 0.055, { w: 6, h: 5, scale: [1, 1.25, 1] }));
+-  for (const yaw of [0, Math.PI / 2]) kit.at(0, 0, 0, yaw, () => kit.decal('chain', [0, -(drop - r) / 2, 0], [0.04, drop - r], '+z', { cut: true }));
+   kit.cylinder('steelBlack', [0, -0.04, 0], 0.05, 0.04, { sides: 8 });
+-  kit.light({ name, pos: [0, c[1] - 0.05, 0], color: '#ffd49a', intensity: 2.4, range: 7, dynamic: true, zone: 'unit', switchable: true, shadow: true, fill: 0.9 });
++  // the orb, its chain and its bulb swing as one body hung from the ceiling canopy (contracts §8)
++  kit.physical(`${name}-orb`, () => kit.at(0, drop, 0, 0, () => {
++    const c = [0, -drop, 0];
++    const band = (yaw, tilt) => strapRing(kit, 'bronze', r, 0.045, 0.006, new THREE.Matrix4().makeRotationY(yaw).multiply(new THREE.Matrix4().makeRotationZ(tilt)).setPosition(...c), 16);
++    for (let i = 0; i < 6; i++) band((i / 6) * Math.PI, Math.PI / 2 - 0.18 * (i % 3));
++    band(0, 0);
++    band(0.4, 0.5);
++    band(-0.6, -0.5);
++    kit.cylinder('bronze', [0, c[1] + r - 0.02, 0], 0.03, 0.05, { sides: 6 });
++    kit.glow(name, () => kit.sphere('bulbWarm', [0, c[1] - 0.02, 0], 0.055, { w: 6, h: 5, scale: [1, 1.25, 1] }));
++    for (const yaw of [0, Math.PI / 2]) kit.at(0, 0, 0, yaw, () => kit.decal('chain', [0, -(drop - r) / 2 - 0.04, 0], [0.04, drop - r - 0.08], '+z', { cut: true }));
++    kit.light({ name, pos: [0, c[1] - 0.05, 0], color: '#ffd49a', intensity: 2.4, range: 7, dynamic: true, zone: 'unit', switchable: true, shadow: true, fill: 0.9 });
++  }), { pos: [0, -drop, 0], shape: 'sphere', radius: r, offset: [0, 0, 0], mass: 3, material: 'metal', breakable: false, anchored: 'ceiling', anchor: [0, -0.04, 0], chain: drop - 0.04 });
+ }
+ 
+ /** Ceiling track with cylindrical spot heads aimed along `aim` (local). Origin at the track centre. */
+@@ -325,22 +351,11 @@ export function kitchenRun(kit, length, { fridge = true, layer = null } = {}) {
+     handle(kit, 'vbar', [-0.08, 1.45], 0.7, { len: 0.3 });
+   }
+   kit.solid(rect(fridge ? -0.78 : 0, 0, length, d), 0, C, 'counter');
++  kit.surface('counter', rect(0, 0, length, d), C);
+   if (fridge) kit.solid(rect(-0.78, 0, -0.02, 0.72), 0, 1.82, 'fridge');
+   kit.occluder([fridge ? -0.78 : 0, 0, 0], [length, C, d]);
+ }
+ 
+-/** Two-door stainless fridge facing +Z (freezer on top), handles on the right. */
+-export function fridge(kit, w = 0.74, h = 1.82, d = 0.7) {
+-  slab(kit, 'stainless', [-w / 2, 0.02, 0], [w / 2, h, d - 0.04], { r: 0.012, collide: true, tag: 'fridge' });
+-  slab(kit, 'stainless', [-w / 2 + 0.005, 0.03, d - 0.04], [w / 2 - 0.005, h * 0.64, d], { r: 0.01, occlude: false });
+-  slab(kit, 'stainless', [-w / 2 + 0.005, h * 0.64 + 0.008, d - 0.04], [w / 2 - 0.005, h - 0.005, d], { r: 0.01, occlude: false });
+-  kit.box('plasticBlack', [-w / 2 + 0.02, 0, 0.05], [w / 2 - 0.02, 0.03, d - 0.05], { seg: 9, occlude: false });
+-  handle(kit, 'vbar', [w / 2 - 0.06, h * 0.42], d, { len: 0.55, mat: 'chrome' });
+-  handle(kit, 'vbar', [w / 2 - 0.06, h * 0.8], d, { len: 0.3, mat: 'chrome' });
+-  kit.decal('noticeMeeting', [-0.12, h * 0.48, d + 0.004], [0.14, 0.14], '+z');
+-  kit.decal('flyerCat', [0.08, h * 0.38, d + 0.004], [0.13, 0.13], '+z', { rot: 0.1 });
+-}
+-
+ export function toilet(kit) {
+   kit.lathe('ceramic', [0, 0, 0.34], [[0.001, 0], [0.13, 0], [0.12, 0.08], [0.15, 0.24], [0.2, 0.37], [0.19, 0.39], [0.001, 0.39]], { sides: 10 });
+   kit.geometry('ceramic', new THREE.TorusGeometry(0.155, 0.022, 3, 12).rotateX(Math.PI / 2).scale(1, 1, 1.22), new THREE.Matrix4().makeTranslation(0, 0.41, 0.36));
+@@ -364,7 +379,7 @@ export function vanity(kit, w = 0.75) {
+   kit.panel('mirror', [0, 1.45, 0.026], [w * 0.8, 0.78], '+z');
+   kit.box('chrome', [-0.3, 1.92, 0], [0.3, 1.97, 0.08], { seg: 9, occlude: false });
+   kit.panel('bulbWarm', [0, 1.919, 0.05], [0.55, 0.05], '-y');
+-  for (const [x, mat, h] of [[0.26, 'bottleGreen', 0.16], [0.3, 'plasticWhite', 0.12], [-0.28, 'ceramic', 0.08]]) kit.cylinder(mat, [x, 0.86, 0.1], 0.025, h, { sides: 6 });
++  kit.surface('vanity-top', rect(-w / 2, 0, w / 2, 0.5), 0.86);
+   kit.solid(rect(-w / 2, 0, w / 2, 0.5), 0, 0.86, 'vanity');
+ }
+ 
+@@ -414,17 +429,20 @@ export function nightstand(kit, w = 0.45, d = 0.4, h = 0.52) {
+   for (const x of [-w / 2 + 0.03, w / 2 - 0.03]) for (const z of [-d / 2 + 0.03, d / 2 - 0.03]) taperLeg(kit, 'woodDark', [x, 0, z], 0.12, { top: 0.016, bottom: 0.011 });
+   kit.solid(rect(-w / 2, -d / 2, w / 2, d / 2), 0, h, 'nightstand');
+   kit.walkable(rect(-w / 2, -d / 2, w / 2, d / 2), h);
++  kit.surface('nightstand', rect(-w / 2, -d / 2, w / 2, d / 2), h);
+ }
+ 
+-/** Brass bedside lamp with a fabric drum shade glowing on its own layer. */
++/** Brass bedside lamp (loose) with a fabric drum shade glowing on its own layer. */
+ export function tableLamp(kit, name, { id = null, zone = 'unit' } = {}) {
+-  kit.lathe('brass', [0, 0, 0], [[0.001, 0], [0.07, 0], [0.07, 0.015], [0.02, 0.03], [0.015, 0.3], [0.001, 0.31]], { sides: 8 });
+-  kit.glow(name, () => {
+-    kit.lathe('mustard', [0, 0.24, 0], [[0.11, 0], [0.08, 0.18], [0.079, 0.18], [0.109, 0.0]], { sides: 10 });
+-    kit.sphere('bulbWarm', [0, 0.3, 0], 0.03, { w: 6, h: 4 });
+-  });
+-  kit.light({ name, pos: [0, 0.32, 0], color: '#ffc27e', intensity: 1.2, range: 3.2, dynamic: true, zone, switchable: true, fill: 1.0 });
+-  if (id) kit.interactable({ id, kind: 'lamp', pos: [0, 0.3, 0], radius: 1.0, prompt: 'Lamp', data: { lights: [name], on: true } });
++  kit.physical(`${name}-body`, () => {
++    kit.lathe('brass', [0, 0, 0], [[0.001, 0], [0.07, 0], [0.07, 0.015], [0.02, 0.03], [0.015, 0.3], [0.001, 0.31]], { sides: 8 });
++    kit.glow(name, () => {
++      kit.lathe('mustard', [0, 0.24, 0], [[0.11, 0], [0.08, 0.18], [0.079, 0.18], [0.109, 0.0]], { sides: 10 });
++      kit.sphere('bulbWarm', [0, 0.3, 0], 0.03, { w: 6, h: 4 });
++    });
++    kit.light({ name, pos: [0, 0.32, 0], color: '#ffc27e', intensity: 1.2, range: 3.2, dynamic: true, zone, switchable: true, fill: 1.0 });
++    if (id) kit.interactable({ id, kind: 'lamp', pos: [0, 0.3, 0], radius: 1.0, prompt: 'Lamp', data: { lights: [name], on: true } });
++  }, { shape: 'cylinder', mass: 1.8, material: 'metal', breakable: true });
+ }
+ 
+ /** Chrome garment rack on casters with hanging shirts, a jacket and jeans (rng picks colours). */
+@@ -457,10 +475,13 @@ export function cubeTable(kit, w, d, h) {
+   slab(kit, 'maple', [w - t, t, 0], [w, h - t, d], { r: 0.004, occlude: false });
+   slab(kit, 'maple', [t, t, 0], [w - t, h - t, t], { r: 0.003, occlude: false });
+   slab(kit, 'maple', [t, h / 2 - t / 2, t], [w - t, h / 2 + t / 2, d - 0.01], { r: 0.003, occlude: false });
+-  kit.box('books', [t + 0.02, t, 0.05], [t + 0.02 + 0.3, t + 0.24, 0.22], { seg: 9, uv: 'box', occlude: false });
+-  kit.box('magazines', [w * 0.45, h / 2 + t / 2, 0.06], [w * 0.45 + 0.22, h / 2 + t / 2 + 0.06, 0.34], { seg: 9, uv: 'fit', occlude: false });
++  kit.physical('cube-books', () => kit.box('books', [-0.15, 0, -0.085], [0.15, 0.24, 0.085], { seg: 9, uv: 'box', occlude: false }), { pos: [t + 0.17, t, 0.135], mass: 2.5, material: 'paper' });
++  kit.physical('cube-magazines', () => kit.box('magazines', [-0.11, 0, -0.14], [0.11, 0.06, 0.14], { seg: 9, uv: 'fit', occlude: false }), { pos: [w * 0.45 + 0.11, h / 2 + t / 2, 0.2], mass: 1.2, material: 'paper' });
+   kit.solid(rect(0, 0, w, d), 0, h, 'cube');
+   kit.walkable(rect(0, 0, w, d), h);
++  kit.surface('cube-top', rect(0, 0, w, d), h);
++  kit.surface('cube-shelf', rect(t, t, w - t, d), h / 2 + t / 2);
++  kit.surface('cube-bottom', rect(t, t, w - t, d), t);
+   kit.occluder([0, 0, 0], [w, h, d]);
+ }
+ 
+@@ -548,63 +569,173 @@ export function metalCart(kit, w = 0.62, d = 0.45, h = 1.0, { dress = false } =
+   }
+   kit.decal('scuff', [w / 2, 0.3, d + 0.02], [w, 0.25], '+z');
+   if (dress) {
+-    [[0.1, 'bottleGreen', 0.3], [0.18, 'bottleBrown', 0.24], [0.26, 'glassDark', 0.27], [0.33, 'plasticWhite', 0.18]].forEach(([x, mat, bh]) => {
+-      kit.cylinder(mat, [x, h, 0.15], 0.035, bh * 0.7, { sides: 6 });
+-      kit.cylinder(mat, [x, h + bh * 0.7, 0.15], 0.035, bh * 0.15, { radiusTop: 0.013, sides: 6 });
+-      kit.cylinder(mat, [x, h + bh * 0.85, 0.15], 0.013, bh * 0.15, { sides: 5 });
++    // liquor and mixers on top, a camcorder, a box and books below: all loose
++    [[0.1, 'bottleGreen', 0.3], [0.18, 'bottleBrown', 0.24], [0.26, 'glassDark', 0.27], [0.33, 'plasticWhite', 0.18], [0.07, 'glassLager', 0.22]].forEach(([x, mat, bh], i) => {
++      kit.physical(`cart-bottle-${i}`, () => {
++        kit.cylinder(mat, [0, 0, 0], 0.035, bh * 0.7, { sides: 6 });
++        kit.cylinder(mat, [0, bh * 0.7, 0], 0.035, bh * 0.15, { radiusTop: 0.013, sides: 6 });
++        kit.cylinder(mat, [0, bh * 0.85, 0], 0.013, bh * 0.15, { sides: 5 });
++      }, { pos: [x, h, i === 4 ? 0.33 : 0.15], shape: 'cylinder', mass: 0.8, material: mat === 'plasticWhite' ? 'plastic' : 'glass', breakable: mat !== 'plasticWhite' });
+     });
+-    kit.at(0.48, h, 0.22, 0.4, () => {
++    kit.physical('cart-camcorder', () => {
+       softBox(kit, 'plasticBlack', [-0.06, 0, -0.1], [0.06, 0.1, 0.1], { r: 0.015, occlude: false });
+       kit.geometry('plasticBlack', new THREE.CylinderGeometry(0.035, 0.04, 0.1, 8).rotateX(Math.PI / 2), new THREE.Matrix4().makeTranslation(0, 0.06, 0.14));
+-    });
+-    kit.box('cardboard', [0.06, 0.55, 0.06], [0.36, 0.75, 0.38], { seg: 9, occlude: false });
+-    kit.box('books', [0.4, 0.18, 0.08], [0.58, 0.42, 0.24], { seg: 9, occlude: false });
++    }, { pos: [0.48, h, 0.2], yaw: 0.4, mass: 1.1, material: 'electronics' });
++    kit.physical('cart-box', () => slab(kit, 'cardboard', [-0.15, 0, -0.16], [0.15, 0.2, 0.16], { r: 0.006, occlude: false }), { pos: [0.21, 0.55, 0.22], mass: 1.5, material: 'paper' });
++    kit.physical('cart-books', () => kit.box('books', [-0.09, 0, -0.08], [0.09, 0.24, 0.08], { seg: 9, occlude: false }), { pos: [0.49, 0.18, 0.16], mass: 2, material: 'paper' });
+   }
+   kit.solid(rect(-0.02, -0.02, w + 0.02, d + 0.02), 0, h, 'cart');
+   kit.walkable(rect(0, 0, w, d), h);
++  for (const y of [0.18, 0.55, h]) kit.surface(`cart-shelf-${y}`, rect(0, 0, w, d), y);
+ }
+ 
+-/** Floor speaker: cabinet with chamfer, two driver cones with surrounds, port. */
+-export function speaker(kit, w = 0.3, h = 0.95, d = 0.32) {
+-  slab(kit, 'plasticBlack', [-w / 2, 0, -d / 2], [w / 2, h, d / 2], { r: 0.008, collide: true, tag: 'speaker' });
+-  for (const [y, rr] of [[0.28, 0.1], [0.62, 0.1], [0.84, 0.035]]) {
+-    const m = new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(0, y, d / 2 + 0.002);
+-    kit.geometry('rubber', new THREE.CylinderGeometry(rr, rr, 0.006, 10), m);
+-    kit.geometry('steelBlack', new THREE.ConeGeometry(rr * 0.8, 0.04, 10, 1, true).rotateX(Math.PI), m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.016, 0)));
++/**
++ * Tall floor-standing speaker facing +Z: chamfered black cabinet on a plinth with spikes, two woofers
++ * and a mid with rubber surrounds and dust caps, a tweeter, a bass port; walnut side cheeks.
++ * Registers marker `marker` (front face, woofer height) for the audio system when given.
++ */
++export function speaker(kit, { w = 0.26, h = 1.05, d = 0.34, marker = null } = {}) {
++  slab(kit, 'plasticBlack', [-w / 2, 0.05, -d / 2], [w / 2, h, d / 2], { r: 0.01, collide: true, tag: 'speaker' });
++  for (const s of [-1, 1]) kit.box('woodDark', [s > 0 ? w / 2 : -w / 2 - 0.006, 0.07, -d / 2 + 0.02], [s > 0 ? w / 2 + 0.006 : -w / 2, h - 0.02, d / 2 - 0.02], { seg: 9, occlude: false });
++  slab(kit, 'steelBlack', [-w / 2 - 0.03, 0.02, -d / 2 - 0.03], [w / 2 + 0.03, 0.05, d / 2 + 0.03], { r: 0.006, occlude: false });
++  for (const [x, z] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) kit.cylinder('chrome', [x * (w / 2 + 0.01), 0, z * (d / 2 + 0.01)], 0.01, 0.02, { sides: 4, radiusTop: 0.002 });
++  for (const [y, rr] of [[0.3, 0.095], [0.55, 0.095], [0.8, 0.06], [0.95, 0.025]]) {
++    const m = new THREE.Matrix4().makeRotationX(Math.PI / 2).setPosition(0, y, d / 2 + 0.003);
++    kit.geometry('rubber', new THREE.CylinderGeometry(rr, rr, 0.006, 12), m);
++    kit.geometry('steelGray', new THREE.ConeGeometry(rr * 0.78, 0.035, 12, 1, true).rotateX(Math.PI), m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.015, 0)));
++    kit.geometry('plasticBlack', new THREE.SphereGeometry(rr * 0.25, 6, 3, 0, Math.PI * 2, 0, Math.PI / 2), m.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.004, 0)));
+   }
+-  kit.cylinder('rubber', [0, 0.08, d / 2], 0.025, 0.002, { sides: 8 });
++  kit.geometry('rubber', new THREE.CylinderGeometry(0.03, 0.03, 0.01, 8).rotateX(Math.PI / 2), new THREE.Matrix4().makeTranslation(0, 0.13, d / 2 + 0.002));
++  if (marker) kit.marker(marker, [0, 0.55, d / 2 + 0.02], { yaw: 0, kind: 'speaker' });
+ }
+ 
+-export function basketball(kit, c, mat = 'plasticBlack') {
+-  kit.sphere(mat, c, 0.12, { w: 8, h: 6 });
+-  for (const [rx, ry] of [[0, 0], [Math.PI / 2, 0], [0, Math.PI / 2]]) {
+-    kit.geometry('rubber', new THREE.TorusGeometry(0.121, 0.003, 3, 14), new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, 0)).setPosition(...c));
++/**
++ * Hi-fi on a surface, facing +Z: belt-drive turntable (plinth, platter with a record and label,
++ * tonearm, dust cover hinge) and a small two-channel DJ mixer with knobs and faders. Registers the
++ * Music switch (contracts: kind 'switch', data { music: true }).
++ */
++export function hifi(kit, { id = 'music', turntableX = 0, mixerX = -0.42 } = {}) {
++  kit.physical('turntable', () => kit.at(0, 0.012, 0, 0, () => {
++    slab(kit, 'woodDark', [-0.22, 0, -0.17], [0.22, 0.07, 0.17], { r: 0.006, occlude: false });
++    for (const [x, z] of [[-0.18, -0.13], [0.18, -0.13], [0.18, 0.13], [-0.18, 0.13]]) kit.cylinder('rubber', [x, -0.012, z], 0.02, 0.012, { sides: 6 });
++    kit.cylinder('steelGray', [-0.04, 0.07, 0], 0.15, 0.012, { sides: 16 });
++    kit.cylinder('plasticBlack', [-0.04, 0.082, 0], 0.148, 0.004, { sides: 16 });
++    kit.cylinder('redPaint', [-0.04, 0.0865, 0], 0.045, 0.001, { sides: 10 });
++    kit.cylinder('chrome', [-0.04, 0.087, 0], 0.004, 0.012, { sides: 4 });
++    kit.cylinder('steelGray', [0.16, 0.07, -0.1], 0.022, 0.03, { sides: 8 });
++    kit.tube('chrome', [[0.16, 0.1, -0.1], [0.15, 0.1, 0.0], [0.07, 0.1, 0.07]], 0.0045, { sides: 3 });
++    kit.box('plasticBlack', [0.055, 0.09, 0.06], [0.08, 0.1, 0.085], { seg: 9, occlude: false });
++    kit.cylinder('chrome', [0.17, 0.07, 0.11], 0.012, 0.008, { sides: 6 });
++    kit.box('plasticBlack', [-0.2, 0.07, -0.17], [0.2, 0.08, -0.155], { seg: 9, occlude: false });
++  }), { pos: [turntableX, 0, 0.21], mass: 6, material: 'electronics' });
++  kit.physical('mixer', () => {
++    slab(kit, 'steelBlack', [-0.13, 0, -0.16], [0.13, 0.085, 0.16], { r: 0.006, occlude: false });
++    for (let i = 0; i < 3; i++) for (const x of [-0.06, 0.06]) kit.cylinder('plasticWhite', [x, 0.085, -0.1 + i * 0.05], 0.011, 0.016, { sides: 6 });
++    for (const x of [-0.06, 0.06]) kit.box('plasticGrey', [x - 0.006, 0.085, 0.04], [x + 0.006, 0.1, 0.09], { seg: 9, occlude: false });
++    kit.box('plasticGrey', [-0.035, 0.085, 0.12], [0.035, 0.1, 0.132], { seg: 9, occlude: false });
++    kit.glow('hifi', () => {
++      for (let i = 0; i < 6; i++) kit.box(i < 4 ? 'bulbCool' : 'lavaLamp', [-0.006, 0.0851, -0.13 + i * 0.012], [0.006, 0.0856, -0.124 + i * 0.012], { seg: 9, occlude: false });
++    });
++  }, { pos: [mixerX, 0, 0.21], mass: 2.5, material: 'electronics' });
++  kit.light({ name: 'hifi', pos: [mixerX, 0.2, 0.3], color: '#9fd4ff', intensity: 0.06, range: 0.8, switchable: true, fill: 0, zone: 'unit' });
++  kit.interactable({ id, kind: 'switch', pos: [turntableX, 0.1, 0.3], yaw: Math.PI, radius: 1.3, prompt: 'Music', data: { music: true, lights: ['hifi'], on: true } });
++}
++
++/**
++ * Single-door stainless fridge facing +Z with a working door: a hollow white-lined cavity with glass
++ * shelves, beer and leftovers inside, and a door dynamic (door: true → simulated by the door system;
++ * opens outward only, self-closing) hinged on the right with bottle bins on its inner face.
++ */
++export function fridge(kit, { name = 'fridge-door', w = 0.74, h = 1.82, d = 0.7, id = 'loft.fridge', contents = [] } = {}) {
++  const t = 0.04;
++  const shell = (a, b) => slab(kit, 'stainless', a, b, { r: 0.008, occlude: false });
++  shell([-w / 2, 0.03, 0], [w / 2, h, t]);
++  shell([-w / 2, 0.03, 0], [-w / 2 + t, h, d - 0.06]);
++  shell([w / 2 - t, 0.03, 0], [w / 2, h, d - 0.06]);
++  shell([-w / 2, h - t, 0], [w / 2, h, d - 0.06]);
++  shell([-w / 2, 0.03, 0], [w / 2, 0.03 + t + 0.05, d - 0.06]);
++  kit.box('plasticBlack', [-w / 2 + 0.02, 0, 0.05], [w / 2 - 0.02, 0.03, d - 0.08], { seg: 9, occlude: false });
++  const lo = [-w / 2 + t, 0.12, t];
++  const hi = [w / 2 - t, h - t, d - 0.06];
++  kit.box('plasticWhite', [lo[0], lo[1], lo[2]], [hi[0], hi[1], lo[2] + 0.005], { seg: 9, occlude: false });
++  for (const s of [-1, 1]) kit.box('plasticWhite', [s < 0 ? lo[0] : hi[0] - 0.005, lo[1], lo[2]], [s < 0 ? lo[0] + 0.005 : hi[0], hi[1], hi[2]], { seg: 9, occlude: false });
++  kit.box('plasticWhite', [lo[0], hi[1] - 0.005, lo[2]], [hi[0], hi[1], hi[2]], { seg: 9, occlude: false });
++  kit.box('plasticWhite', [lo[0], lo[1], lo[2]], [hi[0], lo[1] + 0.005, hi[2]], { seg: 9, occlude: false });
++  kit.glow('fridge-light', () => kit.panel('bulbCool', [0, hi[1] - 0.006, lo[2] + 0.12], [0.16, 0.05], '-y'));
++  const shelves = [0.55, 0.95, 1.3];
++  for (const y of shelves) kit.box('glass', [lo[0] + 0.01, y, lo[2] + 0.02], [hi[0] - 0.01, y + 0.008, hi[2] - 0.02], { seg: 9, occlude: false });
++  kit.box('plasticWhite', [lo[0] + 0.02, lo[1] + 0.005, lo[2] + 0.04], [hi[0] - 0.02, 0.4, hi[2] - 0.04], { seg: 9, occlude: false });
++  for (let i = 0; i < 5; i++) {
++    const x = lo[0] + 0.07 + i * 0.075;
++    kit.lathe(i % 2 ? 'glassLager' : 'bottleBrown', [x, 0.555 + 0.008, 0.2 + (i % 2) * 0.08], [[0.001, 0], [0.03, 0], [0.03, 0.15], [0.012, 0.21], [0.012, 0.24], [0.001, 0.24]], { sides: 6 });
++  }
++  kit.box('cardboard', [lo[0] + 0.05, 0.963, 0.12], [lo[0] + 0.25, 1.1, 0.42], { seg: 9, occlude: false });
++  kit.cylinder('plasticWhite', [0.12, 0.963, 0.3], 0.07, 0.09, { sides: 8 });
++  kit.box('bottleGreen', [0.0, 1.308, 0.15], [0.18, 1.37, 0.3], { seg: 9, occlude: false });
++  kit.solid(rect(-w / 2, 0, w / 2, d - 0.06), 0, h, 'fridge');
++  kit.occluder([-w / 2, 0, 0], [w / 2, h, t]);
++  // the door: pivot on the right front corner, leaf runs toward -X (dir -1), opens outward ('pos')
++  const lw = w - 0.006;
++  kit.beginDynamic(name, [w / 2, 0.03, d - 0.03], Math.PI, { door: true, width: lw, height: h - 0.035, label: 'fridge', swing: 'pos', closer: 6, mass: 6, limit: 1.9 });
++  slab(kit, 'stainless', [0.003, 0, -0.03], [lw, h - 0.035, 0.03], { r: 0.01, occlude: false });
++  kit.box('plasticBlack', [0.01, h * 0.64, -0.031], [lw - 0.01, h * 0.64 + 0.012, -0.03], { seg: 9, occlude: false });
++  handle(kit, 'vbar', [lw - 0.06, 1.05], -0.03, { len: 0.6, mat: 'chrome' });
++  kit.box('plasticWhite', [0.04, 0.1, 0.03], [lw - 0.04, h - 0.1, 0.035], { seg: 9, occlude: false });
++  for (const y of [0.35, 0.8, 1.25]) {
++    kit.box('plasticWhite', [0.06, y, 0.035], [lw - 0.06, y + 0.012, 0.11], { seg: 9, occlude: false });
++    kit.box('glass', [0.06, y, 0.105], [lw - 0.06, y + 0.07, 0.11], { seg: 9, occlude: false });
+   }
++  for (let i = 0; i < 3; i++) kit.cylinder(['bottleGreen', 'plasticWhite', 'redPaint'][i], [0.15 + i * 0.12, 0.812, 0.07], 0.028, 0.16, { sides: 6 });
++  kit.decal('noticeMeeting', [lw / 2 + 0.1, h * 0.48, -0.0345], [0.14, 0.14], '-z');
++  kit.decal('flyerCat', [lw / 2 - 0.1, h * 0.38, -0.0345], [0.13, 0.13], '-z', { rot: 0.1 });
++  kit.endDynamic();
++  kit.interactable({ id, kind: 'door', pos: [0, 1.0, d + 0.05], yaw: Math.PI, radius: 1.2, prompt: 'Fridge', data: { door: name, contents } });
++}
++
++/** Basketball (loose sphere, rubber) resting on the floor at c (c = its centre). */
++export function basketball(kit, c, { mat = 'plasticBlack', name = 'basketball' } = {}) {
++  kit.physical(name, () => {
++    kit.sphere(mat, [0, 0.12, 0], 0.12, { w: 8, h: 6 });
++    for (const [rx, ry] of [[0, 0], [Math.PI / 2, 0], [0, Math.PI / 2]]) {
++      kit.geometry('rubber', new THREE.TorusGeometry(0.121, 0.003, 3, 14), new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, 0)).setPosition(0, 0.12, 0));
++    }
++  }, { pos: [c[0], c[1] - 0.12, c[2]], shape: 'sphere', radius: 0.12, offset: [0, 0.12, 0], mass: 0.6, material: 'rubber' });
+ }
+ 
+-export function bookStack(kit, n, rng) {
++/** Stack of lying books (one loose body). Returns the stack height. */
++export function bookStack(kit, n, rng, name = null) {
+   let y = 0;
+-  for (let i = 0; i < n; i++) {
+-    const t = 0.025 + rng.next() * 0.02;
+-    kit.at(0, y, 0, (rng.next() - 0.5) * 0.4, () => kit.box('books', [-0.12, 0, -0.08], [0.12, t, 0.08], { seg: 9, occlude: false }));
+-    y += t;
+-  }
++  const build = () => {
++    for (let i = 0; i < n; i++) {
++      const t = 0.025 + rng.next() * 0.02;
++      kit.at(0, y, 0, (rng.next() - 0.5) * 0.4, () => kit.box('books', [-0.12, 0, -0.08], [0.12, t, 0.08], { seg: 9, occlude: false }));
++      y += t;
++    }
++  };
++  if (name) kit.physical(name, build, { mass: 0.5 * n, material: 'paper' });
++  else build();
+   return y;
+ }
+ 
+-/** Upright books along +X on a surface. */
+-export function bookRow(kit, length, h = 0.24) {
+-  kit.box('books', [0, 0, 0], [length, h, 0.18], { seg: 9, uv: 'box', occlude: false });
++/** Upright books along +X on a surface (one loose body when named). */
++export function bookRow(kit, length, h = 0.24, name = null) {
++  const build = () => kit.box('books', [0, 0, 0], [length, h, 0.18], { seg: 9, uv: 'box', occlude: false });
++  if (name) kit.physical(name, build, { mass: 4 * length, material: 'paper' });
++  else build();
+ }
+ 
+-export function broom(kit) {
+-  kit.geometry('woodDark', new THREE.CylinderGeometry(0.012, 0.012, 1.3, 5), new THREE.Matrix4().makeRotationZ(0.1).setPosition(0.065, 0.75, 0.0));
+-  kit.box('redPaint', [-0.05, 0.08, -0.025], [0.05, 0.13, 0.025], { seg: 9, occlude: false });
+-  kit.geometry('plasticBlack', new THREE.CylinderGeometry(0.03, 0.15, 0.1, 6, 1).scale(1, 1, 0.3), new THREE.Matrix4().makeTranslation(0, 0.04, 0));
++export function broom(kit, name = 'broom') {
++  kit.physical(name, () => {
++    kit.geometry('woodDark', new THREE.CylinderGeometry(0.012, 0.012, 1.3, 5), new THREE.Matrix4().makeRotationZ(0.1).setPosition(0.065, 0.75, 0.0));
++    kit.box('redPaint', [-0.05, 0.08, -0.025], [0.05, 0.13, 0.025], { seg: 9, occlude: false });
++    kit.geometry('plasticBlack', new THREE.CylinderGeometry(0.03, 0.15, 0.1, 6, 1).scale(1, 1, 0.3), new THREE.Matrix4().makeTranslation(0, 0.04, 0));
++  }, { mass: 0.8, material: 'wood' });
+ }
+ 
+-/** Water bottle (steel, lidded). */
+-export function waterBottle(kit, c) {
+-  kit.cylinder('steelGray', c, 0.036, 0.22, { sides: 8 });
+-  kit.cylinder('plasticBlack', [c[0], c[1] + 0.22, c[2]], 0.026, 0.04, { sides: 8 });
++/** Water bottle (steel, lidded, loose). */
++export function waterBottle(kit, c, name = 'water-bottle') {
++  kit.physical(name, () => {
++    kit.cylinder('steelGray', [0, 0, 0], 0.036, 0.22, { sides: 8 });
++    kit.cylinder('plasticBlack', [0, 0.22, 0], 0.026, 0.04, { sides: 8 });
++  }, { pos: c, shape: 'cylinder', mass: 0.7, material: 'metal' });
+ }
+diff --git a/src/world/viewer.js b/src/world/viewer.js
+index e5bec37..3a35d45 100644
+--- a/src/world/viewer.js
++++ b/src/world/viewer.js
+@@ -57,7 +57,7 @@ export class WorldViewer {
+     this.lookAt(SHOTS['street (spawn)'].target);
+     this.keys = new Set();
+     this.drag = null;
+-    this.settings = { shot: 'street (spawn)', speed: 4, colliders: false, walkables: false, interactables: false, fog: true, bake: 1, sun: 1, night: 0, shadows: true, character: true };
++    this.settings = { shot: 'street (spawn)', speed: 4, colliders: false, walkables: false, interactables: false, fog: true, bake: 1, sun: 1, night: 1, shadows: true, character: true };
+     this.debug = new THREE.Group();
+     this.bindInput();
+   }
+@@ -127,7 +127,7 @@ export class WorldViewer {
+     this.cam.pos.set(...s.pos);
+     this.lookAt(s.target);
+     if (this.world) {
+-      this.settings.night = s.night ?? 0;
++      this.settings.night = s.night ?? 1;
+       this.world.setTimeOfDay(this.settings.night);
+       for (const l of this.world.lightsByName.values()) this.world.setLight(l.name, l.def.on !== false);
+       for (const n of s.off ?? []) this.world.setLight(n, false);
+diff --git a/src/world/world.js b/src/world/world.js
+index 056d857..c4b9eb8 100644
+--- a/src/world/world.js
++++ b/src/world/world.js
+@@ -3,7 +3,7 @@ import { MaterialLibrary } from './kit/materials.js';
+ import { CollisionWorld } from './physics/collision.js';
+ import { LightBaker } from './lighting/bake.js';
+ import { LightRig } from './lighting/rig.js';
+-import { DUSK, NIGHT, bakeSky, blendPresets, createSkyDome, paintSkyDome, createSun, CharacterProbe } from './lighting/dusk.js';
++import { DUSK, NIGHT, bakeSky, blendPresets, createSkyDome, paintSkyDome, createSun, aimSun, CharacterProbe } from './lighting/dusk.js';
+ import { DoorSystem } from './doors.js';
+ import { buildFoundry, FOUNDRY } from './locations/foundry/index.js';
+ 
+@@ -26,7 +26,7 @@ export class World {
+     this.data = build(this.lib);
+     this.buildMs = performance.now() - t0;
+     this.root = this.data.root;
+-    this.baker = new LightBaker({ occluders: this.data.occluders, lights: this.data.lights, layers: this.data.layers, sky: bakeSky(DUSK), zones: location.zones, rays, bounce: 0.1 });
++    this.baker = new LightBaker({ occluders: this.data.occluders, lights: this.data.lights, layers: this.data.layers, sky: bakeSky(NIGHT), zones: location.zones, rays, bounce: 0.1 });
+     const t1 = performance.now();
+     const meshes = [];
+     this.root.traverse((o) => o.isMesh && meshes.push(o));
+@@ -35,17 +35,17 @@ export class World {
+     this.collision = new CollisionWorld({ solids: this.data.solids, walkables: this.data.walkables });
+     this.doors = new DoorSystem(this.data.dynamics, this.collision);
+     this.rig = new LightRig({ lights: this.data.lights, layers: this.data.layers, uniforms: this.lib.uniforms, points, spots, shadowSize });
+-    this.sky = createSkyDome(DUSK);
+-    const { sun, target } = createSun(location.bounds, DUSK);
++    this.sky = createSkyDome(NIGHT);
++    const { sun, target } = createSun(location.bounds, NIGHT);
+     this.sun = sun;
+     this.sunTarget = target;
+     this.probe = new CharacterProbe(this.baker, () => ({ layerScale: this.rig.layerScale, skyScale: this.lib.uniforms.uSkyScale.value, direct: 0.55 }));
+     this.group = new THREE.Group();
+     this.group.name = `location:${location.id}`;
+     this.group.add(this.root, this.sky, this.sun, this.sunTarget, this.probe.light, this.rig.group);
+-    this.fog = new THREE.Fog(DUSK.fog.color, DUSK.fog.near, DUSK.fog.far);
++    this.fog = new THREE.Fog(NIGHT.fog.color, NIGHT.fog.near, NIGHT.fog.far);
+     this.timeOfDay = 0;
+-    this.setTimeOfDay(0);
++    this.setTimeOfDay(1);
+   }
+ 
+   get markers() {
+@@ -65,7 +65,7 @@ export class World {
+     return this.rig.setLight(name, on);
+   }
+ 
+-  /** 0 = blue-hour dusk, 1 = night. Blends sky dome, fog, sun and the baked sky contribution. */
++  /** 0 = blue-hour dusk, 1 = night (default). Blends sky dome, fog, sun/moon and the baked sky contribution. */
+   setTimeOfDay(k) {
+     this.timeOfDay = Math.max(0, Math.min(1, k));
+     const p = blendPresets(DUSK, NIGHT, this.timeOfDay);
+@@ -74,6 +74,7 @@ export class World {
+     this.fog.near = p.fog.near;
+     this.fog.far = p.fog.far;
+     this.sun.color.set(p.sunColor);
++    aimSun(this.sun, p.sunDir);
+     this.sun.intensity = p.sunIntensity;
+     this.sunBase = p.sunIntensity;
+     this.lib.uniforms.uSkyScale.value = p.skyScale;
+diff --git a/tests/world-content.test.js b/tests/world-content.test.js
+index 284a374..abd73e7 100644
+--- a/tests/world-content.test.js
++++ b/tests/world-content.test.js
+@@ -185,11 +185,15 @@ describe('lighting system', () => {
+     for (const l of world.data.lights) if (l.shadow) expect(l.layer, l.name).toBeGreaterThanOrEqual(0);
+   });
+ 
+-  it('time of day blends the sky scale', () => {
+-    world.setTimeOfDay(1);
+-    expect(world.lib.uniforms.uSkyScale.value).toBeLessThan(0.5);
+-    world.setTimeOfDay(0);
++  it('defaults to night (moon as the live light) and blends to dusk', () => {
++    expect(world.timeOfDay).toBe(1);
+     expect(world.lib.uniforms.uSkyScale.value).toBe(1);
++    const moonY = world.sun.position.y;
++    world.setTimeOfDay(0);
++    expect(world.lib.uniforms.uSkyScale.value).toBeGreaterThan(1.5);
++    expect(world.sun.position.y).toBeLessThan(moonY);
++    world.setTimeOfDay(1);
++    expect(world.sky.getObjectByName('moon').visible).toBe(true);
+   });
+ });
+ 

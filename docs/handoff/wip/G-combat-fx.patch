@@ -1,0 +1,1596 @@
+diff --git a/src/combat/collapse.js b/src/combat/collapse.js
+new file mode 100644
+index 0000000..1f43fb2
+--- /dev/null
++++ b/src/combat/collapse.js
+@@ -0,0 +1,124 @@
++import * as THREE from 'three';
++import { bakeClip, CLIP_NAMES } from '../anim/clips.js';
++import { updateCorrectives } from '../garment/correctives.js';
++
++/**
++ * Fallback death (used only while the NPC manager has no `damage`, contracts §6): the body leaves
++ * the NPC update loop, turns so it falls away from the shot into free floor space, blends into the
++ * shared `death` clip (buckle, fall onto the back) and holds its last frame on the floor.
++ */
++export const COLLAPSE = Object.freeze({
++  /** The death clip ends lying along the body's local -Z (it falls backwards). */
++  fallLocal: -1,
++  /** Lying body length (m) that must be free floor. */
++  length: 1.75,
++  turnTime: 0.3,
++  blend: 0.12,
++});
++
++const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
++
++/**
++ * Picks the fall heading (unit XZ direction the body will lie along): the shot direction if the
++ * floor there is free for a body length, else the nearest free heading. clear(x, z) → bool.
++ */
++export function fallHeading(dir, clear, length = COLLAPSE.length) {
++  const base = Math.atan2(dir.x, dir.z);
++  const offsets = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 2.6, -2.6, Math.PI];
++  for (const o of offsets) {
++    const a = base + o;
++    const sx = Math.sin(a);
++    const sz = Math.cos(a);
++    let ok = true;
++    for (let s = 0.35; s <= length + 1e-6; s += 0.35) if (!clear(sx * s, sz * s)) ok = false;
++    if (ok) return a;
++  }
++  return base;
++}
++
++export class FallbackCorpses {
++  constructor({ manager = null, collision = null, scene = null } = {}) {
++    this.manager = manager;
++    this.collision = collision;
++    this.scene = scene;
++    this.list = [];
++  }
++
++  /** Free floor at (x, z) for a lying body at floor height y. */
++  clearAt(x, z, y) {
++    const c = this.collision;
++    if (!c) return true;
++    const g = c.groundAt(x, z, y + 0.1, 0.2);
++    if (!g || Math.abs(g.y - y) > 0.06) return false;
++    return c.penetration(x, z, y, 0.16, 0.5, 0.04) <= 0;
++  }
++
++  ensureClip(npc, name) {
++    if (npc.clips?.[name]) return true;
++    const layout = npc.character?.userData?.layout;
++    if (!layout || !CLIP_NAMES.includes(name)) return false;
++    npc.clips[name] = bakeClip(layout, name);
++    return true;
++  }
++
++  /** Collapses an NPC (B's Npc or anything with pos / facing / holder / animator). */
++  kill(npc, { dir = new THREE.Vector3(0, 0, 1), at = null } = {}) {
++    if (this.list.some((c) => c.npc === npc)) return;
++    const m = this.manager;
++    if (m?.npcs) m.npcs = m.npcs.filter((n) => n !== npc);
++    npc.dead = true;
++    npc.stop?.();
++    if (npc.velocity) npc.velocity = { x: 0, z: 0 };
++    if (at) Object.assign(npc.pos, { x: at.x, y: at.y, z: at.z });
++    const y = npc.pos.y;
++    const flat = new THREE.Vector3(dir.x, 0, dir.z);
++    if (flat.lengthSq() < 1e-6) flat.set(Math.sin(npc.facing ?? 0), 0, Math.cos(npc.facing ?? 0));
++    flat.normalize();
++    const heading = fallHeading(flat, (dx, dz) => this.clearAt(npc.pos.x + dx, npc.pos.z + dz, y));
++    // Falls backwards: the back faces the heading.
++    const target = COLLAPSE.fallLocal < 0 ? heading + Math.PI : heading;
++    const corpse = { npc, from: npc.facing ?? 0, to: target, t: 0, heading };
++    const a = npc.animator;
++    if (a && this.ensureClip(npc, 'death')) {
++      a.setGround?.(null);
++      if (a.upper) a.upper.fadeOut(COLLAPSE.blend);
++      a.upper = null;
++      a.upperName = null;
++      a.upperIdle = null;
++      a.locked = null;
++      a.queued = null;
++      if (a.full) a.full.fadeOut(COLLAPSE.blend);
++      a.full = null;
++      for (const act of Object.values(a.aimActions ?? {})) act.setEffectiveWeight(0);
++      const death = a.action('death', 'full');
++      a.swap(a.base, death, COLLAPSE.blend, { loop: false });
++      a.base = death;
++      a.baseName = 'death';
++    }
++    npc.lookAt?.setTarget?.(null);
++    if (npc.phone) npc.phone.visible = false;
++    this.list.push(corpse);
++    return corpse;
++  }
++
++  update(dt) {
++    for (const c of this.list) {
++      c.t += dt;
++      const npc = c.npc;
++      const k = Math.min(1, c.t / COLLAPSE.turnTime);
++      npc.facing = c.from + wrap(c.to - c.from) * (k * k * (3 - 2 * k));
++      if (npc.holder) {
++        npc.holder.position.set(npc.pos.x, npc.pos.y, npc.pos.z);
++        npc.holder.rotation.y = npc.facing;
++      }
++      if (c.t < 3 && npc.animator) {
++        npc.animator.update(dt);
++        if (npc.character) updateCorrectives(npc.character);
++      }
++    }
++  }
++
++  get bodies() {
++    return this.list.map((c) => c.npc);
++  }
++}
+diff --git a/src/combat/health.js b/src/combat/health.js
+new file mode 100644
+index 0000000..2d1f15b
+--- /dev/null
++++ b/src/combat/health.js
+@@ -0,0 +1,42 @@
++/**
++ * Damage rules shared by every gun (contracts §6): each round that hits is one hit, a head hit counts
++ * double, the fifth hit kills. The NPC manager owns health when it implements `damage`; this ledger is
++ * the fallback the game uses until then (and the reference the tests check the rules against).
++ */
++export const DAMAGE = Object.freeze({ lethal: 5, head: 2, body: 1 });
++
++/** Hit points one round takes off for a body part. */
++export const hitValue = (part, amount = 1) => amount * (part === 'head' ? DAMAGE.head : DAMAGE.body);
++
++export class HealthLedger {
++  constructor({ lethal = DAMAGE.lethal } = {}) {
++    this.lethal = lethal;
++    this.records = new Map();
++  }
++
++  key(npc) {
++    return typeof npc === 'string' ? npc : npc?.id ?? npc;
++  }
++
++  get(npc) {
++    const k = this.key(npc);
++    if (!this.records.has(k)) this.records.set(k, { hits: 0, dead: false, wounds: [] });
++    return this.records.get(k);
++  }
++
++  isDead(npc) {
++    return this.records.get(this.key(npc))?.dead ?? false;
++  }
++
++  /** Applies one round. → { hits, dead, killed (this round killed), value } */
++  damage(npc, { amount = 1, part = 'torso', point = null, dir = null, source = null } = {}) {
++    const r = this.get(npc);
++    if (r.dead) return { hits: r.hits, dead: true, killed: false, value: 0 };
++    const value = hitValue(part, amount);
++    r.hits += value;
++    r.wounds.push({ part, point, dir, source });
++    const killed = r.hits >= this.lethal;
++    if (killed) r.dead = true;
++    return { hits: r.hits, dead: r.dead, killed, value };
++  }
++}
+diff --git a/src/combat/hit-volumes.js b/src/combat/hit-volumes.js
+new file mode 100644
+index 0000000..ac0bfe6
+--- /dev/null
++++ b/src/combat/hit-volumes.js
+@@ -0,0 +1,158 @@
++import * as THREE from 'three';
++
++/**
++ * Fallback NPC hit volumes (used when the NPC manager has no hitTest, contracts §6): a head sphere,
++ * a torso capsule, upper/lower arm and leg capsules, built from the posed skeleton every shot, so a
++ * seated, crouching or collapsed body is hit where it is drawn. Headless NPCs (tests, no character)
++ * get three stacked volumes from their capsule body.
++ */
++export const PARTS = Object.freeze({ head: 'head', torso: 'torso', arm: 'arm', leg: 'leg' });
++
++/** Radii at a 1.78 m body (scaled by height). */
++const R = { head: 0.115, torso: 0.17, upperArm: 0.055, foreArm: 0.045, thigh: 0.085, shin: 0.06 };
++
++const tmp = new THREE.Vector3();
++
++function bone(rig, joint) {
++  return rig.byName?.[joint] ?? rig.bones.find((b) => b.userData?.joint === joint || b.name === joint || b.name.endsWith(`:${joint}`));
++}
++
++function worldPos(b) {
++  return b.getWorldPosition(new THREE.Vector3());
++}
++
++/** World-space volumes [{ part, a, b, r, joint }] for a built character in its current pose. */
++export function characterVolumes(character) {
++  const rig = character?.userData?.rig;
++  if (!rig) return [];
++  character.updateMatrixWorld(true);
++  const k = (character.userData.layout?.measures?.height ?? 1.78) / 1.78;
++  const P = (j) => {
++    const b = bone(rig, j);
++    return b ? worldPos(b) : null;
++  };
++  const out = [];
++  const cap = (part, ja, jb, r, joint = ja, extend = 0) => {
++    const a = P(ja);
++    const b = P(jb);
++    if (!a || !b) return;
++    if (extend) b.addScaledVector(b.clone().sub(a).normalize(), extend);
++    out.push({ part, a, b, r: r * k, joint });
++  };
++  // Head: a sphere a little above the Head joint along the head's own up axis.
++  const head = bone(rig, 'Head');
++  if (head) {
++    const c = head.localToWorld(new THREE.Vector3(0, 0.085 * k, 0.015 * k));
++    out.push({ part: 'head', a: c, b: c.clone(), r: R.head * k, joint: 'Head' });
++  }
++  cap('torso', 'Hips', 'Neck', R.torso, 'Spine1');
++  cap('torso', 'Neck', 'Head', 0.06, 'Neck');
++  for (const s of ['Left', 'Right']) {
++    cap('arm', `${s}Arm`, `${s}ForeArm`, R.upperArm, `${s}Arm`);
++    cap('arm', `${s}ForeArm`, `${s}Hand`, R.foreArm, `${s}ForeArm`, 0.06 * k);
++    cap('leg', `${s}UpLeg`, `${s}Leg`, R.thigh, `${s}UpLeg`);
++    cap('leg', `${s}Leg`, `${s}Foot`, R.shin, `${s}Leg`);
++  }
++  return out;
++}
++
++/** Volumes from a capsule body { x, y, z, height } (headless NPCs). */
++export function bodyVolumes(body) {
++  const h = body.height ?? 1.75;
++  const k = h / 1.78;
++  const at = (y) => new THREE.Vector3(body.x, body.y + y, body.z);
++  return [
++    { part: 'head', a: at(1.64 * k), b: at(1.64 * k), r: R.head * k, joint: 'Head' },
++    { part: 'torso', a: at(0.98 * k), b: at(1.45 * k), r: R.torso * k, joint: 'Spine1' },
++    { part: 'leg', a: at(0.08 * k), b: at(0.88 * k), r: 0.15 * k, joint: 'LeftUpLeg' },
++  ];
++}
++
++/** Ray (origin o, unit dir d) vs capsule segment a-b of radius r: entry distance or null. */
++export function rayCapsule(o, d, a, b, r) {
++  const ba = tmp.subVectors(b, a);
++  const baba = ba.dot(ba);
++  if (baba < 1e-10) return raySphere(o, d, a, r);
++  const oa = new THREE.Vector3().subVectors(o, a);
++  const bard = ba.dot(d);
++  const baoa = ba.dot(oa);
++  const rdoa = d.dot(oa);
++  const oaoa = oa.dot(oa);
++  const A = baba - bard * bard;
++  const B = baba * rdoa - baoa * bard;
++  const C = baba * oaoa - baoa * baoa - r * r * baba;
++  const h = B * B - A * C;
++  if (h >= 0 && A > 1e-12) {
++    const t = (-B - Math.sqrt(h)) / A;
++    const y = baoa + t * bard;
++    if (y > 0 && y < baba && t >= 0) return t;
++  }
++  // Caps.
++  let best = null;
++  for (const c of [a, b]) {
++    const t = raySphere(o, d, c, r);
++    if (t !== null && (best === null || t < best)) best = t;
++  }
++  return best;
++}
++
++export function raySphere(o, d, c, r) {
++  const ox = o.x - c.x;
++  const oy = o.y - c.y;
++  const oz = o.z - c.z;
++  const b = ox * d.x + oy * d.y + oz * d.z;
++  const cc = ox * ox + oy * oy + oz * oz - r * r;
++  const h = b * b - cc;
++  if (h < 0) return null;
++  const t = -b - Math.sqrt(h);
++  return t >= 0 ? t : null;
++}
++
++/** Outward normal on a volume at a surface point. */
++function volumeNormal(v, p) {
++  const ab = v.b.clone().sub(v.a);
++  const len2 = ab.lengthSq();
++  const t = len2 > 1e-10 ? THREE.MathUtils.clamp(p.clone().sub(v.a).dot(ab) / len2, 0, 1) : 0;
++  return p.clone().sub(v.a.clone().addScaledVector(ab, t)).normalize();
++}
++
++/** First volume along the ray: { part, point, normal, distance, joint } or null. */
++export function rayVolumes(o, d, max, volumes) {
++  let best = null;
++  for (const v of volumes) {
++    const t = rayCapsule(o, d, v.a, v.b, v.r);
++    if (t === null || t > max || (best && t >= best.distance)) continue;
++    best = { part: v.part, joint: v.joint, distance: t, volume: v };
++  }
++  if (!best) return null;
++  best.point = o.clone().addScaledVector(d, best.distance);
++  best.normal = volumeNormal(best.volume, best.point);
++  delete best.volume;
++  return best;
++}
++
++/**
++ * hitTest over a list of NPC-like objects (contract shape): each has `character` (posed) or a
++ * `body()` / `pos` + `height`. Quick reject on a bounding sphere around the body first.
++ * → { npc, point, normal, distance, part, joint } | null
++ */
++export function hitTestNpcs(list, origin, dir, maxDist) {
++  const o = origin.isVector3 ? origin : new THREE.Vector3(...origin);
++  const d = (dir.isVector3 ? dir.clone() : new THREE.Vector3(...dir)).normalize();
++  let best = null;
++  for (const npc of list) {
++    if (!npc) continue;
++    const pos = npc.pos ?? npc.holder?.position;
++    if (pos) {
++      const h = npc.height ?? 1.8;
++      const c = new THREE.Vector3(pos.x, (pos.y ?? 0) + h * 0.5, pos.z);
++      const t = c.clone().sub(o).dot(d);
++      const closest = o.clone().addScaledVector(d, Math.max(0, t));
++      if (closest.distanceTo(c) > h * 0.75 + 0.3) continue;
++    }
++    const vols = npc.character ? characterVolumes(npc.character) : bodyVolumes(typeof npc.body === 'function' ? npc.body() : { x: pos.x, y: pos.y, z: pos.z, height: npc.height });
++    const h = rayVolumes(o, d, best?.distance ?? maxDist, vols);
++    if (h) best = { ...h, npc };
++  }
++  return best;
++}
+diff --git a/src/combat/hitscan.js b/src/combat/hitscan.js
+new file mode 100644
+index 0000000..4caaaf3
+--- /dev/null
++++ b/src/combat/hitscan.js
+@@ -0,0 +1,228 @@
++import * as THREE from 'three';
++import { pointInPoly, surfaceHeight } from '../world/physics/collision.js';
++
++/**
++ * Hitscan: one bullet is a ray. Every source answers "first hit along (origin, unit dir) within max"
++ * and the nearest answer wins:
++ *   world  static collision solids (walls, furniture colliders, door leaves), the kit's AABB
++ *          occluders (slabs, ceilings, furniture without a character collider) and walkable floors;
++ *   prop   the physics workstream's rigid bodies (game.physics.raycast, contracts §8);
++ *   npc    the NPC manager's hitTest (contracts §6) or the fallback body volumes (hit-volumes.js).
++ * Hits are plain objects { kind, point: Vector3, normal: Vector3, distance, ... } so tests and FX
++ * don't depend on which source produced them.
++ */
++export const SHOT = Object.freeze({
++  /** Longest shot (m). */
++  range: 80,
++  /** The camera ray skips this much past the player before it may hit (the player isn't a target). */
++  cameraSkip: 0.4,
++  /** Closer than this to the muzzle the aim point is ignored and the camera direction is used (m). */
++  minConverge: 0.6,
++});
++
++const EPS = 1e-4;
++const toV = (p) => (p?.isVector3 ? p.clone() : Array.isArray(p) ? new THREE.Vector3(p[0], p[1], p[2]) : new THREE.Vector3(p.x, p.y, p.z));
++const arr = (v) => (v.isVector3 ? [v.x, v.y, v.z] : v);
++
++/** Static = a decal can stay on it (door leaves and props move). */
++export const isStaticSolid = (s) => !!s && !s.door && s.tag !== 'door' && s.tag !== 'prop' && !s.prop && !s.dynamic;
++
++/** Outward normal of a collision solid at a hit point (side faces from the polygon, caps ±Y). */
++export function solidNormal(solid, point, dir) {
++  if (Math.abs(point.y - solid.y1) < 2e-3 && dir.y < 0) return new THREE.Vector3(0, 1, 0);
++  if (Math.abs(point.y - solid.y0) < 2e-3 && dir.y > 0) return new THREE.Vector3(0, -1, 0);
++  let best = null;
++  const poly = solid.poly;
++  for (let i = 0; i < poly.length; i++) {
++    const [ax, az] = poly[i];
++    const [bx, bz] = poly[(i + 1) % poly.length];
++    const ex = bx - ax;
++    const ez = bz - az;
++    const len2 = ex * ex + ez * ez || 1e-12;
++    const t = Math.max(0, Math.min(1, ((point.x - ax) * ex + (point.z - az) * ez) / len2));
++    const d = Math.hypot(point.x - (ax + ex * t), point.z - (az + ez * t));
++    if (!best || d < best.d) best = { d, ex, ez, i, t };
++  }
++  const len = Math.hypot(best.ex, best.ez) || 1;
++  const n = new THREE.Vector3(best.ez / len, 0, -best.ex / len);
++  if (n.x * dir.x + n.z * dir.z > 0) n.negate();
++  return n;
++}
++
++/** Ray vs AABB with the entry face normal: { t, normal } or null (origin inside → null). */
++export function rayBoxNormal(o, d, b) {
++  let t0 = -Infinity;
++  let t1 = Infinity;
++  let axis = -1;
++  for (let a = 0; a < 3; a++) {
++    if (Math.abs(d[a]) < 1e-9) {
++      if (o[a] < b.min[a] || o[a] > b.max[a]) return null;
++      continue;
++    }
++    let ta = (b.min[a] - o[a]) / d[a];
++    let tb = (b.max[a] - o[a]) / d[a];
++    if (ta > tb) [ta, tb] = [tb, ta];
++    if (ta > t0) {
++      t0 = ta;
++      axis = a;
++    }
++    t1 = Math.min(t1, tb);
++    if (t0 > t1) return null;
++  }
++  if (t0 <= 0 || axis < 0) return null;
++  const normal = new THREE.Vector3();
++  normal.setComponent(axis, -Math.sign(d[axis]));
++  return { t: t0, normal };
++}
++
++/**
++ * The static world as a ray target: collision solids + occluder boxes + walkable floors.
++ * raycast(origin, dir, max) → { kind: 'world', point, normal, distance, solid?, box?, floor?, static } | null.
++ */
++export class WorldRay {
++  constructor({ collision = null, occluders = [] } = {}) {
++    this.collision = collision;
++    this.boxes = occluders.filter((o) => o?.min && o?.max);
++    this.cells = new Map();
++    this.boxes.forEach((b, i) => {
++      for (let x = Math.floor(b.min[0] / 2); x <= Math.floor(b.max[0] / 2); x++) {
++        for (let z = Math.floor(b.min[2] / 2); z <= Math.floor(b.max[2] / 2); z++) {
++          const k = `${x},${z}`;
++          if (!this.cells.has(k)) this.cells.set(k, []);
++          this.cells.get(k).push(i);
++        }
++      }
++    });
++  }
++
++  raycast(origin, direction, max = SHOT.range) {
++    const o = arr(origin);
++    const d = arr(direction);
++    let best = null;
++    const c = this.collision;
++    if (c) {
++      const r = c.raycastHit(o, d, max);
++      if (r.solid && r.dist > EPS) {
++        const point = new THREE.Vector3(o[0] + d[0] * r.dist, o[1] + d[1] * r.dist, o[2] + d[2] * r.dist);
++        best = { kind: 'world', distance: r.dist, point, normal: solidNormal(r.solid, point, new THREE.Vector3(...d)), solid: r.solid, static: isStaticSolid(r.solid) };
++      }
++      const floor = this.floor(o, d, best?.distance ?? max);
++      if (floor) best = floor;
++    }
++    const lim = best?.distance ?? max;
++    const ex = o[0] + d[0] * lim;
++    const ez = o[2] + d[2] * lim;
++    const seen = new Set();
++    for (let x = Math.floor(Math.min(o[0], ex) / 2); x <= Math.floor(Math.max(o[0], ex) / 2); x++) {
++      for (let z = Math.floor(Math.min(o[2], ez) / 2); z <= Math.floor(Math.max(o[2], ez) / 2); z++) {
++        for (const i of this.cells.get(`${x},${z}`) ?? []) {
++          if (seen.has(i)) continue;
++          seen.add(i);
++          const h = rayBoxNormal(o, d, this.boxes[i]);
++          if (h && h.t < (best?.distance ?? max)) {
++            best = { kind: 'world', distance: h.t, point: new THREE.Vector3(o[0] + d[0] * h.t, o[1] + d[1] * h.t, o[2] + d[2] * h.t), normal: h.normal, box: this.boxes[i], static: true };
++          }
++        }
++      }
++    }
++    return best;
++  }
++
++  /** First walkable surface the ray comes down onto (flat and planar walkables; stair helices sampled). */
++  floor(o, d, max) {
++    if (d[1] > -1e-4 || !this.collision?.walkHash) return null;
++    const ex = o[0] + d[0] * max;
++    const ez = o[2] + d[2] * max;
++    let best = null;
++    for (const w of this.collision.walkHash.query(Math.min(o[0], ex), Math.min(o[2], ez), Math.max(o[0], ex), Math.max(o[2], ez))) {
++      let t;
++      if (w.plane) {
++        // y(t) = y0 + (x(t) - x0) gx + (z(t) - z0) gz = o.y + d.y t
++        const p = w.plane;
++        const denom = d[1] - d[0] * p.gx - d[2] * p.gz;
++        if (Math.abs(denom) < 1e-9) continue;
++        t = (p.y0 + (o[0] - p.x0) * p.gx + (o[2] - p.z0) * p.gz - o[1]) / denom;
++      } else if (w.helix) {
++        t = null;
++        for (let s = 0.05; s < max; s += 0.05) {
++          const x = o[0] + d[0] * s;
++          const z = o[2] + d[2] * s;
++          if (pointInPoly(x, z, w.poly) && o[1] + d[1] * s <= surfaceHeight(w, x, z)) {
++            t = s;
++            break;
++          }
++        }
++        if (t === null) continue;
++      } else {
++        t = (w.y - o[1]) / d[1];
++      }
++      if (!(t > EPS) || t >= max || (best && t >= best.distance)) continue;
++      const x = o[0] + d[0] * t;
++      const z = o[2] + d[2] * t;
++      if (!pointInPoly(x, z, w.poly)) continue;
++      const normal = w.plane ? new THREE.Vector3(-w.plane.gx, 1, -w.plane.gz).normalize() : new THREE.Vector3(0, 1, 0);
++      best = { kind: 'world', distance: t, point: new THREE.Vector3(x, o[1] + d[1] * t, z), normal, floor: w, static: true };
++    }
++    return best;
++  }
++}
++
++/**
++ * Nearest hit among the sources. sources: { world, props, npcs } — each (origin, dir, max) → hit | null
++ * (prop hits may be the physics workstream's shape { body, point, normal, distance, material }).
++ */
++export function castShot({ origin, dir, maxDist = SHOT.range, world = null, props = null, npcs = null }) {
++  const o = toV(origin);
++  const d = toV(dir).normalize();
++  let best = null;
++  const consider = (kind, fn) => {
++    if (!fn) return;
++    let h = null;
++    try {
++      h = fn(o.clone(), d.clone(), best?.distance ?? maxDist);
++    } catch (err) {
++      console.warn(`hitscan ${kind}: ${err.message}`);
++      return;
++    }
++    if (!h) return;
++    const point = h.point ? toV(h.point) : o.clone().addScaledVector(d, h.distance);
++    const distance = h.distance ?? point.distanceTo(o);
++    if (!(distance >= 0) || distance > (best?.distance ?? maxDist)) return;
++    best = { ...h, kind, point, distance, normal: h.normal ? toV(h.normal).normalize() : d.clone().negate() };
++  };
++  consider('world', world);
++  consider('prop', props);
++  consider('npc', npcs);
++  if (best) best.dir = d;
++  return best;
++}
++
++/**
++ * Camera-centre convergence: the bullet leaves the muzzle toward what the crosshair covers. The
++ * crosshair point comes from a ray along the camera's view (starting level with the player, so
++ * nothing between camera and player counts); the shot direction is muzzle → that point.
++ */
++export function convergeAim({ muzzle, cameraPos, cameraDir, playerPos, cast, maxDist = SHOT.range }) {
++  const cd = toV(cameraDir).normalize();
++  const cp = toV(cameraPos);
++  const along = playerPos ? Math.max(0, toV(playerPos).sub(cp).dot(cd)) + SHOT.cameraSkip : SHOT.cameraSkip;
++  const start = cp.clone().addScaledVector(cd, along);
++  const hit = cast ? cast(start, cd, maxDist) : null;
++  const target = hit ? hit.point.clone() : start.clone().addScaledVector(cd, maxDist);
++  const m = toV(muzzle);
++  const dir = target.clone().sub(m);
++  if (dir.length() < SHOT.minConverge || dir.clone().normalize().dot(cd) < 0.2) return { dir: cd, target };
++  return { dir: dir.normalize(), target };
++}
++
++/** A direction jittered inside a cone of half-angle `spread` (rad) by two uniforms in [0, 1). */
++export function spreadDir(dir, spread, u1, u2) {
++  if (!(spread > 0)) return dir.clone();
++  const d = dir.clone().normalize();
++  const helper = Math.abs(d.y) < 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
++  const a = new THREE.Vector3().crossVectors(d, helper).normalize();
++  const b = new THREE.Vector3().crossVectors(d, a);
++  const r = Math.tan(spread) * Math.sqrt(u1);
++  const th = u2 * Math.PI * 2;
++  return d.addScaledVector(a, Math.cos(th) * r).addScaledVector(b, Math.sin(th) * r).normalize();
++}
+diff --git a/src/combat/loadout.js b/src/combat/loadout.js
+new file mode 100644
+index 0000000..b29291e
+--- /dev/null
++++ b/src/combat/loadout.js
+@@ -0,0 +1,50 @@
++/**
++ * Gun handling per weapon (fire mode, cadence, accuracy, feel) and the player's loadout.
++ * The player starts with the pistol; the SMG and the rifle are picked up from the weapon crate
++ * behind the building (contracts §5). Keys: 1 pistol, 2 SMG, 3 rifle (each only once owned), 0 holster.
++ */
++export const FIRE = Object.freeze({
++  // interval: seconds between rounds; auto: fires while the trigger is held; spread: base cone
++  // half-angle (rad); bloom: extra spread per round in a burst (decays); climb: camera pitch kick per
++  // round (rad); shake: camera shake per round; impulse: push on physics props (N·s).
++  pistol: { interval: 0.2, auto: false, spread: 0.003, bloom: 0.004, maxSpread: 0.02, climb: 0.014, shake: 0.22, impulse: 3, flash: 0.22 },
++  smg: { interval: 0.075, auto: true, spread: 0.012, bloom: 0.0035, maxSpread: 0.045, climb: 0.0075, shake: 0.14, impulse: 2.4, flash: 0.26 },
++  rifle: { interval: 0.105, auto: true, spread: 0.004, bloom: 0.0025, maxSpread: 0.03, climb: 0.011, shake: 0.2, impulse: 4.5, flash: 0.34 },
++});
++
++/** Digit key → weapon slot. */
++export const WEAPON_KEYS = Object.freeze({ Digit1: 'pistol', Digit2: 'smg', Digit3: 'rifle', Digit0: null });
++export const ALL_WEAPONS = Object.freeze(['pistol', 'smg', 'rifle']);
++export const START_WEAPONS = Object.freeze(['pistol']);
++
++export class Loadout {
++  constructor(owned = START_WEAPONS, { onChange = null } = {}) {
++    this.owned = new Set(owned);
++    this.onChange = onChange;
++  }
++
++  has(type) {
++    return type === null || this.owned.has(type);
++  }
++
++  add(type) {
++    if (!ALL_WEAPONS.includes(type) || this.owned.has(type)) return false;
++    this.owned.add(type);
++    this.onChange?.(type, this);
++    return true;
++  }
++
++  /**
++   * The weapon a key selects: undefined when the key is not a weapon key or the slot isn't owned
++   * (the press does nothing), null for holster.
++   */
++  select(code) {
++    if (!(code in WEAPON_KEYS)) return undefined;
++    const type = WEAPON_KEYS[code];
++    return this.has(type) ? type : undefined;
++  }
++
++  list() {
++    return ALL_WEAPONS.filter((t) => this.owned.has(t));
++  }
++}
+diff --git a/src/fx/decals.js b/src/fx/decals.js
+new file mode 100644
+index 0000000..889c1db
+--- /dev/null
++++ b/src/fx/decals.js
+@@ -0,0 +1,249 @@
++import * as THREE from 'three';
++import { pointInPoly } from '../world/physics/collision.js';
++import { createRng } from '../core/rng.js';
++
++/**
++ * Surface decals (bullet holes, blood spatter, drips, pools): flat quads laid on the surface a ray
++ * found, a few millimetres off it with a polygon offset, never floating. Each quad is shrunk until
++ * it fits on the face it was placed on (wall face, furniture top, box face, floor not covered by
++ * furniture), and pools are radial fans whose every spoke stops where the walkable floor stops.
++ * Materials multiply the surface colour (premultiplied alpha), so a stain takes the light the
++ * surface already has. Per-kind budgets recycle the oldest decal.
++ */
++export const DECAL = Object.freeze({
++  /** Gap above the surface (m) — well under the 2 cm "floating" limit; the polygon offset hides z-fight. */
++  lift: 0.004,
++  poolLift: 0.0025,
++  minHalf: 0.012,
++  budget: { hole: 64, splat: 48, drop: 90, stain: 24, pool: 8 },
++  pool: { spokes: 24, step: 0.03 },
++});
++
++const UP = new THREE.Vector3(0, 1, 0);
++const Z = new THREE.Vector3(0, 0, 1);
++
++/** Is (x, z) visible floor at height y: a walkable surface there at y, not covered by a solid standing on it. */
++export function floorClear(collision, x, z, y) {
++  if (!collision) return true;
++  const g = collision.groundAt(x, z, y + 0.03, 0.06);
++  if (!g || Math.abs(g.y - y) > 0.012) return false;
++  return collision.penetration(x, z, y, 0.001, 0.05, 0.005) <= 0;
++}
++
++/** Tangent basis (u, v) on a surface with normal n; v points "up the wall" (or +z on floors). */
++export function surfaceBasis(n) {
++  const ref = Math.abs(n.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : UP;
++  const u = new THREE.Vector3().crossVectors(ref, n).normalize();
++  const v = new THREE.Vector3().crossVectors(n, u).normalize();
++  return { u, v };
++}
++
++/**
++ * Largest half-size ≤ half that keeps a square decal at `surface.point` on its face. surface: a hit
++ * from WorldRay ({ point, normal, solid | box | floor }). Returns 0 when not even the minimum fits.
++ */
++export function fitOnSurface(surface, half, collision = null) {
++  const p = surface.point;
++  const n = surface.normal;
++  const { u, v } = surfaceBasis(n);
++  const corners = (h) => [[1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, b]) => p.clone().addScaledVector(u, a * h).addScaledVector(v, b * h));
++  let test = null;
++  if (n.y > 0.9 && (surface.floor || (!surface.solid && !surface.box))) {
++    test = (q) => floorClear(collision, q.x, q.z, p.y);
++  } else if (surface.solid && Math.abs(n.y) > 0.9) {
++    test = (q) => pointInPoly(q.x, q.z, surface.solid.poly);
++  } else if (surface.solid) {
++    // Side face: stay between the face's vertical span and the ends of the polygon edge it lies on.
++    const s = surface.solid;
++    const lim = Math.min(p.y - s.y0, s.y1 - p.y);
++    let along = Infinity;
++    for (let i = 0; i < s.poly.length; i++) {
++      const [ax, az] = s.poly[i];
++      const [bx, bz] = s.poly[(i + 1) % s.poly.length];
++      const ex = bx - ax;
++      const ez = bz - az;
++      const len = Math.hypot(ex, ez);
++      if (len < 1e-6) continue;
++      const t = ((p.x - ax) * ex + (p.z - az) * ez) / len;
++      const off = Math.abs((p.x - ax) * ez - (p.z - az) * ex) / len;
++      if (off < 0.01 && t >= -1e-3 && t <= len + 1e-3) along = Math.min(along, Math.max(t, 0), Math.max(len - t, 0));
++    }
++    half = Math.min(half, lim, along === Infinity ? half : along);
++  } else if (surface.box) {
++    const b = surface.box;
++    const axis = Math.abs(n.x) > 0.5 ? 0 : Math.abs(n.y) > 0.5 ? 1 : 2;
++    for (let a = 0; a < 3; a++) {
++      if (a === axis) continue;
++      const pc = p.getComponent(a);
++      half = Math.min(half, pc - b.min[a], b.max[a] - pc);
++    }
++  }
++  if (test) {
++    for (let i = 0; i < 8 && half >= DECAL.minHalf; i++) {
++      if (corners(half).every(test)) break;
++      half *= 0.72;
++    }
++    if (!corners(half).every(test)) return 0;
++  }
++  return half >= DECAL.minHalf ? half : 0;
++}
++
++/**
++ * Pool outline: for each of `spokes` directions, how far (≤ maxR) the floor at height y stays clear
++ * walking out from the centre. A spoke stops at the first blocked sample (walls, furniture feet,
++ * stairs, the edge of the walkable).
++ */
++export function poolRadii(collision, center, maxR, { spokes = DECAL.pool.spokes, step = DECAL.pool.step } = {}) {
++  const radii = new Float32Array(spokes);
++  for (let i = 0; i < spokes; i++) {
++    const a = (i / spokes) * Math.PI * 2;
++    const sx = Math.cos(a);
++    const sz = Math.sin(a);
++    let r = 0;
++    for (let d = step; d <= maxR + 1e-6; d += step) {
++      if (!floorClear(collision, center.x + sx * d, center.z + sz * d, center.y)) break;
++      r = d;
++    }
++    radii[i] = r;
++  }
++  return radii;
++}
++
++function decalMaterial(map) {
++  return new THREE.MeshBasicMaterial({
++    map, transparent: true, premultipliedAlpha: true, blending: THREE.MultiplyBlending, depthWrite: false,
++    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, fog: false, side: THREE.DoubleSide,
++  });
++}
++
++export class DecalSystem {
++  constructor({ scene = null, collision = null, textures, seed = 'decals', budget = DECAL.budget } = {}) {
++    this.scene = scene;
++    this.collision = collision;
++    this.textures = textures;
++    this.budget = budget;
++    this.rng = createRng(`decals:${seed}`);
++    this.group = new THREE.Group();
++    this.group.name = 'decals';
++    scene?.add(this.group);
++    this.quad = new THREE.PlaneGeometry(1, 1);
++    this.materials = new Map();
++    this.live = Object.fromEntries(Object.keys(budget).map((k) => [k, []]));
++    this.pools = [];
++  }
++
++  material(tex) {
++    if (!this.materials.has(tex)) this.materials.set(tex, decalMaterial(tex));
++    return this.materials.get(tex);
++  }
++
++  recycle(kind) {
++    const list = this.live[kind];
++    while (list.length >= this.budget[kind]) {
++      const old = list.shift();
++      old.removeFromParent();
++      if (old.geometry !== this.quad) old.geometry.dispose();
++    }
++  }
++
++  /**
++   * Lays a square decal of half-size `half` on a surface hit. opts: { texture, roll (rad, default
++   * random), stretch ([su, sv] aspect, e.g. elongated spatter), up (a direction the texture's +v
++   * should follow, projected on the surface) }. Returns the mesh, or null when it doesn't fit.
++   */
++  place(kind, surface, half, { texture, roll = null, stretch = [1, 1], up = null } = {}) {
++    const fit = fitOnSurface(surface, half * Math.max(stretch[0], stretch[1]), this.collision);
++    if (!fit) return null;
++    const k = fit / (half * Math.max(stretch[0], stretch[1]));
++    this.recycle(kind);
++    const n = surface.normal.clone().normalize();
++    const mesh = new THREE.Mesh(this.quad, this.material(texture));
++    mesh.name = `decal-${kind}`;
++    mesh.quaternion.setFromUnitVectors(Z, n);
++    let angle = roll ?? this.rng.next() * Math.PI * 2;
++    if (up) {
++      const t = up.clone().addScaledVector(n, -up.dot(n));
++      if (t.lengthSq() > 1e-6) {
++        // The quad's local +y after setFromUnitVectors, measured against the projected direction.
++        const qy = new THREE.Vector3(0, 1, 0).applyQuaternion(mesh.quaternion);
++        const qx = new THREE.Vector3(1, 0, 0).applyQuaternion(mesh.quaternion);
++        angle = Math.atan2(-t.dot(qx), t.dot(qy));
++      }
++    }
++    mesh.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(Z, angle));
++    mesh.scale.set(half * 2 * stretch[0] * k, half * 2 * stretch[1] * k, 1);
++    mesh.position.copy(surface.point).addScaledVector(n, DECAL.lift);
++    mesh.renderOrder = 2;
++    mesh.userData.surface = { point: surface.point.clone(), normal: n };
++    this.group.add(mesh);
++    this.live[kind].push(mesh);
++    return mesh;
++  }
++
++  /** A pool spreading on the floor around `center` (floor height in y) to maxR over `duration` s. */
++  pool(center, { maxR = 0.62, duration = 10, delay = 0 } = {}) {
++    const c = center.clone();
++    const radii = poolRadii(this.collision, c, maxR);
++    const spokes = radii.length;
++    if (Math.max(...radii) < 0.05) return null;
++    this.recycle('pool');
++    const wobble = Array.from({ length: spokes }, () => 0.82 + this.rng.next() * 0.18);
++    const pos = new Float32Array((spokes + 1) * 3);
++    const uv = new Float32Array((spokes + 1) * 2);
++    const index = [];
++    for (let i = 0; i < spokes; i++) index.push(0, 1 + ((i + 1) % spokes), 1 + i);
++    const geo = new THREE.BufferGeometry();
++    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
++    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
++    geo.setIndex(index);
++    const mesh = new THREE.Mesh(geo, this.material(this.textures.pool));
++    mesh.name = 'decal-pool';
++    mesh.position.set(c.x, c.y + DECAL.poolLift, c.z);
++    mesh.renderOrder = 1;
++    mesh.frustumCulled = false;
++    const pool = { mesh, radii, wobble, maxR, duration, t: -delay, center: c, spokes };
++    this.layoutPool(pool, 0);
++    this.group.add(mesh);
++    this.live.pool.push(mesh);
++    this.pools.push(pool);
++    mesh.userData.pool = pool;
++    return pool;
++  }
++
++  /** Current outline: every spoke grows with the ease-out spread and stops at its clip radius. */
++  layoutPool(pool, k) {
++    const geo = pool.mesh.geometry;
++    const pos = geo.attributes.position;
++    const uv = geo.attributes.uv;
++    const grow = pool.maxR * (1 - (1 - k) ** 2.2);
++    pos.setXYZ(0, 0, 0, 0);
++    uv.setXY(0, 0.5, 0.5);
++    for (let i = 0; i < pool.spokes; i++) {
++      const a = (i / pool.spokes) * Math.PI * 2;
++      const r = Math.min(pool.radii[i], grow * pool.wobble[i]);
++      const x = Math.cos(a) * r;
++      const z = Math.sin(a) * r;
++      pos.setXYZ(i + 1, x, 0, z);
++      uv.setXY(i + 1, 0.5 + x / (2 * pool.maxR), 0.5 + z / (2 * pool.maxR));
++    }
++    pos.needsUpdate = true;
++    uv.needsUpdate = true;
++    pool.radius = grow;
++  }
++
++  update(dt) {
++    for (const p of this.pools) {
++      if (p.done) continue;
++      p.t += dt;
++      if (p.t < 0) continue;
++      const k = Math.min(1, p.t / p.duration);
++      this.layoutPool(p, k);
++      if (k >= 1) p.done = true;
++    }
++    this.pools = this.pools.filter((p) => !p.done || p.mesh.parent);
++  }
++
++  count(kind) {
++    return this.live[kind]?.length ?? 0;
++  }
++}
+diff --git a/src/fx/index.js b/src/fx/index.js
+new file mode 100644
+index 0000000..f3c67b5
+--- /dev/null
++++ b/src/fx/index.js
+@@ -0,0 +1,277 @@
++import * as THREE from 'three';
++import { createRng } from '../core/rng.js';
++import { buildFxTextures, BLOOD } from './textures.js';
++import { DecalSystem, DECAL } from './decals.js';
++import { ParticlePool } from './particles.js';
++
++export { DecalSystem, DECAL, fitOnSurface, floorClear, poolRadii } from './decals.js';
++export { ParticlePool } from './particles.js';
++
++/**
++ * Combat FX: muzzle flashes, bullet impacts (hole decal on static surfaces, dust puff, sparks),
++ * blood (mist burst, spatter projected on whatever is behind the victim, falling drops that land
++ * as floor drips, stains on clothing parented to the hit bone), blood trails while a wounded NPC
++ * moves, and a pool that spreads under a body over ~10 s.
++ *
++ * new FxSystem({ scene, collision, worldRay, seed }) ; update(dt) every frame.
++ * worldRay.raycast(origin, dir, max) → surface hit (src/combat/hitscan.js WorldRay).
++ */
++export const FX = Object.freeze({
++  spatterRange: 3,
++  flashTime: 0.05,
++  flashLight: { color: '#ffb469', intensity: 9, distance: 7 },
++  trailStep: 0.38,
++  poolDelay: 1.6,
++  poolGrow: 10,
++});
++
++const col = (hex) => new THREE.Color(hex);
++const MIST = [col('#8c1012'), col('#6e0b0d'), col('#a01416'), col('#5a0709')];
++const DUST = [col('#8a8070'), col('#6e675c'), col('#a09888')];
++const SPARK = [col('#ffe7a0'), col('#ffc65a'), col('#ffffff')];
++
++export class FxSystem {
++  constructor({ scene, collision = null, worldRay = null, seed = 'fx' } = {}) {
++    this.scene = scene;
++    this.collision = collision;
++    this.worldRay = worldRay;
++    this.rng = createRng(`fx:${seed}`);
++    this.tex = buildFxTextures(seed);
++    this.decals = new DecalSystem({ scene, collision, textures: this.tex, seed });
++    this.mist = new ParticlePool({ scene, count: 320, size: 0.035, texture: this.tex.dot, gravity: 3.5, drag: 5, name: 'fx-mist' });
++    this.drops = new ParticlePool({ scene, count: 160, size: 0.022, texture: this.tex.dot, gravity: 9.8, drag: 0.6, name: 'fx-drops' });
++    this.dust = new ParticlePool({ scene, count: 160, size: 0.09, texture: this.tex.puff, opacity: 0.55, gravity: -0.25, drag: 3.2, name: 'fx-dust', alphaTest: 0.05 });
++    this.sparks = new ParticlePool({ scene, count: 120, size: 0.03, texture: this.tex.dot, blending: THREE.AdditiveBlending, gravity: 9.8, drag: 1.2, name: 'fx-sparks' });
++    // The flash light lives in the scene from the start (adding a light later recompiles every shader).
++    const fl = FX.flashLight;
++    this.light = new THREE.PointLight(fl.color, 0, fl.distance, 2);
++    this.light.name = 'fx-muzzle-light';
++    scene?.add(this.light);
++    this.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex.flash, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
++    this.flash.name = 'fx-muzzle-flash';
++    this.flash.visible = false;
++    this.flash.renderOrder = 4;
++    scene?.add(this.flash);
++    this.flashT = 0;
++    this.wounded = new Map();
++    this.bodies = [];
++    this.stats = { holes: 0, splats: 0, drips: 0, stains: 0, pools: 0 };
++  }
++
++  r() {
++    return this.rng.next();
++  }
++
++  pick(list) {
++    return list[Math.floor(this.r() * list.length)];
++  }
++
++  /** Random unit vector biased toward `dir` within roughly `cone` radians. */
++  jitter(dir, cone) {
++    const v = new THREE.Vector3(this.r() * 2 - 1, this.r() * 2 - 1, this.r() * 2 - 1).multiplyScalar(Math.tan(cone));
++    return dir.clone().add(v).normalize();
++  }
++
++  floorBelow(p, reach = 3) {
++    return this.collision?.groundAt(p.x, p.z, p.y + 0.05, 0.1)?.y ?? this.collision?.groundAt(p.x, p.z, p.y, reach)?.y ?? null;
++  }
++
++  // --- muzzle flash ------------------------------------------------------------------------------
++
++  muzzleFlash(pos, dir, { size = 0.24 } = {}) {
++    this.flash.position.copy(pos).addScaledVector(dir, size * 0.35);
++    this.flash.scale.setScalar(size * (0.8 + this.r() * 0.4));
++    this.flash.material.rotation = this.r() * Math.PI * 2;
++    this.flash.visible = true;
++    this.light.position.copy(pos).addScaledVector(dir, 0.1);
++    this.light.intensity = FX.flashLight.intensity;
++    this.flashT = FX.flashTime;
++    // A few hot sparks out of the barrel.
++    for (let i = 0; i < 3; i++) this.sparks.emit(pos, this.jitter(dir, 0.25).multiplyScalar(5 + this.r() * 4), this.pick(SPARK), 0.05 + this.r() * 0.06);
++  }
++
++  // --- impacts -----------------------------------------------------------------------------------
++
++  /** Bullet hitting the world or a prop: hole decal only on static surfaces, dust and sparks always. */
++  impact(hit, dir, { decal = true, material = null } = {}) {
++    const n = hit.normal;
++    const p = hit.point;
++    if (decal) {
++      const m = this.decals.place('hole', hit, 0.028 + this.r() * 0.01, { texture: this.pick(this.tex.holes) });
++      if (m) this.stats.holes++;
++    }
++    const reflect = dir.clone().reflect(n);
++    const dusty = material !== 'metal' && material !== 'glass';
++    if (dusty) {
++      for (let i = 0; i < 7; i++) {
++        const v = this.jitter(n.clone().lerp(reflect, 0.3).normalize(), 0.6).multiplyScalar(0.6 + this.r() * 1.4);
++        this.dust.emit(p.clone().addScaledVector(n, 0.02), v, this.pick(DUST), 0.45 + this.r() * 0.5);
++      }
++    }
++    const sparks = material === 'metal' || material === 'electronics' ? 8 : material === 'glass' ? 2 : 3;
++    for (let i = 0; i < sparks; i++) {
++      this.sparks.emit(p.clone().addScaledVector(n, 0.01), this.jitter(reflect, 0.5).multiplyScalar(2.5 + this.r() * 4), this.pick(SPARK), 0.12 + this.r() * 0.2);
++    }
++  }
++
++  // --- blood -------------------------------------------------------------------------------------
++
++  /**
++   * A round hitting a body: mist both ways, spatter on the surfaces behind (rays along the shot up to
++   * 3 m), drops falling to the floor, a stain on the clothing at the wound.
++   * opts: { character (posed), joint (rig joint hit), part, npc, exit: chance of an exit spray }
++   */
++  blood(hit, dir, { character = null, joint = null, part = 'torso', npc = null } = {}) {
++    const p = hit.point.clone();
++    const d = dir.clone().normalize();
++    const heavy = part === 'head' ? 1.6 : 1;
++    // Mist: a fine spray back toward the shooter and a heavier one out of the exit side.
++    for (let i = 0; i < 26 * heavy; i++) {
++      const forward = i % 3 !== 0;
++      const v = this.jitter(forward ? d : d.clone().negate(), forward ? 0.45 : 0.7).multiplyScalar(forward ? 1.2 + this.r() * 2.6 : 0.4 + this.r() * 1.2);
++      this.mist.emit(p, v, this.pick(MIST), 0.25 + this.r() * 0.45);
++    }
++    // Drops that fall and land as drips.
++    const floor = this.floorBelow(p);
++    for (let i = 0; i < 6 * heavy; i++) {
++      const v = this.jitter(d, 0.6).multiplyScalar(0.6 + this.r() * 2.2);
++      v.y += this.r() * 0.6;
++      this.drops.emit(p, v, this.pick(MIST), 2.5, { floor: floor ?? -Infinity, tag: 'drop' });
++    }
++    // Spatter on what's behind.
++    if (this.worldRay) {
++      const rays = part === 'head' ? 4 : 3;
++      for (let i = 0; i < rays; i++) {
++        const rd = this.jitter(d, i === 0 ? 0.06 : 0.32);
++        if (i > 0) rd.y -= 0.15 * this.r();
++        rd.normalize();
++        const h = this.worldRay.raycast(p.clone().addScaledVector(rd, 0.05), rd, FX.spatterRange);
++        if (!h || !h.static) continue;
++        const dist = h.distance;
++        const half = (0.09 + dist * 0.06 + this.r() * 0.05) * (i === 0 ? 1.2 : 0.75) * (part === 'head' ? 1.15 : 1);
++        const graze = 1 - Math.abs(rd.dot(h.normal));
++        const m = this.decals.place('splat', h, half, { texture: this.pick(this.tex.splats), stretch: [1, 1 + graze * 0.8], up: rd });
++        if (m) this.stats.splats++;
++      }
++    }
++    if (character && joint) this.stain(character, joint, hit);
++    if (npc) this.wound(npc);
++  }
++
++  /** A small soaked spot on the clothing, parented to the bone the round hit. */
++  stain(character, joint, hit) {
++    const rig = character.userData?.rig;
++    const bone = rig?.byName?.[joint] ?? rig?.bones?.find((b) => b.userData?.joint === joint);
++    if (!bone) return null;
++    this.decals.recycle('stain');
++    const m = new THREE.Mesh(this.decals.quad, this.decals.material(this.tex.stain));
++    m.name = 'fx-stain';
++    const n = hit.normal.clone().normalize();
++    const world = new THREE.Object3D();
++    world.position.copy(hit.point).addScaledVector(n, 0.006);
++    world.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
++    world.scale.setScalar(0.07 + this.r() * 0.03);
++    bone.updateMatrixWorld(true);
++    world.updateMatrix();
++    m.matrixAutoUpdate = true;
++    const local = new THREE.Matrix4().copy(bone.matrixWorld).invert().multiply(world.matrix);
++    local.decompose(m.position, m.quaternion, m.scale);
++    m.renderOrder = 2;
++    bone.add(m);
++    this.decals.live.stain.push(m);
++    this.stats.stains++;
++    return m;
++  }
++
++  // --- trails & pools ----------------------------------------------------------------------------
++
++  wound(npc) {
++    const w = this.wounded.get(npc) ?? { wounds: 0, last: null };
++    w.wounds++;
++    this.wounded.set(npc, w);
++  }
++
++  /** Death: a pool spreads under the body's chest once it has settled on the floor. */
++  bodyDown(npc, { delay = FX.poolDelay } = {}) {
++    if (this.bodies.some((b) => b.npc === npc)) return;
++    this.bodies.push({ npc, t: delay, started: false });
++  }
++
++  bodyCentre(npc) {
++    const rig = npc.character?.userData?.rig;
++    const at = (j) => {
++      const b = rig?.byName?.[j] ?? rig?.bones?.find((x) => x.userData?.joint === j);
++      return b ? b.getWorldPosition(new THREE.Vector3()) : null;
++    };
++    const spine = at('Spine1');
++    const hips = at('Hips');
++    if (spine && hips) return spine.lerp(hips, 0.35);
++    const p = npc.pos ?? npc.holder?.position;
++    return p ? new THREE.Vector3(p.x, p.y, p.z) : null;
++  }
++
++  startPool(npc) {
++    const c = this.bodyCentre(npc);
++    if (!c) return null;
++    const y = this.floorBelow(c, 2);
++    if (y === null) return null;
++    const candidates = [c.clone().setY(y)];
++    const p = npc.pos ?? npc.holder?.position;
++    if (p) candidates.push(new THREE.Vector3(p.x, y, p.z));
++    for (const at of candidates) {
++      const pool = this.decals.pool(at, { maxR: 0.55 + this.r() * 0.15, duration: FX.poolGrow });
++      if (pool) {
++        this.stats.pools++;
++        return pool;
++      }
++    }
++    return null;
++  }
++
++  dripUnder(pos, spread = 0.18) {
++    const x = pos.x + (this.r() * 2 - 1) * spread;
++    const z = pos.z + (this.r() * 2 - 1) * spread;
++    const y = this.collision?.groundAt(x, z, pos.y + 0.3, 0.6)?.y ?? (this.collision ? null : pos.y);
++    if (y === null || y === undefined) return null;
++    const m = this.decals.place('drop', { point: new THREE.Vector3(x, y, z), normal: new THREE.Vector3(0, 1, 0), floor: true }, 0.025 + this.r() * 0.03, { texture: this.pick(this.tex.drops) });
++    if (m) this.stats.drips++;
++    return m;
++  }
++
++  update(dt) {
++    if (this.flashT > 0) {
++      this.flashT -= dt;
++      if (this.flashT <= 0) {
++        this.flash.visible = false;
++        this.light.intensity = 0;
++      }
++    }
++    this.mist.update(dt);
++    this.dust.update(dt);
++    this.sparks.update(dt);
++    this.drops.update(dt, (p) => this.dripUnder(p, 0));
++    // Blood trails: wounded NPCs on the move drip every trailStep metres.
++    for (const [npc, w] of this.wounded) {
++      if (npc.dead) continue;
++      const p = npc.pos ?? npc.holder?.position;
++      if (!p) continue;
++      if (!w.last) w.last = { x: p.x, z: p.z };
++      const moved = Math.hypot(p.x - w.last.x, p.z - w.last.z);
++      if (moved > FX.trailStep / Math.min(2, w.wounds)) {
++        w.last = { x: p.x, z: p.z };
++        this.dripUnder({ x: p.x, y: p.y, z: p.z });
++      }
++    }
++    for (const b of this.bodies) {
++      if (b.started) continue;
++      b.t -= dt;
++      if (b.t <= 0) {
++        b.started = true;
++        b.pool = this.startPool(b.npc);
++      }
++    }
++    this.decals.update(dt);
++  }
++}
++
++export { BLOOD };
+diff --git a/src/fx/particles.js b/src/fx/particles.js
+new file mode 100644
+index 0000000..bd5460d
+--- /dev/null
++++ b/src/fx/particles.js
+@@ -0,0 +1,102 @@
++import * as THREE from 'three';
++
++/**
++ * Pixel particles: one THREE.Points per effect (blood mist, dust, sparks) with a fixed ring of slots,
++ * CPU-integrated (gravity, drag, floor). Points are drawn as square nearest-filtered sprites, which
++ * is exactly the PS2-era look. Dead slots park far below the world. `onLand(p)` lets the owner turn
++ * a falling drop into a floor decal.
++ */
++const PARK = -9999;
++
++export class ParticlePool {
++  constructor({ scene = null, count = 256, size = 0.05, texture = null, blending = THREE.NormalBlending, opacity = 1, gravity = 9.8, drag = 1.5, name = 'particles', alphaTest = 0.5 } = {}) {
++    this.count = count;
++    this.gravity = gravity;
++    this.drag = drag;
++    this.pos = new Float32Array(count * 3).fill(PARK);
++    this.col = new Float32Array(count * 3).fill(1);
++    this.vel = new Float32Array(count * 3);
++    this.life = new Float32Array(count);
++    this.age = new Float32Array(count);
++    this.floor = new Float32Array(count).fill(-Infinity);
++    this.tag = new Array(count).fill(null);
++    this.next = 0;
++    const geo = new THREE.BufferGeometry();
++    geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
++    geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
++    this.material = new THREE.PointsMaterial({
++      size, map: texture, vertexColors: true, transparent: blending !== THREE.NormalBlending || opacity < 1, opacity,
++      blending, depthWrite: blending === THREE.NormalBlending && opacity >= 1, alphaTest: blending === THREE.NormalBlending ? alphaTest : 0, sizeAttenuation: true, fog: true,
++    });
++    this.points = new THREE.Points(geo, this.material);
++    this.points.name = name;
++    this.points.frustumCulled = false;
++    this.points.renderOrder = 3;
++    scene?.add(this.points);
++    this.alive = 0;
++  }
++
++  /** Spawns one particle: p, v (Vector3 or arrays), colour, life (s), floor height (lands there). */
++  emit(p, v, color, life, { floor = -Infinity, tag = null } = {}) {
++    const i = this.next;
++    this.next = (this.next + 1) % this.count;
++    const o = i * 3;
++    this.pos[o] = p.x;
++    this.pos[o + 1] = p.y;
++    this.pos[o + 2] = p.z;
++    this.vel[o] = v.x;
++    this.vel[o + 1] = v.y;
++    this.vel[o + 2] = v.z;
++    this.col[o] = color.r;
++    this.col[o + 1] = color.g;
++    this.col[o + 2] = color.b;
++    this.life[i] = life;
++    this.age[i] = 0;
++    this.floor[i] = floor;
++    this.tag[i] = tag;
++    return i;
++  }
++
++  update(dt, onLand = null) {
++    let alive = 0;
++    const damp = Math.exp(-this.drag * dt);
++    for (let i = 0; i < this.count; i++) {
++      if (this.life[i] <= 0) continue;
++      const o = i * 3;
++      this.age[i] += dt;
++      if (this.age[i] >= this.life[i]) {
++        this.kill(i);
++        continue;
++      }
++      this.vel[o] *= damp;
++      this.vel[o + 2] *= damp;
++      this.vel[o + 1] = this.vel[o + 1] * damp - this.gravity * dt;
++      this.pos[o] += this.vel[o] * dt;
++      this.pos[o + 1] += this.vel[o + 1] * dt;
++      this.pos[o + 2] += this.vel[o + 2] * dt;
++      if (this.pos[o + 1] <= this.floor[i]) {
++        this.pos[o + 1] = this.floor[i];
++        onLand?.({ x: this.pos[o], y: this.floor[i], z: this.pos[o + 2], tag: this.tag[i] });
++        this.kill(i);
++        continue;
++      }
++      // Fade out over the last third by darkening toward black (works for additive sparks too).
++      const k = this.age[i] / this.life[i];
++      if (k > 0.66 && this.material.blending === THREE.AdditiveBlending) {
++        const f = 1 - (k - 0.66) * 2.9 * dt * 6;
++        this.col[o] *= f;
++        this.col[o + 1] *= f;
++        this.col[o + 2] *= f;
++      }
++      alive++;
++    }
++    this.alive = alive;
++    this.points.geometry.attributes.position.needsUpdate = true;
++    this.points.geometry.attributes.color.needsUpdate = true;
++  }
++
++  kill(i) {
++    this.life[i] = 0;
++    this.pos[i * 3 + 1] = PARK;
++  }
++}
+diff --git a/src/fx/textures.js b/src/fx/textures.js
+new file mode 100644
+index 0000000..130e169
+--- /dev/null
++++ b/src/fx/textures.js
+@@ -0,0 +1,166 @@
++import * as THREE from 'three';
++import { Raster } from '../tex/raster.js';
++import { createRng } from '../core/rng.js';
++
++/**
++ * Pixel textures for combat FX, painted in code with the project's Raster (y up = v up) and
++ * deterministic per seed. Decal textures are drawn over a transparent canvas whose colour is already
++ * the ink colour, so soft edges fade in alpha only (the multiply blend then darkens the surface
++ * underneath by colour × alpha and never adds a dark fringe).
++ */
++export const BLOOD = Object.freeze({ fresh: '#7a0a0c', dark: '#4a0507', dry: '#3a0a08', mist: '#8c1012' });
++
++function blank(size, color) {
++  const r = new Raster(size, size);
++  r.fill(color);
++  for (let i = 3; i < r.data.length; i += 4) r.data[i] = 0;
++  return r;
++}
++
++export function toTexture(r, name) {
++  const tex = new THREE.DataTexture(r.data, r.width, r.height, THREE.RGBAFormat);
++  tex.name = name;
++  tex.magFilter = THREE.NearestFilter;
++  tex.minFilter = THREE.NearestFilter;
++  tex.generateMipmaps = false;
++  tex.colorSpace = THREE.SRGBColorSpace;
++  tex.needsUpdate = true;
++  return tex;
++}
++
++/** Spatter: a core blob, satellite drops and streaks thrown toward +y (the travel direction). */
++export function paintSplat(seed, size = 32) {
++  const rng = createRng(`fx-splat:${seed}`);
++  const r = blank(size, BLOOD.fresh);
++  const c = size / 2;
++  const s = size / 32;
++  for (let i = 0; i < 6; i++) {
++    const a = rng.next() * Math.PI * 2;
++    const d = rng.next() * 3 * s;
++    const rr = (2.5 + rng.next() * 3.5) * s;
++    r.ellipse(c + Math.cos(a) * d, c - 3 * s + Math.sin(a) * d, rr, rr * (0.7 + rng.next() * 0.5), BLOOD.fresh, 1);
++  }
++  for (let i = 0; i < 5; i++) {
++    const a = Math.PI / 2 + (rng.next() * 2 - 1) * 0.8;
++    const len = (6 + rng.next() * 9) * s;
++    const x1 = c + Math.cos(a) * len;
++    const y1 = c - 3 * s + Math.sin(a) * len;
++    r.line(c, c - 3 * s, x1, y1, BLOOD.fresh, Math.max(1, (1 + rng.next() * 1.5) * s), 0.95);
++    r.ellipse(x1, y1, (1 + rng.next() * 1.4) * s, (1.2 + rng.next() * 1.6) * s, BLOOD.fresh, 1);
++  }
++  for (let i = 0; i < 14; i++) {
++    const a = rng.next() * Math.PI * 2;
++    const d = (7 + rng.next() * 7) * s;
++    r.ellipse(c + Math.cos(a) * d, c - 2 * s + Math.sin(a) * d * (Math.sin(a) > 0 ? 1.2 : 0.7), (0.6 + rng.next()) * s, (0.6 + rng.next()) * s, BLOOD.fresh, 0.9);
++  }
++  r.toneEllipse(c, c - 3 * s, 5 * s, 4 * s, 0.75);
++  return r;
++}
++
++/** A single drop with a couple of satellites (floor drips, trails). */
++export function paintDrop(seed, size = 16) {
++  const rng = createRng(`fx-drop:${seed}`);
++  const r = blank(size, BLOOD.dark);
++  const c = size / 2;
++  r.ellipse(c, c, 2.6 + rng.next() * 1.4, 2.4 + rng.next() * 1.4, BLOOD.dark, 1);
++  for (let i = 0; i < 4; i++) {
++    const a = rng.next() * Math.PI * 2;
++    const d = 3.5 + rng.next() * 3;
++    r.ellipse(c + Math.cos(a) * d, c + Math.sin(a) * d, 0.7 + rng.next() * 0.6, 0.7 + rng.next() * 0.6, BLOOD.dark, 0.9);
++  }
++  return r;
++}
++
++/** Pool: an even dark fill with a wobbly edge; the geometry does the real outline (clipped). */
++export function paintPool(seed, size = 64) {
++  const rng = createRng(`fx-pool:${seed}`);
++  const r = blank(size, BLOOD.dark);
++  const c = size / 2;
++  const n = 24;
++  const pts = [];
++  for (let i = 0; i < n; i++) {
++    const a = (i / n) * Math.PI * 2;
++    const rad = c * (0.82 + rng.next() * 0.16);
++    pts.push([c + Math.cos(a) * rad, c + Math.sin(a) * rad]);
++  }
++  r.polygon(pts, BLOOD.dark, 1);
++  r.ellipse(c, c, c * 0.55, c * 0.5, BLOOD.dry, 0.35, 0.8);
++  // A thin glossy-looking lighter ring just inside the edge reads as a liquid meniscus.
++  for (let i = 0; i < n; i++) {
++    const [x, y] = pts[i];
++    r.plot(c + (x - c) * 0.9, c + (y - c) * 0.9, '#6a0a0c', 0.5);
++  }
++  return r;
++}
++
++/** Bullet hole: black bore, a darkened crush ring and a few chips. */
++export function paintBulletHole(seed, size = 16) {
++  const rng = createRng(`fx-hole:${seed}`);
++  const r = blank(size, '#2a2522');
++  const c = size / 2;
++  r.ellipse(c, c, 5.5, 5.5, '#4a4440', 0.55, 0.6);
++  for (let i = 0; i < 6; i++) {
++    const a = rng.next() * Math.PI * 2;
++    r.line(c, c, c + Math.cos(a) * (3 + rng.next() * 3), c + Math.sin(a) * (3 + rng.next() * 3), '#3a3430', 1, 0.6);
++  }
++  r.ellipse(c, c, 2.2, 2.2, '#0d0b0a', 1);
++  r.plot(c - 1, c, '#000000', 1);
++  return r;
++}
++
++/** Round particle sprite (alpha cut), white so vertex colours tint it. */
++export function paintDot(size = 8) {
++  const r = blank(size, '#ffffff');
++  r.ellipse(size / 2, size / 2, size / 2 - 0.5, size / 2 - 0.5, '#ffffff', 1);
++  return r;
++}
++
++/** Soft puff (dust). */
++export function paintPuff(seed, size = 16) {
++  const rng = createRng(`fx-puff:${seed}`);
++  const r = blank(size, '#ffffff');
++  for (let i = 0; i < 5; i++) {
++    r.ellipse(size / 2 + (rng.next() * 2 - 1) * 2.5, size / 2 + (rng.next() * 2 - 1) * 2.5, 3 + rng.next() * 2.5, 3 + rng.next() * 2.5, '#ffffff', 0.55, 0.9);
++  }
++  return r;
++}
++
++/** Muzzle flash star (seen from the side or the front: a cross of spikes around a hot core). */
++export function paintFlash(seed, size = 32) {
++  const rng = createRng(`fx-flash:${seed}`);
++  const r = blank(size, '#ffd27a');
++  const c = size / 2;
++  for (let i = 0; i < 7; i++) {
++    const a = (i / 7) * Math.PI * 2 + rng.next() * 0.4;
++    const len = c * (0.55 + rng.next() * 0.45);
++    r.line(c, c, c + Math.cos(a) * len, c + Math.sin(a) * len, '#ffb347', 2, 0.9);
++  }
++  r.ellipse(c, c, c * 0.42, c * 0.42, '#ffcf6a', 0.95, 0.5);
++  r.ellipse(c, c, c * 0.22, c * 0.22, '#fff6d8', 1);
++  return r;
++}
++
++/** Small bloodstain for clothing (soaked fabric spot). */
++export function paintStain(seed, size = 16) {
++  const rng = createRng(`fx-stain:${seed}`);
++  const r = blank(size, BLOOD.dark);
++  const c = size / 2;
++  for (let i = 0; i < 4; i++) r.ellipse(c + (rng.next() * 2 - 1) * 2, c + (rng.next() * 2 - 1) * 2, 2.5 + rng.next() * 2.5, 2.5 + rng.next() * 2.5, BLOOD.dark, 0.9, 0.5);
++  r.ellipse(c, c, 1.6, 1.6, '#1a0405', 1);
++  return r;
++}
++
++/** Every FX texture, built once per FxSystem. */
++export function buildFxTextures(seed = 'fx') {
++  const t = (r, name) => toTexture(r, `${seed}-${name}`);
++  return {
++    splats: [0, 1, 2, 3].map((i) => t(paintSplat(`${seed}-${i}`), `splat${i}`)),
++    drops: [0, 1, 2].map((i) => t(paintDrop(`${seed}-${i}`), `drop${i}`)),
++    pool: t(paintPool(seed), 'pool'),
++    holes: [0, 1].map((i) => t(paintBulletHole(`${seed}-${i}`), `hole${i}`)),
++    stain: t(paintStain(seed), 'stain'),
++    dot: t(paintDot(), 'dot'),
++    puff: t(paintPuff(seed), 'puff'),
++    flash: t(paintFlash(seed), 'flash'),
++  };
++}
+diff --git a/src/game/character-controller.js b/src/game/character-controller.js
+index 935d128..ec7c8e6 100644
+--- a/src/game/character-controller.js
++++ b/src/game/character-controller.js
+@@ -1,6 +1,7 @@
+ import * as THREE from 'three';
+ import { Animator } from '../anim/animator.js';
+ import { WEAPONS } from '../weapons/specs.js';
++import { FIRE } from '../combat/loadout.js';
+ 
+ const COMPASS = [['N', 0], ['NW', 45], ['W', 90], ['SW', 135], ['S', 180], ['SE', -135], ['E', -90], ['NE', -45]];
+ const TURN_RATE = 9;
+@@ -175,20 +176,36 @@ export class CharacterController {
+     if (!this.weapon || !input.aim) a.setAim(0, 0, {});
+     if (this.weapon && input.aim) a.setAim(THREE.MathUtils.clamp(this.aimOffset, -AIM_DEAD_ZONE, AIM_DEAD_ZONE), input.aimPitch ?? 0, { left: `${this.weapon}_aimLeft`, right: `${this.weapon}_aimRight`, up: `${this.weapon}_aimUp`, down: `${this.weapon}_aimDown` });
+ 
++    // Semi-automatic guns need the trigger released between rounds; automatic ones fire while held
++    // at their cadence (FIRE). `onFire(weapon)` (the gunplay hitscan) adds { pos, dir, target } to
++    // the player:fire event.
+     this.fireCooldown -= dt;
+-    if (this.weapon && input.fire && input.aim && this.fireCooldown <= 0 && !a.locked) {
++    if (!input.fire) this.triggerReady = true;
++    const mode = FIRE[this.weapon] ?? { interval: 0.2, auto: false };
++    if (this.weapon && input.fire && input.aim && this.fireCooldown <= 0 && !a.locked && (mode.auto || this.triggerReady !== false)) {
+       if (this.ammo[this.weapon] > 0) {
+         if (a.additive(clipFor(this.weapon, 'recoil'))) {
+           this.ammo[this.weapon] -= 1;
+-          this.fireCooldown = this.weapon === 'pistol' ? 0.22 : 0.1;
++          this.fireCooldown = Math.max(this.fireCooldown, -dt) + mode.interval;
++          this.triggerReady = false;
++          this.shots = (this.shots ?? 0) + 1;
+           this.lastShot = { weapon: this.weapon, ammo: this.ammo[this.weapon] };
+-          this.emit('player:fire', { pos: this.position.toArray(), weapon: this.weapon, target: input.target ?? null });
++          let extra = null;
++          try {
++            extra = this.onFire?.(this.weapon, input) ?? null;
++          } catch (err) {
++            console.warn(`onFire: ${err.message}`);
++          }
++          this.emit('player:fire', { pos: this.position.toArray(), weapon: this.weapon, target: input.target ?? null, ...extra });
+         }
+-      } else {
++      } else if (this.triggerReady !== false) {
+         a.play(clipFor(this.weapon, 'dryFire'));
+         this.fireCooldown = 0.5;
++        this.triggerReady = false;
++        this.emit('player:dryFire', { weapon: this.weapon, pos: this.position.toArray() });
+       }
+     }
++    if (this.fireCooldown < 0 && !input.fire) this.fireCooldown = 0;
+     // A reload pressed during another one-shot (dry fire, draw) is buffered, not dropped.
+     if (input.reload) this.wantReload = true;
+     if (this.weapon && this.wantReload && !a.locked) {
+diff --git a/src/game/input.js b/src/game/input.js
+index 98c28b1..8f3c059 100644
+--- a/src/game/input.js
++++ b/src/game/input.js
+@@ -4,9 +4,10 @@
+  * set on key-down and cleared by consume() after the game step reads them. In scripted mode (tests)
+  * the key set is ignored and callers write the input object directly.
+  *
+- * Bindings: WASD move · Shift sprint · CapsLock walk/run toggle · Alt walk (hold) · C / Ctrl crouch
+- * (toggle) · Space jump · E interact · F / RMB aim · LMB fire (hip-aims when not aiming) · R reload ·
+- * 1 / 2 / 3 weapons, 0 holster · Q / MMB shoulder swap · X inspect · V melee · G smoke.
++ * Bindings: WASD run (the default gait) · Alt held or CapsLock toggle walk · Shift sprint (outdoors) ·
++ * C / Ctrl crouch (toggle) · Space jump · E interact · F / RMB aim · LMB fire (hip-aims when not
++ * aiming; held = full auto on automatic guns) · R reload · 1 pistol / 2 SMG / 3 rifle (only once
++ * owned, see Loadout), 0 holster · Q / MMB shoulder swap · X inspect · V melee · G smoke.
+  * Mouse look uses pointer lock (click the view); without the lock, dragging looks around.
+  */
+ export const BINDINGS = Object.freeze({
+@@ -14,6 +15,8 @@ export const BINDINGS = Object.freeze({
+   sprint: ['ShiftLeft', 'ShiftRight'], walk: ['AltLeft', 'AltRight'], aim: ['KeyF'],
+ });
+ 
++import { Loadout } from '../combat/loadout.js';
++
+ const EDGES = ['jump', 'interact', 'reload', 'inspect', 'melee', 'smoke', 'shoulder'];
+ 
+ export function createInput() {
+@@ -24,8 +27,27 @@ export function createInput() {
+   };
+ }
+ 
++/**
++ * Stick from the held keys: full deflection (run) by default, half (walk) while Alt is held or the
++ * CapsLock toggle is on; sprint only when not walking.
++ */
++export function moveFromKeys(keys, { walkToggle = false } = {}) {
++  const k = (list) => list.some((c) => keys.has(c));
++  let x = (k(BINDINGS.left) ? 1 : 0) - (k(BINDINGS.right) ? 1 : 0);
++  let z = (k(BINDINGS.forward) ? 1 : 0) - (k(BINDINGS.back) ? 1 : 0);
++  const len = Math.hypot(x, z);
++  if (len > 1) {
++    x /= len;
++    z /= len;
++  }
++  const walk = k(BINDINGS.walk) !== walkToggle;
++  const scale = walk ? 0.5 : 1;
++  return { x: x * scale, z: z * scale, walk, sprint: k(BINDINGS.sprint) && !walk };
++}
++
+ export class GameInput {
+-  constructor(element, { onLook = null } = {}) {
++  constructor(element, { onLook = null, loadout = new Loadout() } = {}) {
++    this.loadout = loadout;
+     this.element = element;
+     this.state = createInput();
+     this.keys = new Set();
+@@ -59,10 +81,8 @@ export class GameInput {
+       if (e.code === 'KeyQ') s.shoulder = true;
+       if (e.code === 'KeyC' || e.code === 'ControlLeft') s.crouch = !s.crouch;
+       if (e.code === 'CapsLock') this.walkToggle = !this.walkToggle;
+-      if (e.code === 'Digit1') s.weapon = 'pistol';
+-      if (e.code === 'Digit2') s.weapon = 'rifle';
+-      if (e.code === 'Digit3') s.weapon = 'smg';
+-      if (e.code === 'Digit0') s.weapon = null;
++      const pick = this.loadout.select(e.code);
++      if (pick !== undefined) s.weapon = pick;
+     });
+     addEventListener('keyup', (e) => this.keys.delete(e.code));
+     addEventListener('blur', () => {
+@@ -100,18 +120,11 @@ export class GameInput {
+     if (this.scripted) return this.state;
+     const s = this.state;
+     const k = (list) => list.some((c) => this.keys.has(c));
+-    let x = (k(BINDINGS.left) ? 1 : 0) - (k(BINDINGS.right) ? 1 : 0);
+-    let z = (k(BINDINGS.forward) ? 1 : 0) - (k(BINDINGS.back) ? 1 : 0);
+-    const len = Math.hypot(x, z);
+-    if (len > 1) {
+-      x /= len;
+-      z /= len;
+-    }
+-    s.walk = k(BINDINGS.walk) !== this.walkToggle;
+-    const scale = s.walk ? 0.5 : 1;
+-    s.move.x = x * scale;
+-    s.move.z = z * scale;
+-    s.sprint = k(BINDINGS.sprint) && !s.walk;
++    const m = moveFromKeys(this.keys, { walkToggle: this.walkToggle });
++    s.walk = m.walk;
++    s.move.x = m.x;
++    s.move.z = m.z;
++    s.sprint = m.sprint;
+     s.aim = k(BINDINGS.aim) || this.mouse.right || (this.mouse.left && !!s.weapon);
+     s.fire = this.mouse.left;
+     return s;

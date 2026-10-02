@@ -1,0 +1,1348 @@
+diff --git a/src/anim/chill-clips.js b/src/anim/chill-clips.js
+new file mode 100644
+index 0000000..27227da
+--- /dev/null
++++ b/src/anim/chill-clips.js
+@@ -0,0 +1,1342 @@
++import * as THREE from 'three';
++import { JOINTS } from '../rig/skeleton.js';
++import { Pose, curlFingers, relaxHands } from './pose.js';
++import { FPS, TAU, SIDES, ease, window01, base, plantFeet, bump, envelope } from './clip-kit.js';
++import { worldPose } from './fk.js';
++import { reach, handTargetAt } from './reach.js';
++import { solveTwoBone, handRotation, handGripOffset } from './arm-ik.js';
++import { legRig, rolledAnkle } from './ik.js';
++import { footRotation } from './clip-kit.js';
++import { SEATS, SIT_DROP } from './action-clips.js';
++
++/**
++ * Apartment "chill" clips (names prefixed `chill_`): sitting on the loft sofa / chairs listening to
++ * music, drinking, talking, scrolling a phone, gaming; dancing, leaning on the counter or the
++ * mezzanine rail, looking out of the window, stretching. Same sampler shape as clips.js:
++ * { duration, loop, events?, meta?, sample(L, t, dur) → Pose }, character space (feet on y = 0,
++ * facing +Z, +X = the character's left).
++ *
++ * Music: loops are whole bars of a 128 BPM track (BEAT s per beat) and say so in meta.beats, so the
++ * activity layer can phase-lock them to the music clock (head nods land on the kick). Variations
++ * (`_1`, `_2`, ...) differ in posture, energy and groove (on-beat vs half-time nods, foot taps, knee
++ * bounce, drumming) so five people on one sofa never move in sync.
++ *
++ * Seating follows action-clips.js: seat heights are absolute (FURNITURE), the pelvis settles
++ * SEATS[variant].hipsBack × k behind the root and the hip joints SIT_DROP × k above the seat, so
++ * sitDown_sofa → chill_sit_* → standUp_sofa blend without a pop. The sofa back cushion sits
++ * SOFA_BACK.face behind the seat point (where the pelvis is), its top SOFA_BACK.top above the floor.
++ *
++ * Held props are posed through PROP_GRIPS: each prop has a local frame and, per hand, the grip point
++ * plus the hand's finger / palm directions in that frame. Clips place a prop frame in the world and
++ * solve the hand onto it; propAttachment() gives the inverse (prop offset in the hand bone) so the
++ * mesh in src/npc/activities/props.js lands exactly where the clip held it.
++ */
++
++export const BPM = 128;
++export const BEAT = 60 / BPM;
++export const SOFA_BACK = Object.freeze({ face: 0.255, top: 0.78 });
++/** Counter / rail heights the standing clips assume (m above the floor, absolute). */
++export const COUNTER = Object.freeze({ top: 0.91, behind: 0.21, front: 0.3 });
++export const RAIL = Object.freeze({ top: 1.05, front: 0.3 });
++
++const V = (x, y, z) => new THREE.Vector3(x, y, z);
++const kOf = (L) => L.measures.height / 1.78;
++const S = { Left: 1, Right: -1 };
++const frac = (x) => x - Math.floor(x);
++const sinB = (b, period, ph = 0) => Math.sin(((b / period) + ph) * TAU);
++const OTHER = { Left: 'Right', Right: 'Left' };
++
++/**
++ * Groove pulse over beats: 1 on the beat (b integer), a quick attack into it and a slower release,
++ * 0 at the far point. `period` in beats (2 = half time), `delay` shifts it (beats, + = later).
++ */
++export function pulse(b, { period = 1, delay = 0, attack = 0.24 } = {}) {
++  const x = frac((b - delay) / period + attack);
++  return x < attack ? ease(x / attack) : 1 - ease((x - attack) / (1 - attack));
++}
++
++// --- props --------------------------------------------------------------------------------------
++
++/**
++ * Prop frames (local, metres). bottle / cup: origin at the base, +Y up the axis, the hand on the −Z
++ * side. phone: origin at the centre, +Y toward the top edge, +Z the screen normal. controller: origin
++ * at the centre, +Z away from the player, +Y the face with the sticks, +X the player's left.
++ * grip[side] = { pos, fingers, palm } (directions in the prop frame; palm points from the hand into the prop).
++ */
++export const PROP_GRIPS = {
++  bottle: {
++    height: 0.235, radius: 0.031, lip: [0, 0.235, 0],
++    grip: {
++      Right: { pos: [0, 0.07, -0.036], fingers: [-1, 0, 0], palm: [0, 0, 1] },
++      Left: { pos: [0, 0.07, -0.036], fingers: [1, 0, 0], palm: [0, 0, 1] },
++    },
++  },
++  cup: {
++    height: 0.12, radius: 0.045, lip: [0, 0.12, 0],
++    grip: {
++      Right: { pos: [0, 0.06, -0.05], fingers: [-1, 0, 0], palm: [0, 0, 1] },
++      Left: { pos: [0, 0.06, -0.05], fingers: [1, 0, 0], palm: [0, 0, 1] },
++    },
++  },
++  phone: {
++    size: [0.07, 0.145, 0.009],
++    grip: {
++      Right: { pos: [0.012, -0.03, -0.018], fingers: [-1, 0.15, 0], palm: [0, 0, 1] },
++      Left: { pos: [-0.012, -0.03, -0.018], fingers: [1, 0.15, 0], palm: [0, 0, 1] },
++    },
++  },
++  controller: {
++    size: [0.155, 0.05, 0.1],
++    grip: {
++      Right: { pos: [-0.07, -0.02, -0.035], fingers: [0.35, -0.75, 0.55], palm: [0.75, 0.55, 0.1] },
++      Left: { pos: [0.07, -0.02, -0.035], fingers: [-0.35, -0.75, 0.55], palm: [-0.75, 0.55, 0.1] },
++    },
++  },
++};
++
++const v3 = (a) => new THREE.Vector3(...a);
++
++/** Orthonormalised hand frame for a prop grip (palm made perpendicular to fingers). */
++function gripDirs(kind, side) {
++  const g = PROP_GRIPS[kind].grip[side];
++  const fingers = v3(g.fingers).normalize();
++  const palm = v3(g.palm).addScaledVector(fingers, -v3(g.palm).dot(fingers)).normalize();
++  return { pos: v3(g.pos), fingers, palm };
++}
++
++/** World frame of a prop: origin + quaternion from its local +Y axis and the side the hand is on (−Z). */
++export function propFrame(origin, up, towardHand) {
++  const y = up.clone().normalize();
++  const z = towardHand.clone().multiplyScalar(-1);
++  z.addScaledVector(y, -z.dot(y));
++  if (z.lengthSq() < 1e-8) z.set(0, 0, 1).addScaledVector(y, -y.z);
++  z.normalize();
++  const x = y.clone().cross(z).normalize();
++  const m = new THREE.Matrix4().makeBasis(x, y, z);
++  return { pos: origin.clone(), quat: new THREE.Quaternion().setFromRotationMatrix(m) };
++}
++
++/** Hand target (for reach) gripping prop `kind` placed at frame { pos, quat }. */
++export function propGrip(L, side, kind, frame, pole) {
++  const g = gripDirs(kind, side);
++  const grip = g.pos.clone().applyQuaternion(frame.quat).add(frame.pos);
++  return handTargetAt(L, side, grip, g.fingers.clone().applyQuaternion(frame.quat), g.palm.clone().applyQuaternion(frame.quat), pole);
++}
++
++/**
++ * Where prop `kind` sits in a hand bone's local frame when that hand grips it: { position, quaternion }.
++ * The inverse of propGrip (hand bones rest at identity, so bone-local = rest world axes).
++ */
++export function propAttachment(L, kind, side = 'Right') {
++  const g = gripDirs(kind, side);
++  const handInProp = handRotation(L, side, g.fingers, g.palm);
++  const quaternion = handInProp.clone().invert();
++  const position = handGripOffset(L, side).sub(g.pos.clone().applyQuaternion(quaternion));
++  return { position, quaternion };
++}
++
++// --- body helpers -------------------------------------------------------------------------------
++
++const POLE = { Left: V(0.7, -1, -0.25), Right: V(-0.7, -1, -0.25) };
++
++/** Mouth (lip surface) in character space for the posed head. */
++export function mouthPoint(L, fk) {
++  const kh = L.measures.headHeight / 0.24;
++  return fk.pos.Head.clone().add(V(0, 0.028 * kh, 0.1 * kh).applyQuaternion(fk.quat.Head));
++}
++
++/** Ankle target for a foot pitched about its heel (pitch > 0, toes up) or ball (pitch < 0, heel up). */
++function rolled(L, side, ankle, pitch, yawDeg = 0) {
++  if (!pitch) return ankle;
++  const rig = legRig(L, side);
++  const { offset } = rolledAnkle(rig, pitch, THREE.MathUtils.degToRad(yawDeg * S[side]));
++  return ankle.clone().add(offset);
++}
++
++/** Re-solves one leg to an ankle target with an explicit world foot rotation (crossed legs). */
++function legTo(L, p, side, ankle, footQ, pole) {
++  const fk = worldPose(L, p);
++  const r = solveTwoBone(L, [`${side}UpLeg`, `${side}Leg`, `${side}Foot`], fk.pos[`${side}UpLeg`], fk.quat.Hips, ankle, footQ, pole.clone().normalize(), V(0, 0, 1));
++  p.bones[`${side}UpLeg`] = r.upper;
++  p.bones[`${side}Leg`] = r.lower;
++  p.bones[`${side}Foot`] = r.end;
++}
++
++/** Spreads a forward flex over the spine (Spine, Spine1, Spine2) with a neck share. */
++function flexSpine(p, deg, { neck = 0 } = {}) {
++  Pose.spineFlex(p, 'Spine', deg * 0.4);
++  Pose.spineFlex(p, 'Spine1', deg * 0.35);
++  Pose.spineFlex(p, 'Spine2', deg * 0.25);
++  if (neck) Pose.spineFlex(p, 'Neck', neck);
++}
++
++function twistSpine(p, deg) {
++  Pose.spineTwist(p, 'Spine', deg * 0.25);
++  Pose.spineTwist(p, 'Spine1', deg * 0.35);
++  Pose.spineTwist(p, 'Spine2', deg * 0.4);
++}
++
++/**
++ * Head groove: torso leads, neck and head follow a touch later (follow-through), all on the beat.
++ * amt = nod depth (deg at the head), b = beat time.
++ */
++function groove(p, b, amt, { period = 1, follow = 1, attack = 0.24, phase = 0 } = {}) {
++  if (!amt) return;
++  const at = (d) => pulse(b, { period, delay: d + phase, attack });
++  Pose.spineFlex(p, 'Spine1', amt * 0.12 * follow * at(-0.04));
++  Pose.spineFlex(p, 'Spine2', amt * 0.18 * follow * at(-0.02));
++  Pose.spineFlex(p, 'Neck', amt * 0.35 * at(0));
++  Pose.headNod(p, amt * 0.6 * at(0.035));
++}
++
++/** Shoulders bounce up on the off-beat (both, or alternating with `alt`). */
++function shoulderBounce(p, b, amt, { alt = false } = {}) {
++  if (!amt) return;
++  for (const side of SIDES) {
++    const d = alt ? (side === 'Left' ? 0 : 1) : 0;
++    Pose.shoulderShrug(p, side, amt * pulse(b, { period: alt ? 2 : 1, delay: 0.5 + d, attack: 0.3 }));
++  }
++}
++
++function breathe(p, b, amt = 1) {
++  const br = Math.sin((b / 8) * TAU) * amt;
++  Pose.spineFlex(p, 'Spine1', -br * 0.7);
++  Pose.spineFlex(p, 'Spine2', -br * 0.5);
++  return br;
++}
++
++function talkJaw(p, t, amt = 1) {
++  const syll = Math.abs(Math.sin(t * 9.4)) * (0.55 + 0.45 * Math.sin(t * 2.2 + 1));
++  Pose.jawOpen(p, 0.5 + syll * 11 * amt);
++}
++
++/**
++ * Seated body: pelvis on the seat (sofa recline rolls it back), spine, head and legs. Arms are left
++ * at the base and placed by the caller. o:
++ *   variant 'sofa' | 'chair'; recline (deg, pelvis roll back; default the seat's), lean (trunk
++ *   forward deg), comp (0..1 how much of the recline the spine curls back up), twist (deg toward the
++ *   character's left +), side (trunk side bend deg), look / headPitch / headTilt (deg), breath;
++ *   legs: { Left|Right: { fwd, out, lift, yaw, heel (deg, heel up on the ball), toe (deg, toes up) } };
++ *   cross: 'Left' | 'Right' → that ankle rests on the other knee (figure four);
++ *   ankles: 'Left' | 'Right' → legs out, that ankle crossed over the other.
++ */
++export function sitBody(L, o = {}) {
++  const kk = kOf(L);
++  const variant = o.variant ?? 'sofa';
++  const seat = SEATS[variant];
++  const p = base(L, { armDown: 18, elbow: 28 });
++  const recline = o.recline ?? seat.recline;
++  const lean = o.lean ?? 0;
++  const comp = o.comp ?? 0.6;
++  Pose.rootPitch(p, -recline + lean * 0.35);
++  flexSpine(p, lean * 0.65 + recline * comp);
++  if (o.twist) twistSpine(p, o.twist);
++  if (o.side) {
++    Pose.spineSide(p, 'Spine1', o.side * 0.5);
++    Pose.spineSide(p, 'Spine2', o.side * 0.5);
++  }
++  const br = o.breath ?? 0;
++  Pose.spineFlex(p, 'Spine1', -br * 0.7);
++  Pose.spineFlex(p, 'Spine2', -br * 0.5);
++  Pose.headNod(p, 2 - lean * 0.45 + recline * (0.5 - comp * 0.5) * 0.6 + (o.headPitch ?? 0));
++  if (o.look) {
++    Pose.spineFlex(p, 'Neck', 0);
++    Pose.headTurn(p, o.look);
++  }
++  if (o.headTilt) Pose.headTilt(p, o.headTilt);
++  p.hips.set(0, -0.006 * kk, -seat.hipsBack * kk);
++  const fk = worldPose(L, p);
++  const jointY = (fk.pos.LeftUpLeg.y + fk.pos.RightUpLeg.y) / 2;
++  p.hips.y += seat.height + SIT_DROP * kk - jointY + 0.0012 * kk * br;
++
++  const ankles = {};
++  const feet = {};
++  const legs = o.legs ?? {};
++  for (const side of SIDES) {
++    const s = S[side];
++    const g = legs[side] ?? {};
++    const yaw = g.yaw ?? 8;
++    let a = L.world[`${side}Foot`].clone().add(V(s * (seat.spread + (g.out ?? 0)) * kk, (g.lift ?? 0) * kk, (seat.ankleFwd + (g.fwd ?? 0)) * kk));
++    const pitch = (g.toe ?? 0) - (g.heel ?? 0);
++    a = rolled(L, side, a, pitch, yaw);
++    ankles[side] = a;
++    feet[side] = { yaw, pitch };
++  }
++  if (o.ankles) {
++    // Legs stretched out, ankles crossed: the top ankle sits on the other's instep.
++    const top = o.ankles;
++    const under = OTHER[top];
++    ankles[under] = L.world[`${under}Foot`].clone().add(V(S[under] * 0.02 * kk, 0, (seat.ankleFwd + 0.24) * kk));
++    feet[under] = { yaw: 10, pitch: 14 };
++    ankles[under] = rolled(L, under, ankles[under], 14, 10);
++    ankles[top] = ankles[under].clone().add(V(S[under] * 0.035 * kk, 0.075 * kk, 0.02 * kk));
++    feet[top] = { yaw: -6, pitch: 22 };
++  }
++  plantFeet(L, p, { ankles, feet, kneeOut: o.kneeOut ?? 0.35 });
++  if (o.cross) {
++    // Figure four: the crossing ankle on top of the other knee, knee dropped out to the side.
++    const c = o.cross;
++    const s = S[c];
++    const fk2 = worldPose(L, p);
++    const knee = fk2.pos[`${OTHER[c]}Leg`];
++    const ankle = knee.clone().add(V(s * 0.05 * kk, L.measures.thighRadius * 0.9 + L.measures.ankleRadius * 1.1, -0.06 * kk));
++    const footQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(-8), THREE.MathUtils.degToRad(-s * 78), THREE.MathUtils.degToRad(s * 28), 'YXZ'));
++    legTo(L, p, c, ankle, footQ, V(s * 1.6, 0.35, 0.6));
++  }
++  return p;
++}
++
++/** Hand resting on the top of a thigh, fingers toward the knee (drum: fingertip tap lift). */
++function thighHand(L, p, side, { along = 0.64, out = 0, lift = 0, inward = 0 } = {}) {
++  const kk = kOf(L);
++  const fk = worldPose(L, p);
++  const s = S[side];
++  const hip = fk.pos[`${side}UpLeg`];
++  const knee = fk.pos[`${side}Leg`];
++  const grip = hip.clone().lerp(knee, along).add(V(s * (out - 0.012 * kk) - s * inward, L.measures.thighRadius * 0.95 + 0.012 * kk + lift, 0));
++  const fingers = knee.clone().sub(hip).normalize().add(V(-s * (0.15 + inward * 2), -0.25 + lift * 4, 0)).normalize();
++  return handTargetAt(L, side, grip, fingers, V(-s * 0.15, -1, 0), V(s * 0.9, -0.3, -0.8));
++}
++
++/** Arm laid along the sofa back: forearm on the top of the back cushion, hand draped over it. */
++function sofaBackHand(L, p, side, { out = 0.62, back = 0.07, drop = 0 } = {}) {
++  const kk = kOf(L);
++  const s = S[side];
++  const z = L.world.Hips.z + p.hips.z - SOFA_BACK.face - back;
++  const grip = V(s * out * kk, SOFA_BACK.top + 0.045 - drop, z);
++  return handTargetAt(L, side, grip, V(s * 0.55, -0.55, -0.6), V(-s * 0.2, -1, 0.3), V(s * 0.35, 0.35, -1));
++}
++
++/** Both hands loosely clasped on the lap (or belly with `high`). */
++function lapHands(L, p, { high = 0, fwd = 0 } = {}) {
++  const kk = kOf(L);
++  const fk = worldPose(L, p);
++  const mid = fk.pos.LeftUpLeg.clone().lerp(fk.pos.RightUpLeg, 0.5);
++  const kneeMid = fk.pos.LeftLeg.clone().lerp(fk.pos.RightLeg, 0.5);
++  const c = mid.clone().lerp(kneeMid, 0.3 + fwd).add(V(0, L.measures.thighRadius * 1.25 + 0.02 * kk + high * 0.16 * kk, high * -0.06 * kk));
++  return {
++    Right: handTargetAt(L, 'Right', c.clone().add(V(-0.035 * kk, 0.015 * kk, 0.01 * kk)), V(0.85, -0.2, 0.35), V(0.2, -1, -0.1), V(-0.8, -0.6, -0.3)),
++    Left: handTargetAt(L, 'Left', c.clone().add(V(0.035 * kk, -0.005 * kk, -0.005 * kk)), V(-0.85, -0.25, 0.35), V(-0.2, -1, -0.15), V(0.8, -0.6, -0.3)),
++  };
++}
++
++/** Leaning forward with the forearms on the thighs: hands hang / clasp between the knees. */
++function kneesHands(L, p, { clasp = 1, spread = 0 } = {}) {
++  const kk = kOf(L);
++  const fk = worldPose(L, p);
++  const kneeMid = fk.pos.LeftLeg.clone().lerp(fk.pos.RightLeg, 0.5);
++  const c = kneeMid.clone().add(V(0, -0.02 * kk, 0.06 * kk));
++  const out = {};
++  for (const side of SIDES) {
++    const s = S[side];
++    const at = c.clone().add(V(s * (0.03 + spread) * kk, s > 0 ? -0.01 * kk : 0.005 * kk, 0));
++    out[side] = handTargetAt(L, side, at, V(-s * (0.6 + 0.3 * clasp), -0.6, 0.45), V(-s * 0.3, -0.4, -1), V(s * 0.6, -1, -0.5));
++  }
++  return out;
++}
++
++/** Hand in the front trouser pocket. */
++function pocketHand(L, p, side) {
++  const kk = kOf(L);
++  const fk = worldPose(L, p);
++  const s = S[side];
++  const hip = fk.pos[`${side}UpLeg`];
++  const at = hip.clone().add(V(s * 0.065 * kk, -0.02 * kk, 0.075 * kk));
++  return handTargetAt(L, side, at, V(s * 0.15, -1, 0.35), V(-s, 0, 0.1), V(s * 0.4, -0.3, -1));
++}
++
++/** Prop frame for a bottle held upright in front of the body at `at` (hand on the given side). */
++function heldFrame(side, at, { tilt = 0, out = 0.4 } = {}) {
++  const s = S[side];
++  const up = V(-s * tilt * 0.3, 1, tilt).normalize();
++  return propFrame(at, up, V(s * out, 0, -1));
++}
++
++/** Frame for drinking: bottle lip at the mouth, tipped by `tip` degrees past horizontal toward the face. */
++function sipFrame(L, fk, kind, tip, side) {
++  const s = S[side];
++  const g = PROP_GRIPS[kind];
++  const mouth = mouthPoint(L, fk);
++  const headQ = fk.quat.Head;
++  const fwd = V(0, 0, 1).applyQuaternion(headQ);
++  const upH = V(0, 1, 0).applyQuaternion(headQ);
++  const a = THREE.MathUtils.degToRad(90 + tip);
++  // Axis (base → lip) points back toward the face and down by `tip`.
++  const axis = fwd.clone().multiplyScalar(-Math.sin(a)).addScaledVector(upH, Math.cos(a)).normalize();
++  const lip = mouth.clone().addScaledVector(fwd, 0.006);
++  const origin = lip.clone().addScaledVector(axis, -g.lip[1]);
++  return propFrame(origin, axis, V(s * 0.9, -0.4, 0).add(fwd.clone().multiplyScalar(-0.2)));
++}
++
++/** Bottle resting on a thigh near the knee, hand around it. */
++function kneeBottleFrame(L, p, side, { along = 0.8 } = {}) {
++  const kk = kOf(L);
++  const fk = worldPose(L, p);
++  const s = S[side];
++  const hip = fk.pos[`${side}UpLeg`];
++  const knee = fk.pos[`${side}Leg`];
++  const at = hip.clone().lerp(knee, along).add(V(-s * 0.01 * kk, L.measures.thighRadius * 0.92 + 0.004, 0));
++  return propFrame(at, V(-s * 0.06, 1, -0.08), V(s * 0.75, 0, -0.65));
++}
++
++/** A whole-body sip: lift, tip (head back), hold, lower. Returns { u (0 rest → 1 at lips), tip, head }. */
++function sipCurve(b, start, len = 6) {
++  const up = ease(window01(b, start, start + 1.4));
++  const down = ease(window01(b, start + len - 1.6, start + len));
++  const u = up * (1 - down);
++  const tipping = ease(window01(b, start + 1.1, start + 2.2)) * (1 - ease(window01(b, start + len - 2.2, start + len - 1.3)));
++  return { u, tip: 8 + 30 * tipping, head: -14 * tipping };
++}
++
++/**
++ * Bottle hand: from a rest frame to the lips by `s.u` (with the head tilt in s.head already applied
++ * to the pose). Writes the arm; returns the target used.
++ */
++function bottleArm(L, p, side, restFrame, sip, kind = 'bottle') {
++  const rest = propGrip(L, side, kind, restFrame, POLE[side]);
++  if (!sip || sip.u <= 0.001) {
++    reach(L, p, side, null, rest, 1);
++    return rest;
++  }
++  const fk = worldPose(L, p);
++  const lips = propGrip(L, side, kind, sipFrame(L, fk, kind, sip.tip, side), V(S[side] * 0.9, -0.8, -0.1));
++  reach(L, p, side, rest, lips, sip.u, { arc: V(S[side] * 0.03, 0.03, 0.06) });
++  return lips;
++}
++
++function gripCurl(p, L, side, kind) {
++  const c = { bottle: { fingers: 72, thumb: 40 }, cup: { fingers: 62, thumb: 34 }, phone: { fingers: 50, thumb: 18 }, controller: { fingers: 68, thumb: 10 } }[kind];
++  curlFingers(p, L, side, c);
++}
++
++// --- clip factories -------------------------------------------------------------------------------
++
++const seatMeta = (variant, extra = {}) => (L) => ({ seat: { variant, height: SEATS[variant].height, hipsBack: SEATS[variant].hipsBack * kOf(L) }, chill: { pose: 'sit' }, ...extra });
++const standMeta = (extra = {}) => () => ({ chill: { pose: 'stand' }, ...extra });
++
++/**
++ * Seated listening. style:
++ *   1 nodder: on-beat nods with follow-through, right heel tapping, fingers drumming the right thigh
++ *   2 laid back: half-time nod, head back with a slow side sway, left arm along the sofa back, left knee bounce
++ *   3 crossed: right ankle on the left knee, right hand drumming on the shin, left arm along the back
++ *   4 forward: elbows on knees, deep nods, both heels pumping, shoulders bouncing
++ * hold: 'bottle' puts a bottle in the right hand resting on the knee (with a sip).
++ */
++function sitListen(variant, style, { hold = null, beats = 16 } = {}) {
++  const sofa = variant === 'sofa';
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: seatMeta(variant, { beats, props: hold ? { Right: hold } : {} }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const drift = sinB(b, 16, 0.1);
++      const sip = hold ? sipCurve(b, 6, 5) : null;
++      let p;
++      if (style === 1) {
++        const heel = 16 * pulse(b, { attack: 0.18, delay: -0.03 });
++        p = sitBody(L, { variant, breath: br, look: drift * 12 - 4, lean: 3, legs: { Right: { heel, fwd: 0.02 }, Left: { out: 0.02 } }, headPitch: sip?.head ?? 0 });
++        groove(p, b, 9 * (1 - (sip?.u ?? 0) * 0.8), { follow: 1 });
++        shoulderBounce(p, b, 2.5);
++        const tap = (side, ph) => 0.012 * kk * pulse(b * 2, { delay: ph, attack: 0.2 });
++        if (hold) bottleArm(L, p, 'Right', kneeBottleFrame(L, p, 'Right'), sip);
++        else reach(L, p, 'Right', null, thighHand(L, p, 'Right', { lift: tap('Right', 0) }), 1);
++        reach(L, p, 'Left', null, thighHand(L, p, 'Left', { along: 0.58 }), 1);
++      } else if (style === 2) {
++        const sway = sinB(b, 4);
++        const bounce = 9 + 9 * pulse(b * 2, { attack: 0.3 });
++        p = sitBody(L, { variant, recline: (sofa ? 21 : 6), comp: 0.45, breath: br, headPitch: -9 + (sip?.head ?? 0), headTilt: sway * 6, look: drift * 6, legs: { Left: { heel: bounce, out: 0.04 }, Right: { out: 0.07, fwd: 0.06, yaw: 16 } } });
++        groove(p, b, 6, { period: 2, follow: 0.7, attack: 0.35 });
++        Pose.spineSide(p, 'Spine2', sway * 1.5);
++        if (hold) bottleArm(L, p, 'Right', kneeBottleFrame(L, p, 'Right'), sip);
++        else reach(L, p, 'Right', null, thighHand(L, p, 'Right', { along: 0.45 }), 1);
++        reach(L, p, 'Left', null, sofa ? sofaBackHand(L, p, 'Left') : thighHand(L, p, 'Left'), 1);
++      } else if (style === 3) {
++        p = sitBody(L, { variant, recline: sofa ? 17 : 4, breath: br, cross: 'Right', look: drift * 9 + 3, headPitch: sip?.head ?? 0, twist: 4 });
++        groove(p, b, 6, { follow: 0.8 });
++        shoulderBounce(p, b, 1.5, { alt: true });
++        // Drumming on the crossed shin: 8ths with an accent on the beat.
++        const fk = worldPose(L, p);
++        const shin = fk.pos.RightLeg.clone().lerp(fk.pos.RightFoot, 0.45);
++        const hit = Math.max(pulse(b * 2, { attack: 0.15 }) * 0.6, pulse(b, { attack: 0.15 }));
++        if (hold) bottleArm(L, p, 'Right', propFrame(shin.clone().add(V(0.0, 0.05 * kk, 0.02 * kk)), V(0, 1, 0.05), V(-0.6, 0, -0.8)), sip);
++        else reach(L, p, 'Right', null, handTargetAt(L, 'Right', shin.clone().add(V(0.01 * kk, (0.055 + 0.03 * (1 - hit)) * kk, 0.01 * kk)), V(0.35, -0.5, 0.6), V(0.1, -1, 0), V(-0.9, -0.5, -0.4)), 1);
++        reach(L, p, 'Left', null, sofa ? sofaBackHand(L, p, 'Left', { out: 0.6 }) : thighHand(L, p, 'Left'), 1);
++      } else {
++        const pump = (side) => 12 * pulse(b, { delay: side === 'Left' ? 0 : 0.5, attack: 0.2 });
++        p = sitBody(L, { variant, recline: 0, lean: 26, breath: br * 0.6, headPitch: -16 + (sip?.head ?? 0), look: drift * 10, legs: { Left: { heel: pump('Left'), out: 0.05, fwd: -0.02 }, Right: { heel: pump('Right'), out: 0.05, fwd: -0.02 } } });
++        groove(p, b, 12, { follow: 1.2, attack: 0.2 });
++        shoulderBounce(p, b, 3);
++        const hands = kneesHands(L, p);
++        if (hold) bottleArm(L, p, 'Right', propFrame(hands.Right.grip.clone().add(V(-0.03 * kk, -0.05 * kk, 0.02 * kk)), V(0, 1, 0.1), V(-0.6, 0.2, -0.8)), sip);
++        else reach(L, p, 'Right', null, hands.Right, 1);
++        reach(L, p, 'Left', null, hands.Left, 1);
++      }
++      if (hold) gripCurl(p, L, 'Right', hold);
++      return p;
++    },
++  };
++}
++
++/** Seated, settled in: no groove beyond breathing and slow looks. */
++function sitRelaxed(variant, style) {
++  const sofa = variant === 'sofa';
++  const beats = 16;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: seatMeta(variant, { beats }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const br = Math.sin((b / 8) * TAU);
++      const look = sinB(b, 16) * 16 + sinB(b, 8, 0.3) * 4;
++      let p;
++      if (style === 1) {
++        p = sitBody(L, { variant, recline: sofa ? 22 : 6, comp: 0.45, breath: br, look, headPitch: -4, legs: { Left: { out: 0.08, fwd: 0.08, yaw: 18 }, Right: { out: 0.06, fwd: 0.03, yaw: 14 } } });
++        reach(L, p, 'Right', null, sofa ? sofaBackHand(L, p, 'Right', { out: 0.64 }) : thighHand(L, p, 'Right'), 1);
++        reach(L, p, 'Left', null, thighHand(L, p, 'Left', { along: 0.42, inward: 0.02 }), 1);
++      } else if (style === 2) {
++        p = sitBody(L, { variant, recline: sofa ? 18 : 5, breath: br, cross: 'Left', look: look * 0.7, twist: -4 });
++        const h = lapHands(L, p, { high: 0.6 });
++        reach(L, p, 'Right', null, h.Right, 1);
++        reach(L, p, 'Left', null, h.Left, 1);
++        SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 40, thumb: 20 }));
++      } else if (style === 3) {
++        p = sitBody(L, { variant, recline: 0, lean: 30, breath: br * 0.5, look: look * 0.8, headPitch: -20, legs: { Left: { out: 0.07, fwd: -0.03 }, Right: { out: 0.07, fwd: -0.03 } } });
++        const h = kneesHands(L, p, { clasp: 1 });
++        reach(L, p, 'Right', null, h.Right, 1);
++        reach(L, p, 'Left', null, h.Left, 1);
++        SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 45, thumb: 25 }));
++      } else {
++        p = sitBody(L, { variant, recline: sofa ? 16 : 3, breath: br, ankles: 'Left', look: look * 0.6, headPitch: -2 });
++        reach(L, p, 'Right', null, thighHand(L, p, 'Right', { along: 0.55 }), 1);
++        reach(L, p, 'Left', null, thighHand(L, p, 'Left', { along: 0.5 }), 1);
++      }
++      return p;
++    },
++  };
++}
++
++/**
++ * Seated drinking (32 beats): the bottle rests (knee / lap / between the knees), one sip a loop
++ * (lift, tip with the head back, hold, lower). Light groove while not drinking.
++ */
++function sitDrink(variant, style, kind = 'bottle') {
++  const sofa = variant === 'sofa';
++  const beats = 32;
++  const sipAt = [14, 20, 9][style - 1];
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: seatMeta(variant, { beats, props: { Right: kind } }),
++    events: [{ name: 'sip', time: (sipAt + 2.2) * BEAT }],
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const sip = sipCurve(b, sipAt, 6);
++      const look = sinB(b, 32, 0.2) * 14;
++      let p;
++      let rest;
++      if (style === 1) {
++        p = sitBody(L, { variant, recline: sofa ? 19 : 5, comp: 0.5, breath: br, look: look * (1 - sip.u), headPitch: sip.head, legs: { Right: { out: 0.06, fwd: 0.04, yaw: 14 }, Left: { out: 0.05 } } });
++        groove(p, b, 4 * (1 - sip.u), { period: 2, follow: 0.6 });
++        rest = kneeBottleFrame(L, p, 'Right');
++        reach(L, p, 'Left', null, sofa ? sofaBackHand(L, p, 'Left') : thighHand(L, p, 'Left'), 1);
++      } else if (style === 2) {
++        p = sitBody(L, { variant, recline: sofa ? 17 : 4, breath: br, cross: 'Right', look: look * (1 - sip.u) - 4, headPitch: sip.head, twist: 5 });
++        groove(p, b, 4 * (1 - sip.u), { follow: 0.6 });
++        const fk = worldPose(L, p);
++        const belly = fk.pos.Spine.clone().add(V(-0.07 * kk, 0.0, 0.17 * kk));
++        rest = heldFrame('Right', belly.add(V(0, -0.06 * kk, 0)), { tilt: 0.1 });
++        const h = lapHands(L, p);
++        reach(L, p, 'Left', null, h.Left, 1);
++      } else {
++        p = sitBody(L, { variant, recline: 0, lean: 28, breath: br * 0.5, look: look * 0.6 * (1 - sip.u), headPitch: -12 + sip.head * 1.4 + 10 * sip.u, legs: { Left: { out: 0.08, fwd: -0.02 }, Right: { out: 0.08, fwd: -0.02 } } });
++        groove(p, b, 7 * (1 - sip.u), { follow: 1 });
++        const h = kneesHands(L, p, { spread: 0.03 });
++        rest = propFrame(h.Right.grip.clone().add(V(-0.02 * kk, -0.07 * kk, 0.03 * kk)), V(0, 1, 0.15), V(-0.7, 0.1, -0.7));
++        reach(L, p, 'Left', null, h.Left, 1);
++      }
++      bottleArm(L, p, 'Right', rest, sip, kind);
++      gripCurl(p, L, 'Right', kind);
++      return p;
++    },
++  };
++}
++
++/**
++ * Seated conversation toward a neighbour on the `toward` side (seat spacing ~0.95 m): trunk and head
++ * turned to them, one hand talking, a lean-in, a shared laugh (beats 20–25 in every talk / listen
++ * clip, so a pair laughs together when both are on the beat clock). role 'talk' | 'listen'.
++ */
++function sitTalk(variant, toward, role, { hold = null } = {}) {
++  const beats = 32;
++  const sofa = variant === 'sofa';
++  const s = S[toward];
++  const near = toward;
++  const far = OTHER[toward];
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: seatMeta(variant, { beats, partner: toward, props: hold ? { Right: hold } : {} }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const laugh = envelope(b, 20, 20.6, 24.5, 26);
++      const shake = Math.abs(Math.sin(t * 15)) * laugh;
++      const leanIn = envelope(b, 6, 8, 12, 14) * (role === 'talk' ? 1 : 0.6);
++      const talking = role === 'talk' ? envelope(b, 0.5, 1.5, 18.5, 20) + envelope(b, 26, 27, 31, 32) : envelope(b, 13, 14, 17, 18);
++      const p = sitBody(L, {
++        variant, recline: (sofa ? 15 : 3) - leanIn * 12, lean: leanIn * 14 - laugh * 4, breath: br,
++        twist: s * (14 + leanIn * 6), look: s * (24 + 4 * sinB(b, 8)) , headPitch: -laugh * 10 + shake * 4, headTilt: s * 4 + sinB(b, 16) * 3,
++        legs: { [near]: { out: 0.03, yaw: 12 }, [far]: { out: -0.01, fwd: 0.05 } },
++      });
++      // Listener: small nods; talker: beats on the stressed syllables.
++      if (role === 'listen') groove(p, b, 4 * (1 - laugh), { period: 4, attack: 0.4 });
++      else Pose.headNod(p, 2.5 * Math.sin(t * 3.1) * talking);
++      SIDES.forEach((side) => Pose.shoulderShrug(p, side, shake * 6));
++      Pose.jawOpen(p, laugh * (5 + shake * 12));
++      if (talking > 0 && laugh < 0.01) talkJaw(p, t, talking);
++      // Talking hand: the far hand opens toward the partner, palm up, in two beats; the near hand rests.
++      const fk = worldPose(L, p);
++      const chest = fk.pos.Spine2.clone().add(V(s * 0.08 * kk, -0.12 * kk, 0.26 * kk));
++      const g1 = Math.max(0, Math.sin(Math.PI * frac(b / 4))) * talking;
++      const gest = chest.clone().add(V(s * 0.1 * g1 * kk, 0.06 * g1 * kk, 0.06 * g1 * kk));
++      const gHand = role === 'talk' ? far : near;
++      const gesture = handTargetAt(L, gHand, gest, V(s * 0.6, 0.2, 0.8), V(-S[gHand] * 0.2, 1, 0.1), POLE[gHand]);
++      if (hold && gHand === 'Right') {
++        bottleArm(L, p, 'Right', heldFrame('Right', gest.clone().add(V(0, -0.05 * kk, 0)), { tilt: 0.15 }), null);
++      } else if (hold) {
++        bottleArm(L, p, 'Right', kneeBottleFrame(L, p, 'Right'), null);
++      }
++      const restG = gHand === near && sofa ? sofaBackHand(L, p, gHand, { out: 0.55 }) : thighHand(L, p, gHand, { along: 0.55 });
++      if (!(hold && gHand === 'Right')) reach(L, p, gHand, restG, gesture, ease(Math.min(1, talking * 1.2)) * (1 - laugh * 0.7));
++      const other = OTHER[gHand];
++      if (!(hold && other === 'Right')) {
++        // The other hand: on the thigh; in the laugh it slaps the thigh once.
++        const slap = bump(b, 21, 22.2) * 0.04 * kk;
++        reach(L, p, other, null, other === near && sofa && role === 'listen' ? sofaBackHand(L, p, other, { out: 0.5 }) : thighHand(L, p, other, { lift: slap }), 1);
++      }
++      if (hold) gripCurl(p, L, 'Right', hold);
++      curlFingers(p, L, gHand, { fingers: 28 - 18 * talking, thumb: 12 - 6 * talking });
++      return p;
++    },
++  };
++}
++
++/** Seated dap with the neighbour on `toward`: turn, fist bump at the midpoint, back to rest. */
++function sitDap(variant, toward) {
++  const s = S[toward];
++  const hand = toward === 'Left' ? 'Left' : 'Right';
++  return {
++    duration: 2.4,
++    loop: false,
++    meta: seatMeta(variant, { partner: toward, then: `chill_sit_listen_1${variant === 'sofa' ? '' : '_chair'}` }),
++    events: [{ name: 'dap', time: 0.95 }],
++    sample: (L, t) => {
++      const kk = kOf(L);
++      const turn = envelope(t, 0, 0.55, 1.6, 2.3);
++      const p = sitBody(L, { variant, lean: 8 * turn, twist: s * 22 * turn, look: s * 30 * turn, breath: 0 });
++      const fk = worldPose(L, p);
++      const contact = V(s * 0.47, fk.pos.Spine2.y - 0.1 * kk, L.world.Hips.z + p.hips.z + 0.42 * kk);
++      const bumpIn = bump(t, 0.75, 1.15) * 0.03 * kk;
++      const fist = handTargetAt(L, hand, contact.clone().add(V(-s * (0.05 - bumpIn), 0, 0)), V(s * 0.9, 0.05, 0.4), V(0, -1, 0.2), V(-s * 0.2, -1, -0.6));
++      reach(L, p, hand, thighHand(L, p, hand), fist, ease(window01(t, 0.25, 0.8)) * (1 - ease(window01(t, 1.25, 1.9))));
++      const other = OTHER[hand];
++      reach(L, p, other, null, thighHand(L, p, other), 1);
++      const f = envelope(t, 0.4, 0.75, 1.3, 1.7);
++      curlFingers(p, L, hand, { fingers: 28 + 70 * f, thumb: 12 + 40 * f });
++      Pose.jawOpen(p, bump(t, 1.0, 1.6) * 6);
++      return p;
++    },
++  };
++}
++
++/** Seated phone: 1 one-handed scroll (other hand on the thigh), 2 two-thumb texting leaning back. */
++function sitPhone(variant, style) {
++  const sofa = variant === 'sofa';
++  const beats = 32;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: seatMeta(variant, { beats, props: { Right: 'phone' } }),
++    events: [{ name: 'tap', time: 5 * BEAT }, { name: 'tap', time: 17 * BEAT }],
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const glance = envelope(b, 22, 23, 26, 27.5);
++      const p = sitBody(L, {
++        variant, recline: style === 1 ? (sofa ? 14 : 3) : (sofa ? 20 : 6), comp: 0.6, lean: style === 1 ? 6 : 0, breath: br,
++        headPitch: (style === 1 ? 24 : 20) * (1 - glance) - 2, look: glance * 22 + sinB(b, 32) * 3,
++        legs: style === 2 ? { Left: { out: 0.06, fwd: 0.1, yaw: 16 }, Right: { out: 0.04, fwd: 0.04 } } : { Left: { out: 0.03 }, Right: { out: 0.04 } },
++      });
++      groove(p, b, 2 * (1 - glance), { period: 2 });
++      const fk = worldPose(L, p);
++      const head = fk.pos.Head;
++      // Phone ~32 cm in front of the eyes, tipped toward them.
++      const screenAt = fk.pos.Spine2.clone().add(V(-0.03 * kk, (style === 1 ? 0.0 : -0.07) * kk, (style === 1 ? 0.3 : 0.27) * kk));
++      const toEyes = head.clone().add(V(0, 0.06 * kk, 0.05 * kk)).sub(screenAt).normalize();
++      const up = V(0, 1, 0).addScaledVector(toEyes, -toEyes.y).normalize();
++      // Phone frame: +Z toward the eyes, +Y up the phone. propFrame wants local +Y and the hand side (−Z).
++      const frame = propFrame(screenAt, up, toEyes.clone().multiplyScalar(-1));
++      const flick = Math.max(0, Math.sin(frac(b / 1.5) * TAU * 0.5)) ** 3;
++      reach(L, p, 'Right', null, propGrip(L, 'Right', 'phone', frame, V(-0.8, -1, -0.3)), 1);
++      if (style === 2) reach(L, p, 'Left', null, propGrip(L, 'Left', 'phone', frame, V(0.8, -1, -0.3)), 1);
++      else reach(L, p, 'Left', null, sofa && false ? sofaBackHand(L, p, 'Left') : thighHand(L, p, 'Left', { along: 0.55 }), 1);
++      curlFingers(p, L, 'Right', { fingers: 52, thumb: 8 + flick * 30 });
++      if (style === 2) curlFingers(p, L, 'Left', { fingers: 52, thumb: 8 + (1 - flick) * 26 });
++      return p;
++    },
++  };
++}
++
++/**
++ * Seated gaming (controller in both hands, facing the TV): thumbs working, intense lean-ins, a
++ * celebration (controller up) late in the loop. style 2 = elbows on knees.
++ */
++function sitGame(variant, style) {
++  const beats = 32;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: seatMeta(variant, { beats, props: { Right: 'controller' } }),
++    events: [{ name: 'cheer', time: 27 * BEAT }],
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const intense = envelope(b, 8, 10, 15, 17) + envelope(b, 19, 20.5, 24, 25.5);
++      const cheer = envelope(b, 26.5, 27.3, 29, 30.5);
++      const lean = (style === 1 ? 6 : 26) + intense * 14 - cheer * 14;
++      const p = sitBody(L, {
++        variant, recline: style === 1 ? 13 - intense * 10 : 0, lean, breath: br * (1 - intense * 0.6),
++        headPitch: (style === 1 ? -2 : -18) - intense * 6 - cheer * 8, look: sinB(b, 16) * 3,
++        legs: { Left: { out: 0.06, heel: intense * 10 * pulse(b * 2, { attack: 0.2 }) }, Right: { out: 0.06, fwd: 0.03 } },
++      });
++      SIDES.forEach((side) => Pose.shoulderShrug(p, side, intense * 4 + cheer * 6));
++      Pose.jawOpen(p, cheer * 12 + intense * 2);
++      const fk = worldPose(L, p);
++      const lap = fk.pos.LeftUpLeg.clone().lerp(fk.pos.RightUpLeg, 0.5);
++      const chest = fk.pos.Spine2;
++      const restAt = style === 1
++        ? lap.clone().add(V(0, 0.14 * kk + intense * 0.05 * kk, 0.26 * kk + intense * 0.04 * kk))
++        : fk.pos.LeftLeg.clone().lerp(fk.pos.RightLeg, 0.5).add(V(0, 0.06 * kk, -0.02 * kk));
++      const upAt = chest.clone().add(V(0, 0.2 * kk, 0.3 * kk));
++      const at = restAt.clone().lerp(upAt, ease(cheer));
++      const jiggle = (Math.sin(t * 13) * 0.004 + Math.sin(t * 7.3) * 0.003) * kk * (0.4 + intense);
++      at.x += jiggle;
++      at.y += jiggle * 0.6;
++      const facing = V(0, 0.55 - cheer * 0.3, 1).normalize();
++      const frame = propFrame(at, V(0, 1, 0).addScaledVector(facing, -0.45).normalize(), V(0, -0.55, -1));
++      reach(L, p, 'Right', null, propGrip(L, 'Right', 'controller', frame, V(-0.9, -1, -0.5)), 1);
++      reach(L, p, 'Left', null, propGrip(L, 'Left', 'controller', frame, V(0.9, -1, -0.5)), 1);
++      const th = (ph) => 10 + 22 * Math.abs(Math.sin(t * (5 + intense * 4) + ph));
++      curlFingers(p, L, 'Right', { fingers: 66, thumb: th(0) });
++      curlFingers(p, L, 'Left', { fingers: 66, thumb: th(1.7) });
++      return p;
++    },
++  };
++}
++
++// --- standing -------------------------------------------------------------------------------------
++
++/** Standing base with weight shift (x), dip (y) and feet; plants with the pelvis roll. */
++function standBody(L, { shift = 0, dip = 0, fwd = 0, roll = 0, yaw = 0, pitch = 0, ankles = {}, feet = {}, kneeOut = 0.12, armDown = 21, elbow = 16 } = {}) {
++  const kk = kOf(L);
++  const p = base(L, { armDown, elbow });
++  if (roll) Pose.rootRoll(p, roll);
++  if (yaw) Pose.rootYaw(p, yaw);
++  if (pitch) Pose.rootPitch(p, pitch);
++  p.hips.set(shift * kk, (-0.012 - dip) * kk, fwd * kk);
++  const a = {};
++  const f = {};
++  for (const side of SIDES) {
++    a[side] = ankles[side] ?? L.world[`${side}Foot`].clone().add(V(S[side] * 0.02 * kk, 0, 0));
++    f[side] = { yaw: 7, ...(feet[side] ?? {}) };
++  }
++  plantFeet(L, p, { ankles: a, feet: f, kneeOut });
++  return p;
++}
++
++/**
++ * Two-step: right steps out on 1, left closes on 2, left steps back on 3, right closes on 4; knees dip
++ * on every beat, hips ride over the weighted foot, arms swing loose, head nods. Planted feet never move.
++ */
++function danceTwoStep(energy = 1, { hold = null } = {}) {
++  const beats = 8;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, props: hold ? { Right: hold } : {} }),
++    events: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ name: 'footstep', side: i % 4 === 0 || i % 4 === 3 ? 'Right' : 'Left', time: i * BEAT })),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const w = 0.13 * kk * (0.8 + 0.2 * energy);
++      const b4 = frac(b / 4) * 4;
++      // Each foot's lateral offset (toward the character's right = −X) over the 4-beat bar.
++      const swing = (start) => ease(window01(b4 >= 3.5 && start === 0 ? b4 - 4 : b4, start - 0.42, start - 0.02));
++      const rOut = b4 >= 3.5 ? swing(0) : 1 - ease(window01(b4, 2.58, 2.98));
++      const lOut = ease(window01(b4, 0.58, 0.98)) * (1 - ease(window01(b4, 1.58, 1.98)));
++      const lift = (u) => Math.sin(Math.PI * u) * 0.055 * kk * energy;
++      const rU = b4 >= 3.5 ? window01(b4 - 4, -0.42, -0.02) : window01(b4, 2.58, 2.98);
++      const lU = b4 < 1.5 ? window01(b4, 0.58, 0.98) : window01(b4, 1.58, 1.98);
++      const ankles = {
++        Right: L.world.RightFoot.clone().add(V(-0.02 * kk - w * rOut, lift(rU), 0.005 * kk * Math.sin(Math.PI * rU))),
++        Left: L.world.LeftFoot.clone().add(V(0.02 * kk - w * lOut, lift(lU), 0.005 * kk * Math.sin(Math.PI * lU))),
++      };
++      const center = -w * (rOut + lOut) / 2;
++      const weight = (rOut - lOut) * 0.5;
++      const dip = (0.025 + 0.012 * energy) * pulse(b, { attack: 0.3, delay: 0.04 });
++      const p = standBody(L, {
++        shift: center / kk - weight * 0.02, dip, roll: -weight * 3 * energy,
++        ankles, feet: { Right: { pitch: -10 * Math.sin(Math.PI * rU) }, Left: { pitch: -10 * Math.sin(Math.PI * lU) } },
++        armDown: 14, elbow: 60 + 12 * energy,
++      });
++      twistSpine(p, sinB(b, 4, 0.1) * 6 * energy);
++      Pose.spineSide(p, 'Spine2', weight * 4);
++      groove(p, b, 7 * energy, { follow: 1 });
++      shoulderBounce(p, b, 3 * energy, { alt: true });
++      SIDES.forEach((side) => {
++        const sw = sinB(b, 2, side === 'Left' ? 0 : 0.5);
++        Pose.armFlex(p, side, 14 + sw * 10 * energy);
++        Pose.armAbduct(p, side, 4 + pulse(b, { delay: 0.5 }) * 3);
++      });
++      if (hold) {
++        const fk = worldPose(L, p);
++        const at = fk.pos.Spine.clone().add(V(-0.16 * kk, 0.02 * kk + 0.015 * kk * pulse(b), 0.2 * kk));
++        bottleArm(L, p, 'Right', heldFrame('Right', at, { tilt: 0.1 }), null);
++        gripCurl(p, L, 'Right', hold);
++      }
++      return p;
++    },
++  };
++}
++
++/**
++ * Bounce: feet planted, knees pump on the beat, heels lift alternately, hips sway over two beats,
++ * forearms swing at the waist, a soft fist pump in the second half (style 2) or a slow hand sway (3).
++ */
++function danceBounce(style, energy = 1, { hold = null } = {}) {
++  const beats = 16;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, props: hold ? { Right: hold } : {} }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const sway = sinB(b, 2);
++      const dip = (0.02 + 0.015 * energy) * pulse(b, { attack: 0.28 });
++      const heelL = 12 * energy * pulse(b, { period: 2, attack: 0.3 });
++      const heelR = 12 * energy * pulse(b, { period: 2, delay: 1, attack: 0.3 });
++      const ankles = {};
++      for (const side of SIDES) ankles[side] = rolled(L, side, L.world[`${side}Foot`].clone().add(V(S[side] * 0.05 * kk, 0, 0)), -(side === 'Left' ? heelL : heelR), 9);
++      const p = standBody(L, {
++        shift: sway * 0.018, dip, roll: -sway * 2.5, yaw: sinB(b, 4) * 4,
++        ankles, feet: { Left: { pitch: -heelL, yaw: 9 }, Right: { pitch: -heelR, yaw: 9 } },
++        armDown: 12, elbow: 75 + 10 * energy, kneeOut: 0.18,
++      });
++      twistSpine(p, -sinB(b, 4) * 5 * energy);
++      Pose.spineSide(p, 'Spine2', sway * 2.5);
++      groove(p, b, (style === 3 ? 5 : 8) * energy, { follow: 1.1, period: style === 3 ? 2 : 1 });
++      shoulderBounce(p, b, 3 * energy);
++      SIDES.forEach((side) => Pose.armFlex(p, side, 20 + sinB(b, 2, side === 'Left' ? 0.25 : 0.75) * 9 * energy));
++      const fk = worldPose(L, p);
++      if (style === 2 && !hold) {
++        // Fist pump: beats 8–15, small and cool, right hand at chest height.
++        const on = envelope(b, 7.6, 8.3, 14.6, 15.6);
++        const at = fk.pos.Spine2.clone().add(V(-0.12 * kk, -0.02 * kk + 0.06 * kk * pulse(b, { attack: 0.2 }) * on, 0.3 * kk));
++        reach(L, p, 'Right', null, handTargetAt(L, 'Right', at, V(0.2, 1, 0.35), V(0.4, 0, 1), V(-0.8, -0.8, -0.4)), on);
++        curlFingers(p, L, 'Right', { fingers: 28 + 60 * on, thumb: 12 + 30 * on });
++      } else if (style === 3 && !hold) {
++        // Open hand floats with the sway (left), beats 4–12.
++        const on = envelope(b, 3.6, 5, 11, 12.5);
++        const at = fk.pos.Spine2.clone().add(V(0.2 * kk + sway * 0.05 * kk, 0.05 * kk, 0.28 * kk));
++        reach(L, p, 'Left', null, handTargetAt(L, 'Left', at, V(-0.3, 0.6, 0.7), V(-0.3, -1, 0.2), V(0.9, -0.6, -0.4)), on);
++      }
++      if (hold) {
++        const at = fk.pos.Spine2.clone().add(V(-0.13 * kk, -0.16 * kk + 0.02 * kk * pulse(b), 0.24 * kk));
++        bottleArm(L, p, 'Right', heldFrame('Right', at, { tilt: 0.12 }), null);
++        gripCurl(p, L, 'Right', hold);
++      }
++      return p;
++    },
++  };
++}
++
++/** Back against the kitchen counter, hands on its edge behind; style 2 ankles crossed and a slow look. */
++function counterBack(style, { hold = null } = {}) {
++  const beats = 16;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, counter: { side: 'behind', distance: COUNTER.behind, top: COUNTER.top }, props: hold ? { Right: hold } : {} }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const sip = hold ? sipCurve(b, 8, 5) : null;
++      const shift = sinB(b, 16) * 0.012;
++      const feet = style === 2
++        ? { Left: L.world.RightFoot.clone().add(V(0.0, 0.0, 0.2 * kk)), Right: L.world.RightFoot.clone().add(V(-0.03 * kk, 0, 0.16 * kk)) }
++        : { Left: L.world.LeftFoot.clone().add(V(0.03 * kk, 0, 0.13 * kk)), Right: L.world.RightFoot.clone().add(V(-0.03 * kk, 0, 0.17 * kk)) };
++      if (style === 2) feet.Left.add(V(0.0, 0.0, 0.0)).setX(feet.Right.x - 0.015 * kk).setZ(feet.Right.z + 0.06 * kk);
++      const p = standBody(L, { shift, fwd: -0.06, pitch: -5, ankles: feet, feet: style === 2 ? { Left: { yaw: -14, pitch: -6 }, Right: { yaw: 12 } } : {}, armDown: 10, elbow: 20 });
++      Pose.spineFlex(p, 'Spine1', 3 - br * 0.6);
++      Pose.headNod(p, 4 + (sip?.head ?? 0));
++      Pose.headTurn(p, sinB(b, 16, 0.2) * 22 * (1 - (sip?.u ?? 0)));
++      groove(p, b, 3, { period: 2 });
++      const edgeZ = -COUNTER.behind;
++      for (const side of SIDES) {
++        if (hold && side === 'Right') continue;
++        const s = S[side];
++        const at = V(s * 0.27 * kk, COUNTER.top + 0.025, edgeZ - 0.04);
++        reach(L, p, side, null, handTargetAt(L, side, at, V(s * 0.15, -0.35, 1), V(0, -1, 0.2), V(s * 0.5, -0.2, -1)), 1);
++      }
++      if (hold) {
++        const fk = worldPose(L, p);
++        bottleArm(L, p, 'Right', heldFrame('Right', fk.pos.Spine.clone().add(V(-0.17 * kk, 0.0, 0.17 * kk)), { tilt: 0.1 }), sip);
++        gripCurl(p, L, 'Right', hold);
++      }
++      return p;
++    },
++  };
++}
++
++/** Facing the counter, forearms on it, weight on one leg, the other foot crossed behind. */
++function counterLean() {
++  const beats = 16;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, counter: { side: 'front', distance: COUNTER.front, top: COUNTER.top } }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const ankles = { Left: L.world.LeftFoot.clone().add(V(0.0, 0, -0.05 * kk)), Right: L.world.RightFoot.clone().add(V(0.05 * kk, 0.0, -0.12 * kk)) };
++      const p = standBody(L, { shift: 0.02, fwd: -0.08, pitch: 22, ankles, feet: { Right: { pitch: -28, yaw: -4 } }, armDown: 10, elbow: 60 });
++      ankles.Right = rolled(L, 'Right', ankles.Right, -28, -4);
++      Pose.spineFlex(p, 'Spine1', 12 - br);
++      Pose.spineFlex(p, 'Spine2', 8);
++      Pose.headNod(p, -24);
++      Pose.headTurn(p, sinB(b, 16) * 14);
++      groove(p, b, 4, { period: 2 });
++      const z = COUNTER.front + 0.12;
++      reach(L, p, 'Right', null, handTargetAt(L, 'Right', V(-0.04 * kk, COUNTER.top + 0.04, z + 0.1), V(0.9, 0, 0.3), V(0, -1, 0), V(-0.6, -1, -0.3)), 1);
++      reach(L, p, 'Left', null, handTargetAt(L, 'Left', V(0.06 * kk, COUNTER.top + 0.04, z + 0.06), V(-0.9, 0, 0.35), V(0, -1, 0), V(0.6, -1, -0.3)), 1);
++      SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 40, thumb: 18 }));
++      return p;
++    },
++  };
++}
++
++/** Looking out (up) through the tall window: hands in pockets (1) or arms folded (2), weight shifts. */
++function windowLook(style, { hold = null } = {}) {
++  const beats = 32;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, props: hold ? { Right: hold } : {} }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const shift = sinB(b, 32);
++      const sip = hold ? sipCurve(b, 18, 5) : null;
++      const relaxed = Math.max(0, shift);
++      const ankles = { Right: L.world.RightFoot.clone().add(V(-0.03 * kk + 0.01 * kk * relaxed, 0.01 * kk * relaxed, 0.04 * kk * relaxed)), Left: L.world.LeftFoot.clone().add(V(0.03 * kk, 0, 0)) };
++      const p = standBody(L, { shift: shift * 0.03, roll: -shift * 2, ankles, feet: { Right: { pitch: -8 * relaxed } } });
++      Pose.spineSide(p, 'Spine1', -shift * 2);
++      Pose.spineFlex(p, 'Spine2', -2 - br * 0.6);
++      Pose.headNod(p, -16 + sinB(b, 16) * 4 + (sip?.head ?? 0));
++      Pose.headTurn(p, sinB(b, 32, 0.15) * 16);
++      groove(p, b, 3, { period: 2 });
++      if (style === 1) {
++        for (const side of SIDES) {
++          if (hold && side === 'Right') continue;
++          reach(L, p, side, null, pocketHand(L, p, side), 1);
++          curlFingers(p, L, side, { fingers: 20, thumb: 30 });
++        }
++      } else {
++        const fk = worldPose(L, p);
++        const front = fk.pos.Spine2.clone().add(V(0, -0.06 * kk, 0.15 * kk));
++        reach(L, p, 'Right', null, handTargetAt(L, 'Right', front.clone().add(V(0.13 * kk, -0.08 * kk, 0.02 * kk)), V(1, 0.15, -0.35), V(0, 0, -1), V(-0.6, -0.8, 0.1)), 1);
++        reach(L, p, 'Left', null, handTargetAt(L, 'Left', front.clone().add(V(-0.12 * kk, -0.13 * kk, 0)), V(-1, 0.25, -0.4), V(0, 0.2, -1), V(0.6, -0.8, 0.1)), 1);
++        SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 40, thumb: 20 }));
++      }
++      if (hold) {
++        const fk = worldPose(L, p);
++        bottleArm(L, p, 'Right', heldFrame('Right', fk.pos.Spine.clone().add(V(-0.17 * kk, -0.02 * kk, 0.16 * kk)), { tilt: 0.1 }), sip);
++        gripCurl(p, L, 'Right', hold);
++      }
++      return p;
++    },
++  };
++}
++
++/** Forearms on the mezzanine rail (RAIL.front ahead, RAIL.top high), looking out over the room. */
++function railLean(style) {
++  const beats = 16;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, rail: { distance: RAIL.front, top: RAIL.top } }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const br = Math.sin((b / 8) * TAU);
++      const shift = sinB(b, 16);
++      const ankles = style === 1
++        ? { Left: L.world.LeftFoot.clone().add(V(0.02 * kk, 0, -0.06 * kk)), Right: L.world.RightFoot.clone().add(V(-0.04 * kk, 0, -0.14 * kk)) }
++        : { Left: L.world.LeftFoot.clone().add(V(0.04 * kk, 0, -0.12 * kk)), Right: L.world.RightFoot.clone().add(V(-0.02 * kk, 0, -0.05 * kk)) };
++      const p = standBody(L, { shift: shift * 0.012 + (style === 1 ? 0.012 : -0.012), fwd: -0.05, pitch: 13, ankles, feet: style === 1 ? { Right: { pitch: -6 } } : { Left: { pitch: -6 } } });
++      Pose.spineFlex(p, 'Spine1', 6 - br * 0.6);
++      Pose.spineFlex(p, 'Spine2', 4);
++      Pose.headNod(p, 6 + sinB(b, 16, 0.3) * 4);
++      Pose.headTurn(p, sinB(b, 16, 0.1) * 18);
++      groove(p, b, 3, { period: 2 });
++      const z = RAIL.front;
++      const y = RAIL.top + 0.045;
++      if (style === 1) {
++        reach(L, p, 'Right', null, handTargetAt(L, 'Right', V(-0.03 * kk, y, z + 0.1), V(0.85, -0.25, 0.4), V(0, -1, 0.05), V(-0.6, -1, -0.4)), 1);
++        reach(L, p, 'Left', null, handTargetAt(L, 'Left', V(0.05 * kk, y - 0.01, z + 0.12), V(-0.85, -0.3, 0.4), V(0, -1, 0.05), V(0.6, -1, -0.4)), 1);
++        SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 45, thumb: 20 }));
++      } else {
++        for (const side of SIDES) {
++          const s = S[side];
++          reach(L, p, side, null, handTargetAt(L, side, V(s * 0.26 * kk, RAIL.top + 0.03, z + 0.01), V(-s * 0.2, -0.3, 1), V(0, -1, 0.3), V(s * 0.6, -0.6, -1)), 1);
++          curlFingers(p, L, side, { fingers: 70, thumb: 35 });
++        }
++      }
++      return p;
++    },
++  };
++}
++
++/** Standing with a drink in the right hand (32 beats, one sip), left hand in the pocket. */
++function standDrink(style, kind = 'bottle') {
++  const beats = 32;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, props: { Right: kind } }),
++    events: [{ name: 'sip', time: 12.2 * BEAT }],
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const sip = sipCurve(b, 10, 5);
++      const shift = sinB(b, 16);
++      const p = standBody(L, { shift: shift * 0.018, roll: -shift * 1.5, dip: 0.01 * pulse(b, { attack: 0.3 }) * (style === 2 ? 1 : 0) });
++      Pose.spineSide(p, 'Spine1', -shift * 1.2);
++      Pose.headNod(p, 1 + sip.head);
++      Pose.headTurn(p, sinB(b, 32, 0.4) * 16 * (1 - sip.u));
++      groove(p, b, (style === 2 ? 6 : 3) * (1 - sip.u), { period: style === 2 ? 1 : 2 });
++      const fk = worldPose(L, p);
++      const at = fk.pos.Spine.clone().add(V(-0.17 * kk, (style === 2 ? 0.06 : -0.03) * kk, 0.18 * kk));
++      bottleArm(L, p, 'Right', heldFrame('Right', at, { tilt: 0.08 }), sip, kind);
++      gripCurl(p, L, 'Right', kind);
++      reach(L, p, 'Left', null, pocketHand(L, p, 'Left'), 1);
++      curlFingers(p, L, 'Left', { fingers: 20, thumb: 30 });
++      return p;
++    },
++  };
++}
++
++/** Standing conversation with someone ~1.1 m ahead: gestures (talk) or nods (listen), shared laugh at 20–25. */
++function standTalk(role, { hold = null } = {}) {
++  const beats = 32;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, partner: 'front', props: hold ? { Right: hold } : {} }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const laugh = envelope(b, 20, 20.6, 24.5, 26);
++      const shake = Math.abs(Math.sin(t * 15)) * laugh;
++      const shift = sinB(b, 16);
++      const talking = role === 'talk' ? envelope(b, 0.5, 1.5, 18.5, 20) + envelope(b, 26, 27, 31, 32) : envelope(b, 12, 13, 17, 18);
++      const p = standBody(L, { shift: shift * 0.02, roll: -shift * 1.5, dip: 0.012 * laugh * shake });
++      Pose.spineFlex(p, 'Spine1', -laugh * 6 + talking * 2);
++      Pose.headNod(p, -laugh * 10 + shake * 5 + (role === 'listen' ? 3 * pulse(b, { period: 4, attack: 0.4 }) * (1 - laugh) : 2 * Math.sin(t * 3.1) * talking));
++      Pose.headTilt(p, sinB(b, 16) * 4);
++      SIDES.forEach((side) => Pose.shoulderShrug(p, side, shake * 6));
++      Pose.jawOpen(p, laugh * (5 + shake * 12));
++      if (talking > 0 && laugh < 0.01) talkJaw(p, t, talking);
++      const fk = worldPose(L, p);
++      const g1 = Math.max(0, Math.sin(Math.PI * frac(b / 4))) * talking;
++      const chest = fk.pos.Spine2.clone().add(V(0.12 * kk, -0.14 * kk + 0.05 * g1 * kk, 0.3 * kk + 0.06 * g1 * kk));
++      const gesture = handTargetAt(L, 'Left', chest, V(-0.3, 0.25, 1), V(-0.3, 1, 0.1), POLE.Left);
++      reach(L, p, 'Left', role === 'listen' ? pocketHand(L, p, 'Left') : null, gesture, role === 'talk' ? ease(Math.min(1, talking * 1.2)) * (1 - laugh * 0.8) : 0);
++      if (role === 'listen') {
++        reach(L, p, 'Left', null, pocketHand(L, p, 'Left'), 1);
++        curlFingers(p, L, 'Left', { fingers: 20, thumb: 30 });
++      } else curlFingers(p, L, 'Left', { fingers: 28 - 18 * talking, thumb: 12 - 6 * talking });
++      if (hold) {
++        bottleArm(L, p, 'Right', heldFrame('Right', fk.pos.Spine.clone().add(V(-0.17 * kk, 0, 0.18 * kk)), { tilt: 0.08 }), null);
++        gripCurl(p, L, 'Right', hold);
++      } else {
++        reach(L, p, 'Right', null, pocketHand(L, p, 'Right'), 1);
++        curlFingers(p, L, 'Right', { fingers: 20, thumb: 30 });
++      }
++      return p;
++    },
++  };
++}
++
++/** Standing dap with someone ~1.1 m ahead (fist bump at the midpoint). */
++function standDap() {
++  return {
++    duration: 2.0,
++    loop: false,
++    meta: standMeta({ partner: 'front', then: 'chill_stand_listen' }),
++    events: [{ name: 'dap', time: 0.85 }],
++    sample: (L, t) => {
++      const kk = kOf(L);
++      const p = standBody(L, { fwd: 0.02 * envelope(t, 0.2, 0.7, 1.1, 1.6) });
++      const contact = V(-0.07 * kk, 1.12 * kk, 0.53);
++      const inw = bump(t, 0.7, 1.0) * 0.03;
++      const fist = handTargetAt(L, 'Right', contact.clone().add(V(0, 0, -0.05 + inw)), V(0.05, 0.1, 1), V(0.8, 0, 0.1), V(-0.8, -1, -0.2));
++      reach(L, p, 'Right', null, fist, ease(window01(t, 0.15, 0.7)) * (1 - ease(window01(t, 1.1, 1.75))));
++      reach(L, p, 'Left', null, pocketHand(L, p, 'Left'), 1);
++      const f = envelope(t, 0.3, 0.6, 1.2, 1.6);
++      curlFingers(p, L, 'Right', { fingers: 28 + 70 * f, thumb: 12 + 40 * f });
++      curlFingers(p, L, 'Left', { fingers: 20, thumb: 30 });
++      Pose.headNod(p, 4 * bump(t, 0.6, 1.3));
++      Pose.jawOpen(p, bump(t, 0.9, 1.5) * 6);
++      return p;
++    },
++  };
++}
++
++/** Big stretch with a yawn: arms up over the head, back arches, jaw wide; settles to idle frame 0. */
++function stretchYawn(bases) {
++  return {
++    duration: 4.6,
++    loop: false,
++    meta: standMeta({ then: 'idle' }),
++    events: [{ name: 'yawn', time: 1.3 }],
++    sample: (L, t) => {
++      const kk = kOf(L);
++      const up = envelope(t, 0.4, 1.6, 2.9, 3.9);
++      const p = standBody(L, { dip: -0.01 * up, fwd: -0.015 * up, ankles: {}, feet: { Left: { pitch: -6 * up }, Right: { pitch: -6 * up } } });
++      Pose.spineFlex(p, 'Spine1', -10 * up);
++      Pose.spineFlex(p, 'Spine2', -8 * up);
++      Pose.spineSide(p, 'Spine1', 4 * bump(t, 1.6, 2.9));
++      Pose.headNod(p, -22 * up);
++      Pose.jawOpen(p, 20 * envelope(t, 0.9, 1.5, 2.6, 3.3));
++      const fk = worldPose(L, p);
++      const top = fk.pos.Head.clone().add(V(0, 0.36 * kk, -0.03 * kk));
++      for (const side of SIDES) {
++        const s = S[side];
++        const at = top.clone().add(V(s * (0.06 + 0.04 * bump(t, 1.6, 2.9)) * kk, 0, 0));
++        reach(L, p, side, null, handTargetAt(L, side, at, V(-s * 0.7, 0.6, 0), V(0, 1, 0.2), V(s, 0.2, -0.6)), up, { arc: V(s * 0.25 * kk, 0, 0.12 * kk) });
++        curlFingers(p, L, side, { fingers: 28 - 18 * up, thumb: 12 });
++      }
++      const idle0 = relaxHands(bases.idle.sample(L, 0, bases.idle.duration), L);
++      return blend(L, p, idle0, ease(window01(t, 4.0, 4.6)) + (1 - ease(window01(t, 0, 0.35))) * 0);
++    },
++  };
++}
++
++/** Per-bone slerp to `b` by w (hips lerp). */
++function blend(L, a, b, w) {
++  if (w <= 0) return a;
++  relaxHands(a, L);
++  for (const name of new Set([...Object.keys(a.bones), ...Object.keys(b.bones)])) {
++    const qa = a.bones[name] ?? new THREE.Quaternion();
++    a.bones[name] = qa.clone().slerp(b.bones[name] ?? new THREE.Quaternion(), w);
++  }
++  a.hips.lerp(b.hips, w);
++  return a;
++}
++
++/**
++ * Fridge run: facing the open fridge ~0.55 m ahead: the left hand swings the door open, the right
++ * reaches in for a bottle ('grab' event: show the bottle), the door closes, the bottle comes to the
++ * chest. Ends on chill_stand_drink frame 0.
++ */
++function fridgeGrab(bases) {
++  return {
++    duration: 3.6,
++    loop: false,
++    meta: standMeta({ then: 'chill_stand_drink_1', props: { Right: 'bottle' }, propFrom: 1.55 }),
++    events: [{ name: 'open', time: 0.7 }, { name: 'grab', time: 1.55 }, { name: 'close', time: 2.45 }],
++    sample: (L, t) => {
++      const kk = kOf(L);
++      const reachIn = envelope(t, 0.85, 1.5, 1.7, 2.4);
++      const p = standBody(L, { fwd: 0.03 * reachIn, pitch: 8 * reachIn, ankles: { Right: L.world.RightFoot.clone().add(V(-0.02 * kk, 0, 0.05 * kk * ease(window01(t, 0.6, 1.0)))) } });
++      Pose.spineFlex(p, 'Spine1', 8 * reachIn);
++      Pose.headNod(p, 6 * reachIn);
++      Pose.headTurn(p, -6 * reachIn);
++      // Door handle: opens on an arc around a hinge on the left.
++      const open = ease(window01(t, 0.45, 1.0)) * (1 - ease(window01(t, 2.2, 2.7)));
++      const hinge = V(0.45 * kk, 1.08, 0.58);
++      const ang = open * 1.1;
++      const handle = hinge.clone().add(V(-Math.cos(ang) * 0.5, 0, -Math.sin(ang) * 0.5));
++      const onDoor = envelope(t, 0.2, 0.45, 2.7, 3.0);
++      reach(L, p, 'Left', null, handTargetAt(L, 'Left', handle, V(0, -1, 0.15), V(-0.4, 0, -1).applyAxisAngle(V(0, 1, 0), -ang), V(0.8, -0.6, -0.4)), onDoor);
++      curlFingers(p, L, 'Left', { fingers: 28 + 50 * onDoor, thumb: 12 + 25 * onDoor });
++      // Right: into the fridge, grab, then to the chest (the drink rest).
++      const fk = worldPose(L, p);
++      const shelf = V(-0.06 * kk, 1.0, 0.62);
++      const inFridge = propGrip(L, 'Right', 'bottle', propFrame(shelf, V(0, 1, 0), V(-0.4, 0, -1)), V(-0.7, -0.6, -0.5));
++      const chest = propGrip(L, 'Right', 'bottle', heldFrame('Right', fk.pos.Spine.clone().add(V(-0.17 * kk, -0.03 * kk, 0.18 * kk)), { tilt: 0.08 }), POLE.Right);
++      const toShelf = ease(window01(t, 0.95, 1.5));
++      const back = ease(window01(t, 1.75, 2.6));
++      if (back <= 0) reach(L, p, 'Right', null, inFridge, toShelf);
++      else reach(L, p, 'Right', inFridge, chest, back, { arc: V(0, 0.04, 0.02) });
++      const grabbed = ease(window01(t, 1.45, 1.6));
++      curlFingers(p, L, 'Right', { fingers: 28 + 44 * grabbed, thumb: 12 + 28 * grabbed });
++      const end = bases.chill_stand_drink_1 ? relaxHands(bases.chill_stand_drink_1.sample(L, 0, bases.chill_stand_drink_1.duration), L) : null;
++      return end ? blend(L, p, end, ease(window01(t, 3.0, 3.6))) : p;
++    },
++  };
++}
++
++/** Picking music at the media console (~0.45 m ahead, 0.48 m high): bent over, fingers on the gear. */
++function consolePick() {
++  const beats = 16;
++  return {
++    duration: beats * BEAT,
++    loop: true,
++    meta: standMeta({ beats, console: { distance: 0.45, top: 0.48 } }),
++    sample: (L, t) => {
++      const b = t / BEAT;
++      const kk = kOf(L);
++      const p = standBody(L, { fwd: -0.07, dip: 0.07, pitch: 26, ankles: { Left: L.world.LeftFoot.clone().add(V(0.04 * kk, 0, 0.04 * kk)), Right: L.world.RightFoot.clone().add(V(-0.04 * kk, 0, -0.06 * kk)) }, kneeOut: 0.3 });
++      Pose.spineFlex(p, 'Spine1', 14);
++      Pose.spineFlex(p, 'Spine2', 8);
++      Pose.headNod(p, 10);
++      groove(p, b, 5, { follow: 0.6 });
++      const flip = (ph) => Math.sin(((b / 4) + ph) * TAU);
++      const y = 0.52 + 0.06;
++      reach(L, p, 'Right', null, handTargetAt(L, 'Right', V(-0.12 * kk + flip(0) * 0.05 * kk, y + 0.02 * Math.max(0, flip(0.25)), 0.55), V(0.1, -0.5, 1), V(0.2, -1, 0.2), V(-0.8, -0.5, -0.5)), 1);
++      reach(L, p, 'Left', null, handTargetAt(L, 'Left', V(0.12 * kk, y, 0.5 + 0.02 * flip(0.5)), V(-0.1, -0.5, 1), V(-0.2, -1, 0.2), V(0.8, -0.5, -0.5)), 1);
++      SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 35, thumb: 25 }));
++      return p;
++    },
++  };
++}
++
++// --- registry -------------------------------------------------------------------------------------
++
++function makeChillSamplers(bases) {
++  const out = {};
++  for (const [variant, sfx] of [['sofa', ''], ['chair', '_chair']]) {
++    for (const st of [1, 2, 3, 4]) out[`chill_sit_listen_${st}${sfx}`] = sitListen(variant, st);
++    out[`chill_sit_listen_bottle_1${sfx}`] = sitListen(variant, 1, { hold: 'bottle' });
++    out[`chill_sit_listen_bottle_4${sfx}`] = sitListen(variant, 4, { hold: 'bottle' });
++    for (const st of [1, 2, 3, 4]) out[`chill_sit_relaxed_${st}${sfx}`] = sitRelaxed(variant, st);
++    for (const st of [1, 2, 3]) out[`chill_sit_drink_${st}${sfx}`] = sitDrink(variant, st);
++    out[`chill_sit_drink_cup${sfx}`] = sitDrink(variant, 2, 'cup');
++    for (const side of SIDES) {
++      const d = side[0];
++      out[`chill_sit_talk_${d}${sfx}`] = sitTalk(variant, side, 'talk');
++      out[`chill_sit_listento_${d}${sfx}`] = sitTalk(variant, side, 'listen');
++      out[`chill_sit_talk_bottle_${d}${sfx}`] = sitTalk(variant, side, 'talk', { hold: 'bottle' });
++      out[`chill_sit_dap_${d}${sfx}`] = sitDap(variant, side);
++    }
++    for (const st of [1, 2]) out[`chill_sit_phone_${st}${sfx}`] = sitPhone(variant, st);
++    for (const st of [1, 2]) out[`chill_sit_game_${st}${sfx}`] = sitGame(variant, st);
++  }
++  out.chill_dance_twostep = danceTwoStep(1);
++  out.chill_dance_twostep_low = danceTwoStep(0.65);
++  out.chill_dance_twostep_bottle = danceTwoStep(0.8, { hold: 'bottle' });
++  out.chill_dance_bounce_1 = danceBounce(1, 1);
++  out.chill_dance_bounce_2 = danceBounce(2, 0.85);
++  out.chill_dance_bounce_3 = danceBounce(3, 0.7);
++  out.chill_dance_bottle = danceBounce(1, 0.75, { hold: 'bottle' });
++  out.chill_counter_back_1 = counterBack(1);
++  out.chill_counter_back_2 = counterBack(2);
++  out.chill_counter_back_bottle = counterBack(1, { hold: 'bottle' });
++  out.chill_counter_lean = counterLean();
++  out.chill_window_1 = windowLook(1);
++  out.chill_window_2 = windowLook(2);
++  out.chill_window_bottle = windowLook(1, { hold: 'bottle' });
++  out.chill_rail_1 = railLean(1);
++  out.chill_rail_2 = railLean(2);
++  out.chill_stand_drink_1 = standDrink(1);
++  out.chill_stand_drink_2 = standDrink(2);
++  out.chill_stand_drink_cup = standDrink(1, 'cup');
++  out.chill_stand_talk = standTalk('talk');
++  out.chill_stand_talk_bottle = standTalk('talk', { hold: 'bottle' });
++  out.chill_stand_listen = standTalk('listen');
++  out.chill_stand_listen_bottle = standTalk('listen', { hold: 'bottle' });
++  out.chill_stand_dap = standDap();
++  out.chill_console = consolePick();
++  const all = { ...bases, ...out };
++  out.chill_stretch = stretchYawn(all);
++  out.chill_fridge_grab = fridgeGrab(all);
++  return out;
++}
++
++const IDLE_BASE = {
++  idle: {
++    duration: 4,
++    sample: (L, t) => {
++      const p = base(L, { armDown: 23, elbow: 12 });
++      Pose.headNod(p, 2);
++      p.hips.set(0, -0.006, 0);
++      const ankles = Object.fromEntries(SIDES.map((s) => [s, L.world[`${s}Foot`].clone()]));
++      plantFeet(L, p, { ankles });
++      return p;
++    },
++  },
++};
++
++/** The chill samplers. Built on the live registry's idle when registered; standalone otherwise. */
++export const CHILL_SAMPLERS = makeChillSamplers(IDLE_BASE);
++export const CHILL_CLIP_NAMES = Object.keys(CHILL_SAMPLERS);
++
++/**
++ * Hands the samplers to a registry (clips.js registerSamplers, which passes the live bases when
++ * given a factory). Already-registered names are skipped. Returns true when registered.
++ */
++export function registerChillClips(register) {
++  if (typeof register !== 'function') return false;
++  register((bases) => {
++    const made = makeChillSamplers(bases);
++    for (const name of Object.keys(made)) if (bases[name]) delete made[name];
++    Object.assign(CHILL_SAMPLERS, made);
++    return made;
++  });
++  return true;
++}
++
++/** Bakes one chill sampler into a THREE.AnimationClip (same track layout as clips.js bakeClip). */
++export function bakeChillClip(layout, name, { prefix = '', samplers = CHILL_SAMPLERS } = {}) {
++  const s = samplers[name];
++  if (!s) throw new Error(`Unknown chill clip ${name}`);
++  const frames = Math.round(s.duration * FPS);
++  const times = new Float32Array(frames + 1);
++  const quats = Object.fromEntries(JOINTS.map(([j]) => [j, new Float32Array((frames + 1) * 4)]));
++  const hipPos = new Float32Array((frames + 1) * 3);
++  const restHips = layout.world.Hips;
++  for (let f = 0; f <= frames; f++) {
++    const t = s.loop && f === frames ? 0 : Math.min(f / FPS, s.duration);
++    times[f] = f / FPS;
++    const pose = relaxHands(s.sample(layout, t, s.duration), layout);
++    for (const [j] of JOINTS) (pose.bones[j] ?? new THREE.Quaternion()).toArray(quats[j], f * 4);
++    hipPos[f * 3] = restHips.x + pose.hips.x;
++    hipPos[f * 3 + 1] = restHips.y + pose.hips.y;
++    hipPos[f * 3 + 2] = restHips.z + pose.hips.z;
++  }
++  const tracks = JOINTS.map(([j]) => new THREE.QuaternionKeyframeTrack(`${prefix}${j}.quaternion`, times, quats[j]));
++  tracks.push(new THREE.VectorKeyframeTrack(`${prefix}Hips.position`, times, hipPos));
++  const clip = new THREE.AnimationClip(name, s.duration, tracks);
++  clip.userData = { loop: s.loop, chill: true, ...(s.meta ? s.meta(layout) : {}), ...(s.events ? { events: s.events } : {}) };
++  return clip;
++}
++
++/** Bakes every chill clip (or `names`) for a layout: { name: AnimationClip }. */
++export function bakeChillClips(layout, { names = CHILL_CLIP_NAMES, prefix = '' } = {}) {
++  return Object.fromEntries(names.map((n) => [n, bakeChillClip(layout, n, { prefix })]));
++}

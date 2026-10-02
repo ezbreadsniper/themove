@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Animator } from '../anim/animator.js';
 import { WEAPONS } from '../weapons/specs.js';
+import { FIRE } from '../combat/loadout.js';
 
 const COMPASS = [['N', 0], ['NW', 45], ['W', 90], ['SW', 135], ['S', 180], ['SE', -135], ['E', -90], ['NE', -45]];
 const TURN_RATE = 9;
@@ -175,20 +176,36 @@ export class CharacterController {
     if (!this.weapon || !input.aim) a.setAim(0, 0, {});
     if (this.weapon && input.aim) a.setAim(THREE.MathUtils.clamp(this.aimOffset, -AIM_DEAD_ZONE, AIM_DEAD_ZONE), input.aimPitch ?? 0, { left: `${this.weapon}_aimLeft`, right: `${this.weapon}_aimRight`, up: `${this.weapon}_aimUp`, down: `${this.weapon}_aimDown` });
 
+    // Semi-automatic guns need the trigger released between rounds; automatic ones fire while held
+    // at their cadence (FIRE). `onFire(weapon)` (the gunplay hitscan) adds { pos, dir, target } to
+    // the player:fire event.
     this.fireCooldown -= dt;
-    if (this.weapon && input.fire && input.aim && this.fireCooldown <= 0 && !a.locked) {
+    if (!input.fire) this.triggerReady = true;
+    const mode = FIRE[this.weapon] ?? { interval: 0.2, auto: false };
+    if (this.weapon && input.fire && input.aim && this.fireCooldown <= 0 && !a.locked && (mode.auto || this.triggerReady !== false)) {
       if (this.ammo[this.weapon] > 0) {
         if (a.additive(clipFor(this.weapon, 'recoil'))) {
           this.ammo[this.weapon] -= 1;
-          this.fireCooldown = this.weapon === 'pistol' ? 0.22 : 0.1;
+          this.fireCooldown = Math.max(this.fireCooldown, -dt) + mode.interval;
+          this.triggerReady = false;
+          this.shots = (this.shots ?? 0) + 1;
           this.lastShot = { weapon: this.weapon, ammo: this.ammo[this.weapon] };
-          this.emit('player:fire', { pos: this.position.toArray(), weapon: this.weapon, target: input.target ?? null });
+          let extra = null;
+          try {
+            extra = this.onFire?.(this.weapon, input) ?? null;
+          } catch (err) {
+            console.warn(`onFire: ${err.message}`);
+          }
+          this.emit('player:fire', { pos: this.position.toArray(), weapon: this.weapon, target: input.target ?? null, ...extra });
         }
-      } else {
+      } else if (this.triggerReady !== false) {
         a.play(clipFor(this.weapon, 'dryFire'));
         this.fireCooldown = 0.5;
+        this.triggerReady = false;
+        this.emit('player:dryFire', { weapon: this.weapon, pos: this.position.toArray() });
       }
     }
+    if (this.fireCooldown < 0 && !input.fire) this.fireCooldown = 0;
     // A reload pressed during another one-shot (dry fire, draw) is buffered, not dropped.
     if (input.reload) this.wantReload = true;
     if (this.weapon && this.wantReload && !a.locked) {

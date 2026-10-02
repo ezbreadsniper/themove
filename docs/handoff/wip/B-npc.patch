@@ -1,0 +1,1350 @@
+diff --git a/src/dialogue/data/barks.json b/src/dialogue/data/barks.json
+index 00aa87f..55591b0 100644
+--- a/src/dialogue/data/barks.json
++++ b/src/dialogue/data/barks.json
+@@ -1,48 +1,45 @@
+ [
+-  { "id": "greet_generic", "concept": "greet", "lines": ["Hey.", "Evening.", "'Sup."] },
+-  { "id": "greet_resident_friendly", "concept": "greet", "criteria": { "archetype": "resident", "rank": ["friendly", "ally"] }, "lines": ["Hey neighbour!", "There they are. Good to see you.", "Hey you. Keeping out of trouble?"], "emotion": "happy" },
+-  { "id": "greet_resident_first", "concept": "greet", "criteria": { "archetype": "resident", "npc.met": { "exists": false } }, "lines": ["Oh, hi. You new on the block?"], "remember": { "npc.seen": true } },
+-  { "id": "greet_clerk", "concept": "greet", "criteria": { "archetype": "clerk" }, "lines": ["We're open, come on in.", "Evening. Let me know if you need anything."] },
+-  { "id": "greet_thug_neutral", "concept": "greet", "criteria": { "archetype": "thug" }, "lines": ["...", "Mm.", "You lost?"], "emotion": "cold" },
+-  { "id": "greet_unfriendly", "concept": "greet", "criteria": { "rank": ["unfriendly", "hostile"] }, "lines": ["Keep walking.", "What do you want?", "Don't."], "emotion": "angry" },
+-  { "id": "greet_ally", "concept": "greet", "criteria": { "rank": "ally" }, "lines": ["My favourite person on Foundry St.!", "Hey, hey! Come here."], "emotion": "happy" },
+-
+-  { "id": "chat_idle", "concept": "chat", "lines": ["...so I told him, fix the boiler or I'm out.", "Did you hear that racket last night?", "Rent's going up again.", "The corner store's got those cheap batteries again.", "I swear that streetlight's been flickering for a month."] },
+-  { "id": "chat_thug", "concept": "chat", "criteria": { "archetype": "thug" }, "lines": ["Nah, nah, listen...", "He owes us, simple as that.", "Watch the corner, man."] },
+-  { "id": "chat_reply", "concept": "chatReply", "lines": ["Mm-hm.", "For real?", "No way.", "Ha. Yeah.", "Tell me about it."] },
+-
+-  { "id": "startled_generic", "concept": "startled", "lines": ["Whoa!", "Jesus!", "What was that?"] },
+-  { "id": "investigate_generic", "concept": "investigate", "lines": ["Hello?", "Someone there?", "What's going on over here?"] },
+-  { "id": "investigate_thug", "concept": "investigate", "criteria": { "archetype": "thug" }, "lines": ["Who's creeping?", "I heard you."] },
+-  { "id": "giveup_generic", "concept": "giveUp", "lines": ["Huh. Nothing.", "Must be hearing things.", "Whatever."] },
+-
+-  { "id": "weapon_seen_generic", "concept": "weaponSeen", "lines": ["Whoa, whoa, put that away!", "Is that a gun?", "Hey, easy!"], "emotion": "afraid" },
+-  { "id": "weapon_seen_friend", "concept": "weaponSeen", "criteria": { "rank": ["friendly", "ally"] }, "lines": ["Hey... what's with the piece?", "Everything okay? Why're you carrying?"], "emotion": "worried" },
+-  { "id": "weapon_seen_tough", "concept": "weaponSeen", "criteria": { "temperament": "tough" }, "lines": ["You think that scares me?", "Big man with a gun."], "emotion": "angry" },
+-
+-  { "id": "plead_generic", "concept": "plead", "lines": ["Please, please don't!", "I don't want any trouble!", "Take whatever you want!"], "emotion": "afraid" },
+-  { "id": "plead_friend", "concept": "plead", "criteria": { "rank": ["friendly", "ally"] }, "lines": ["It's me! What are you doing?!", "Hey, hey, it's me!"], "emotion": "afraid" },
+-  { "id": "scream_generic", "concept": "scream", "lines": ["Aaah!", "Oh God!", "Help!"], "emotion": "afraid" },
+-  { "id": "flee_generic", "concept": "flee", "lines": ["Run!", "Get away from me!", "Somebody call the cops!"], "emotion": "afraid" },
+-  { "id": "flee_gunshot", "concept": "flee", "criteria": { "cause": "gunshot" }, "lines": ["Shots fired! Shots fired!", "He's shooting!", "Get down!"], "emotion": "afraid" },
+-
+-  { "id": "confront_generic", "concept": "confront", "lines": ["You got a problem?", "Back off.", "Say that again."], "emotion": "angry" },
+-  { "id": "confront_gun", "concept": "confront", "criteria": { "cause": ["aimedAt", "weaponDrawn"], "temperament": "tough" }, "lines": ["You gonna use that or what?", "Point that somewhere else.", "Do it then."], "emotion": "angry" },
+-  { "id": "fight_generic", "concept": "fight", "lines": ["That's it!", "You asked for it!"], "emotion": "angry" },
+-
+-  { "id": "bumped_generic", "concept": "bumped", "lines": ["Hey, watch it.", "Excuse you.", "Ow."], "emotion": "annoyed" },
+-  { "id": "bumped_friend", "concept": "bumped", "criteria": { "rank": ["friendly", "ally"] }, "lines": ["Oof, easy there!", "Ha, in a hurry?"], "emotion": "happy" },
+-  { "id": "bumped_thug", "concept": "bumped", "criteria": { "archetype": "thug" }, "lines": ["You touch me again...", "Watch where you're walking."], "emotion": "angry" },
+-  { "id": "bumped_repeat", "concept": "bumped", "criteria": { "npc.bumps": { "gte": 3 } }, "lines": ["Seriously? Again?", "Okay, what is your problem?"], "emotion": "angry" },
+-
+-  { "id": "stare_sneak", "concept": "stare", "criteria": { "cause": "crouchSneak" }, "lines": ["...why are you crouching?", "What are you doing down there?"], "emotion": "confused" },
+-  { "id": "stare_sprint", "concept": "stare", "criteria": { "cause": "sprint" }, "lines": ["Where's the fire?", "Slow down!"] },
+-  { "id": "stare_generic", "concept": "stare", "lines": ["Can I help you?", "What?"] },
+-
+-  { "id": "relief_generic", "concept": "relief", "lines": ["...okay. Okay.", "Phew.", "Don't do that again."] },
+-  { "id": "relief_friend", "concept": "relief", "criteria": { "rank": ["friendly", "ally"] }, "lines": ["You scared the hell out of me.", "Don't ever do that again, okay?"] },
+-
+-  { "id": "busy_generic", "concept": "busy", "lines": ["Not now.", "I'm busy."] },
+-  { "id": "nothing_to_say", "concept": "noTalk", "lines": ["Nothing to talk about.", "Leave me alone."], "criteria": { "rank": ["hostile"] } },
+-  { "id": "nothing_to_say_neutral", "concept": "noTalk", "lines": ["Have a good one.", "See you around."] }
++  {"id": "greet_generic", "concept": "greet", "lines": ["Hey.", "Evening.", "'Sup."]},
++  {"id": "greet_resident_friendly", "concept": "greet", "criteria": {"archetype": "resident", "rank": ["friendly", "ally"]}, "lines": ["Hey neighbour!", "There they are. Good to see you.", "Hey you. Keeping out of trouble?"], "emotion": "happy"},
++  {"id": "greet_resident_first", "concept": "greet", "criteria": {"archetype": "resident", "npc.met": {"exists": false}}, "lines": ["Oh, hi. You new on the block?"], "remember": {"npc.seen": true}},
++  {"id": "greet_clerk", "concept": "greet", "criteria": {"archetype": "clerk"}, "lines": ["We're open, come on in.", "Evening. Let me know if you need anything."]},
++  {"id": "greet_thug_neutral", "concept": "greet", "criteria": {"archetype": "thug"}, "lines": ["...", "Mm.", "You lost?"], "emotion": "cold"},
++  {"id": "greet_unfriendly", "concept": "greet", "criteria": {"rank": ["unfriendly", "hostile"]}, "lines": ["Keep walking.", "What do you want?", "Don't."], "emotion": "angry"},
++  {"id": "greet_ally", "concept": "greet", "criteria": {"rank": "ally"}, "lines": ["My favourite person on Foundry St.!", "Hey, hey! Come here."], "emotion": "happy"},
++  {"id": "chat_idle", "concept": "chat", "lines": ["...so I told him, fix the boiler or I'm out.", "Did you hear that racket last night?", "Rent's going up again.", "The corner store's got those cheap batteries again.", "I swear that streetlight's been flickering for a month."]},
++  {"id": "chat_thug", "concept": "chat", "criteria": {"archetype": "thug"}, "lines": ["Nah, nah, listen...", "He owes us, simple as that.", "Watch the corner, man."]},
++  {"id": "chat_reply", "concept": "chatReply", "lines": ["Mm-hm.", "For real?", "No way.", "Ha. Yeah.", "Tell me about it."]},
++  {"id": "startled_generic", "concept": "startled", "lines": ["Whoa!", "Jesus!", "What was that?"]},
++  {"id": "investigate_generic", "concept": "investigate", "lines": ["Hello?", "Someone there?", "What's going on over here?"]},
++  {"id": "investigate_thug", "concept": "investigate", "criteria": {"archetype": "thug"}, "lines": ["Who's creeping?", "I heard you."]},
++  {"id": "giveup_generic", "concept": "giveUp", "lines": ["Huh. Nothing.", "Must be hearing things.", "Whatever."]},
++  {"id": "weapon_seen_generic", "concept": "weaponSeen", "lines": ["Whoa, whoa, put that away!", "Is that a gun?", "Hey, easy!"], "emotion": "afraid"},
++  {"id": "weapon_seen_friend", "concept": "weaponSeen", "criteria": {"rank": ["friendly", "ally"]}, "lines": ["Hey... what's with the piece?", "Everything okay? Why're you carrying?"], "emotion": "worried"},
++  {"id": "weapon_seen_tough", "concept": "weaponSeen", "criteria": {"temperament": "tough"}, "lines": ["You think that scares me?", "Big man with a gun."], "emotion": "angry"},
++  {"id": "plead_generic", "concept": "plead", "lines": ["Please, please don't!", "I don't want any trouble!", "Take whatever you want!"], "emotion": "afraid"},
++  {"id": "plead_friend", "concept": "plead", "criteria": {"rank": ["friendly", "ally"]}, "lines": ["It's me! What are you doing?!", "Hey, hey, it's me!"], "emotion": "afraid"},
++  {"id": "scream_generic", "concept": "scream", "lines": ["Aaah!", "Oh God!", "Help!"], "emotion": "afraid"},
++  {"id": "flee_generic", "concept": "flee", "lines": ["Run!", "Get away from me!", "Somebody call the cops!"], "emotion": "afraid"},
++  {"id": "flee_gunshot", "concept": "flee", "criteria": {"cause": "gunshot"}, "lines": ["Shots fired! Shots fired!", "He's shooting!", "Get down!"], "emotion": "afraid"},
++  {"id": "confront_generic", "concept": "confront", "lines": ["You got a problem?", "Back off.", "Say that again."], "emotion": "angry"},
++  {"id": "confront_gun", "concept": "confront", "criteria": {"cause": ["aimedAt", "weaponDrawn"], "temperament": "tough"}, "lines": ["You gonna use that or what?", "Point that somewhere else.", "Do it then."], "emotion": "angry"},
++  {"id": "fight_generic", "concept": "fight", "lines": ["That's it!", "You asked for it!"], "emotion": "angry"},
++  {"id": "bumped_generic", "concept": "bumped", "lines": ["Hey, watch it.", "Excuse you.", "Ow."], "emotion": "annoyed"},
++  {"id": "bumped_friend", "concept": "bumped", "criteria": {"rank": ["friendly", "ally"]}, "lines": ["Oof, easy there!", "Ha, in a hurry?"], "emotion": "happy"},
++  {"id": "bumped_thug", "concept": "bumped", "criteria": {"archetype": "thug"}, "lines": ["You touch me again...", "Watch where you're walking."], "emotion": "angry"},
++  {"id": "bumped_repeat", "concept": "bumped", "criteria": {"npc.bumps": {"gte": 3}}, "lines": ["Seriously? Again?", "Okay, what is your problem?"], "emotion": "angry"},
++  {"id": "stare_sneak", "concept": "stare", "criteria": {"cause": "crouchSneak"}, "lines": ["...why are you crouching?", "What are you doing down there?"], "emotion": "confused"},
++  {"id": "stare_sprint", "concept": "stare", "criteria": {"cause": "sprint"}, "lines": ["Where's the fire?", "Slow down!"]},
++  {"id": "stare_generic", "concept": "stare", "lines": ["Can I help you?", "What?"]},
++  {"id": "relief_generic", "concept": "relief", "lines": ["...okay. Okay.", "Phew.", "Don't do that again."]},
++  {"id": "relief_friend", "concept": "relief", "criteria": {"rank": ["friendly", "ally"]}, "lines": ["You scared the hell out of me.", "Don't ever do that again, okay?"]},
++  {"id": "busy_generic", "concept": "busy", "lines": ["Not now.", "I'm busy."]},
++  {"id": "nothing_to_say", "concept": "noTalk", "lines": ["Nothing to talk about.", "Leave me alone."], "criteria": {"rank": ["hostile"]}},
++  {"id": "nothing_to_say_neutral", "concept": "noTalk", "lines": ["Have a good one.", "See you around."]},
++  {"id": "hurt_generic", "concept": "hurt", "lines": ["Agh!", "I'm hit! I'm hit!", "You shot me!", "Argh, my— !"], "emotion": "afraid"},
++  {"id": "hurt_friend", "concept": "hurt", "criteria": {"archetype": "friend"}, "lines": ["What the— you SHOT me?!", "Are you insane?!"], "emotion": "afraid"},
++  {"id": "grief_generic", "concept": "grief", "lines": ["No, no, no, no!", "Oh my God, oh my God!", "Somebody help him!"], "emotion": "afraid"},
++  {"id": "avenge_generic", "concept": "avenge", "lines": ["You're dead! You hear me?!", "You'll pay for that!"], "emotion": "angry"},
++  {"id": "scream_friend", "concept": "scream", "criteria": {"archetype": "friend"}, "lines": ["Get down! Get down!", "What the hell?!", "Jesus Christ!"], "emotion": "afraid"},
++  {"id": "flee_friend", "concept": "flee", "criteria": {"archetype": "friend"}, "lines": ["Out! Everybody out!", "Go, go, go!", "The door! Get to the door!"], "emotion": "afraid"}
+ ]
+diff --git a/src/npc/archetypes.js b/src/npc/archetypes.js
+index 93c338c..22b86ac 100644
+--- a/src/npc/archetypes.js
++++ b/src/npc/archetypes.js
+@@ -46,6 +46,18 @@ export const ARCHETYPES = {
+     dialogue: 'thug',
+     voice: 'thug',
+   },
++  /** The main characters hanging out in the loft (spawnCast): friends of the player, of each other. */
++  friend: {
++    label: 'Friend',
++    faction: 'loft',
++    traits: { bravery: 0.5, aggression: 0.3, sociability: 0.85, curiosity: 0.5, wander: 0 },
++    disposition: 45,
++    perception: { fov: 150, sightRange: 22, hearing: 1 },
++    idles: ['npc_idle_weight', 'npc_idle_pockets', 'npc_idle_armsCrossed'],
++    talk: ['npc_talk_gesture_1', 'npc_talk_gesture_2', 'npc_talk_gesture_4'],
++    dialogue: null,
++    voice: 'friend',
++  },
+   pedestrian: {
+     label: 'Passer-by',
+     faction: 'civilians',
+@@ -65,6 +77,7 @@ export const FACTIONS = {
+   shopkeepers: { label: 'Shopkeepers', allies: ['residents', 'civilians'], enemies: [] },
+   civilians: { label: 'Civilians', allies: ['residents', 'shopkeepers'], enemies: [] },
+   crew: { label: 'Corner crew', allies: [], enemies: ['residents'] },
++  loft: { label: 'The loft crew', allies: ['residents'], enemies: [] },
+ };
+ 
+ const TRAITS = ['bravery', 'aggression', 'sociability', 'curiosity', 'wander'];
+diff --git a/src/npc/brain.js b/src/npc/brain.js
+index 92e34f7..ad67bf4 100644
+--- a/src/npc/brain.js
++++ b/src/npc/brain.js
+@@ -1,6 +1,7 @@
+ import { rankIndex } from './disposition.js';
+ import { STIMULI } from './stimuli.js';
+ import { fleeTarget } from './steering.js';
++import { escapeRoute } from './routes.js';
+ 
+ /**
+  * Behaviour layer: a two-level hierarchical state machine whose transitions are chosen by utility.
+@@ -35,10 +36,14 @@ export const STATES = {
+     enter(npc) {
+       npc.boredom = 0;
+       npc.idleSwap = 4 + npc.rng.next() * 6;
+-      if (dist2(npc.pos, npc.home) > 1.2) npc.moveTo(npc.home, 'walk');
++      if (!npc.seat && dist2(npc.pos, npc.home) > 1.2) npc.moveTo(npc.home, 'walk');
+       npc.setRest(npc.scenarioClip() ?? npc.pickIdle());
+     },
+     update(npc, dt, env) {
++      if (npc.seat) {
++        if (nearPlayer(env, 6) && env.player.visible) npc.look(env.player.head, 1);
++        return;
++      }
+       npc.boredom += dt * (0.5 + npc.traits.wander);
+       if (!npc.moving && dist2(npc.pos, npc.home) < 1.4 && npc.home.yaw !== undefined && !npc.lookTarget) npc.faceYaw(npc.home.yaw);
+       npc.idleSwap -= dt;
+@@ -65,6 +70,48 @@ export const STATES = {
+       if (npc.wanderWait > 2.5) npc.boredom = 0;
+     },
+   },
++  /**
++   * Calm life through workstream H's activity registry (src/npc/activities): pick an activity and a
++   * free slot, run it until it reports 'done', then pick again. Any threat state interrupts it (higher
++   * group) and exit() lets the activity release its seat / props.
++   */
++  activity: {
++    group: 'ambient',
++    minTime: 4,
++    score: (npc) => (npc.manager?.activities && !npc.dead && npc.clock >= (npc.activityRetry ?? 0) ? 0.24 : 0),
++    enter(npc) {
++      const m = npc.manager;
++      const ctx = m.activityContext(npc);
++      let pick = null;
++      try {
++        pick = m.activities.pickActivity(npc, ctx);
++      } catch (err) {
++        console.warn(`pickActivity: ${err.message}`);
++      }
++      const activity = pick?.activity ?? (pick?.update ? pick : null);
++      npc.activity = activity ? { activity, slot: pick.slot ?? null, ctx } : null;
++      if (!npc.activity) {
++        npc.activityRetry = npc.clock + 5;
++        return;
++      }
++      activity.enter?.(npc, npc.activity.slot, ctx);
++    },
++    update(npc, dt) {
++      const a = npc.activity;
++      if (!a) return;
++      a.ctx.time = npc.manager.time;
++      if (a.activity.update?.(npc, dt, a.ctx) === 'done') {
++        a.activity.exit?.(npc, a.ctx);
++        npc.activity = null;
++        npc.activityRetry = npc.clock + 1 + npc.rng.next() * 2;
++      }
++    },
++    exit(npc) {
++      const a = npc.activity;
++      npc.activity = null;
++      a?.activity.exit?.(npc, a.ctx);
++    },
++  },
+   social: {
+     group: 'social',
+     minTime: 6,
+@@ -216,11 +263,25 @@ export const STATES = {
+       npc.fleeing = true;
+       STATES.flee.plan(npc, env);
+     },
++    /**
++     * Indoors: run the location's escape route (loft → door → corridor → hall → street). Outdoors, or
++     * when the route leads past the threat: steer away along the clearest heading.
++     */
+     plan(npc, env) {
+       const t = threatPos(npc, env);
+       if (!t) return;
++      const gait = npc.drives.fear > 0.7 ? 'sprint' : 'run';
++      if (!npc.path) {
++        const route = escapeRoute(npc.manager?.routes, npc.pos, t);
++        if (route?.path.length) npc.path = route.path;
++      }
++      if (npc.path?.length) {
++        npc.moveTo(npc.path[0], gait, { stop: 0.55 });
++        npc.replan = 6;
++        return;
++      }
+       const target = fleeTarget(npc.pos, t, npc.raycast, { distance: 16 });
+-      npc.moveTo(target, npc.drives.fear > 0.7 ? 'sprint' : 'run', { stop: 0.6 });
++      npc.moveTo(target, gait, { stop: 0.6 });
+       npc.replan = 2.5;
+     },
+     update(npc, dt, env) {
+@@ -228,11 +289,21 @@ export const STATES = {
+       const t = threatPos(npc, env);
+       const far = t && dist2(t, npc.pos) > 24;
+       if (far) npc.drives.fear = Math.max(0, npc.drives.fear - dt * 0.25);
++      if (npc.path?.length) {
++        // Following the escape route: next waypoint on arrival; a stuck leg skips ahead.
++        if (!npc.moving || npc.stuck) {
++          npc.path.shift();
++          if (npc.path.length) npc.moveTo(npc.path[0], npc.nav?.gait ?? 'run', { stop: 0.55 });
++          else npc.path = null;
++        }
++        return;
++      }
+       if ((!npc.moving || npc.stuck || npc.replan <= 0) && !far) STATES.flee.plan(npc, env);
+       if (far && !npc.moving) npc.setRest('npc_idle_weight');
+     },
+     exit(npc) {
+       npc.fleeing = false;
++      npc.path = null;
+       npc.stop();
+     },
+   },
+diff --git a/src/npc/casting.js b/src/npc/casting.js
+index 99ee421..0fddf93 100644
+--- a/src/npc/casting.js
++++ b/src/npc/casting.js
+@@ -53,6 +53,8 @@ export const WARDROBES = {
+   },
+ };
+ 
++WARDROBES.friend = WARDROBES.resident;
++
+ const clone = (o) => JSON.parse(JSON.stringify(o));
+ const jitter = (rng, v, amt, lo, hi) => Math.max(lo, Math.min(hi, v + (rng.next() * 2 - 1) * amt));
+ 
+diff --git a/src/npc/combat.js b/src/npc/combat.js
+new file mode 100644
+index 0000000..f78f082
+--- /dev/null
++++ b/src/npc/combat.js
+@@ -0,0 +1,169 @@
++import * as THREE from 'three';
++
++/**
++ * Combat helpers: hit volumes that follow the animated skeleton, ray tests against them, and the
++ * choice of hit-reaction / death clips from where and from which side a bullet arrives.
++ *
++ * Hit volumes (character space → world through the posed bones):
++ *   head   sphere around the head bone (raised to the skull centre)
++ *   torso  capsule hips → neck
++ *   arm    capsules upper arm and forearm, each side
++ *   leg    capsules thigh and shin, each side
++ * Headless NPCs (no character) use the same layout built from their position, facing and height.
++ */
++export const MAX_HEALTH = 5;
++/** Damage multipliers by part (a pistol round is 1; the head counts double). */
++export const PART_MULTIPLIER = { head: 2, torso: 1, arm: 1, leg: 1 };
++
++const VOLUMES = [
++  { part: 'head', a: 'Head', b: null, r: 0.12, lift: 0.09 },
++  { part: 'torso', a: 'Hips', b: 'Neck', r: 0.17 },
++  { part: 'arm', side: 'Left', a: 'LeftArm', b: 'LeftForeArm', r: 0.065 },
++  { part: 'arm', side: 'Left', a: 'LeftForeArm', b: 'LeftHand', r: 0.055 },
++  { part: 'arm', side: 'Right', a: 'RightArm', b: 'RightForeArm', r: 0.065 },
++  { part: 'arm', side: 'Right', a: 'RightForeArm', b: 'RightHand', r: 0.055 },
++  { part: 'leg', side: 'Left', a: 'LeftUpLeg', b: 'LeftLeg', r: 0.085 },
++  { part: 'leg', side: 'Left', a: 'LeftLeg', b: 'LeftFoot', r: 0.065 },
++  { part: 'leg', side: 'Right', a: 'RightUpLeg', b: 'RightLeg', r: 0.085 },
++  { part: 'leg', side: 'Right', a: 'RightLeg', b: 'RightFoot', r: 0.065 },
++];
++
++/** Standing joint layout (1.78 m, facing +Z) for headless NPCs. */
++const HEADLESS = {
++  Head: [0, 1.6, 0], Neck: [0, 1.5, 0], Hips: [0, 0.95, 0],
++  LeftArm: [0.19, 1.42, 0], LeftForeArm: [0.24, 1.15, 0], LeftHand: [0.27, 0.9, 0.03],
++  RightArm: [-0.19, 1.42, 0], RightForeArm: [-0.24, 1.15, 0], RightHand: [-0.27, 0.9, 0.03],
++  LeftUpLeg: [0.1, 0.9, 0], LeftLeg: [0.11, 0.5, 0.01], LeftFoot: [0.12, 0.08, 0],
++  RightUpLeg: [-0.1, 0.9, 0], RightLeg: [-0.11, 0.5, 0.01], RightFoot: [-0.12, 0.08, 0],
++};
++
++function jointGetter(npc) {
++  const bones = npc.character?.userData.rig?.bones;
++  if (bones) {
++    npc.boneMap ??= Object.fromEntries(bones.map((b) => [b.name.replace(/^.*:/, ''), b]));
++    npc.character.updateMatrixWorld(true);
++    return (name) => npc.boneMap[name]?.getWorldPosition(new THREE.Vector3()) ?? null;
++  }
++  const s = (npc.height ?? 1.78) / 1.78;
++  const c = Math.cos(npc.facing);
++  const sn = Math.sin(npc.facing);
++  return (name) => {
++    const [x, y, z] = HEADLESS[name];
++    return new THREE.Vector3(npc.pos.x + (x * c + z * sn) * s, npc.pos.y + y * s, npc.pos.z + (-x * sn + z * c) * s);
++  };
++}
++
++/** World-space hit volumes of an NPC: [{ part, side, a, b (null for spheres), r }]. */
++export function hitVolumes(npc) {
++  const at = jointGetter(npc);
++  const out = [];
++  for (const v of VOLUMES) {
++    const a = at(v.a);
++    if (!a) continue;
++    if (v.lift) a.y += v.lift * ((npc.height ?? 1.78) / 1.78);
++    out.push({ part: v.part, side: v.side ?? null, a, b: v.b ? at(v.b) : null, r: v.r });
++  }
++  return out;
++}
++
++/** Ray (origin o, unit dir d) vs capsule a–b radius r (sphere when b is null): distance or null. */
++export function rayCapsule(o, d, a, b, r) {
++  if (!b) return raySphere(o, d, a, r);
++  // Closest approach between the ray and the segment, then step back to the surface.
++  const u = b.clone().sub(a);
++  const w = o.clone().sub(a);
++  const uu = u.dot(u);
++  const ud = u.dot(d);
++  const uw = u.dot(w);
++  const dw = d.dot(w);
++  const den = uu - ud * ud;
++  let s = den > 1e-9 ? (uu * -dw + ud * uw) / den : 0;
++  let t = uu > 1e-9 ? (uw + s * ud) / uu : 0;
++  t = Math.max(0, Math.min(1, t));
++  // Re-solve the ray parameter for the clamped segment point.
++  const q = a.clone().addScaledVector(u, t);
++  s = Math.max(0, q.clone().sub(o).dot(d));
++  const p = o.clone().addScaledVector(d, s);
++  const dist = p.distanceTo(q);
++  if (dist > r) return null;
++  // Exact sphere test around the closest segment point gives the entry distance.
++  return raySphere(o, d, q, r) ?? s;
++}
++
++function raySphere(o, d, c, r) {
++  const oc = o.clone().sub(c);
++  const b = oc.dot(d);
++  const cc = oc.dot(oc) - r * r;
++  const disc = b * b - cc;
++  if (disc < 0) return null;
++  const t = -b - Math.sqrt(disc);
++  return t >= 0 ? t : cc <= 0 ? 0 : null;
++}
++
++/**
++ * Nearest hit of a ray against NPC hit volumes (contract §6):
++ * → { npc, point, normal, distance, part, side } | null. Dead NPCs are hit too (bodies stay).
++ */
++export function hitTestNpcs(npcs, origin, dir, maxDist = 100) {
++  const o = new THREE.Vector3(origin.x ?? origin[0], origin.y ?? origin[1], origin.z ?? origin[2]);
++  const d = new THREE.Vector3(dir.x ?? dir[0], dir.y ?? dir[1], dir.z ?? dir[2]).normalize();
++  let best = null;
++  for (const npc of npcs) {
++    // Broad phase: the ray's closest approach to the NPC's vertical axis.
++    const to = new THREE.Vector3(npc.pos.x - o.x, 0, npc.pos.z - o.z);
++    const along = to.x * d.x + to.z * d.z;
++    const flat = Math.hypot(d.x, d.z) || 1e-6;
++    const tAxis = along / (flat * flat);
++    if (tAxis < -1.5 || tAxis * flat > maxDist + 1.5) continue;
++    const px = o.x + d.x * tAxis;
++    const pz = o.z + d.z * tAxis;
++    if (Math.hypot(px - npc.pos.x, pz - npc.pos.z) > 1.2 && !npc.dead) continue;
++    for (const v of hitVolumes(npc)) {
++      const t = rayCapsule(o, d, v.a, v.b, v.r);
++      if (t === null || t > maxDist || (best && t >= best.distance)) continue;
++      const point = o.clone().addScaledVector(d, t);
++      let axis = v.a;
++      if (v.b) {
++        const u = v.b.clone().sub(v.a);
++        const k = Math.max(0, Math.min(1, point.clone().sub(v.a).dot(u) / u.dot(u)));
++        axis = v.a.clone().addScaledVector(u, k);
++      }
++      const normal = point.clone().sub(axis).normalize();
++      best = { npc, point, normal, distance: t, part: v.part, side: v.side };
++    }
++  }
++  return best;
++}
++
++/**
++ * Hit reaction clip for a part, from the bullet direction (travel) relative to the NPC's facing
++ * and the side of the body the point is on.
++ */
++export function hitClip(npc, { part, dir, side }) {
++  const fwd = { x: Math.sin(npc.facing), z: Math.cos(npc.facing) };
++  const fromFront = dir ? dir.x * fwd.x + dir.z * fwd.z < 0 : true;
++  if (part === 'head') return 'npc_hit_head';
++  if (part === 'arm') return side === 'Right' ? 'npc_hit_arm_right' : 'npc_hit_arm_left';
++  if (part === 'leg') return side === 'Right' ? 'npc_hit_leg_right' : 'npc_hit_leg_left';
++  return fromFront ? 'npc_hit_torso_front' : 'npc_hit_torso_back';
++}
++
++/** Wound hold (upper-body loop) for a part. */
++export function clutchClip({ part, side }) {
++  if (part === 'arm') return side === 'Right' ? 'npc_clutch_arm_right' : 'npc_clutch_arm_left';
++  if (part === 'leg') return 'npc_clutch_leg';
++  return 'npc_clutch_torso';
++}
++
++/**
++ * Death clip from how the shot arrived: from behind → forward onto the face; from the front →
++ * backwards; head shots, legs and seated victims crumple more often (deterministic per NPC).
++ */
++export function deathClip(npc, { part, dir }, rng) {
++  const fwd = { x: Math.sin(npc.facing), z: Math.cos(npc.facing) };
++  const fromBehind = dir ? dir.x * fwd.x + dir.z * fwd.z > 0.3 : false;
++  if (npc.seat) return 'npc_death_forward';
++  if (part === 'leg' || (part === 'head' && rng.chance(0.5))) return 'npc_death_crumple';
++  if (fromBehind) return 'npc_death_forward';
++  return rng.chance(0.75) ? 'npc_death_back' : 'npc_death_crumple';
++}
+diff --git a/src/npc/disposition.js b/src/npc/disposition.js
+index dfc2acb..ee03621 100644
+--- a/src/npc/disposition.js
++++ b/src/npc/disposition.js
+@@ -35,6 +35,10 @@ export const DEEDS = {
+   assaulted: { standing: -30, heat: -40, faction: 0.5 },
+   threatened: { standing: -15, heat: -25, faction: 0.3, repeat: 0.6, window: 30 },
+   defused: { standing: 3, heat: 15 },
++  wounded: { standing: -45, heat: -60, faction: 0.6 },
++  murdered: { standing: -100, heat: -80, faction: 1 },
++  witnessedShooting: { standing: -20, heat: -40, faction: 0.2, repeat: 0.5, window: 30 },
++  witnessedKilling: { standing: -40, heat: -60, faction: 0.3, repeat: 0.5, window: 60 },
+   apologised: { standing: 2, heat: 10, repeat: 0.3, window: 60 },
+ };
+ 
+diff --git a/src/npc/manager.js b/src/npc/manager.js
+index f5a6629..737fef5 100644
+--- a/src/npc/manager.js
++++ b/src/npc/manager.js
+@@ -13,6 +13,28 @@ import { makeLineOfSight } from './perception.js';
+ import { REACTION_MATRIX, STIMULUS_DEEDS, driveGain, selectReaction } from './reactions.js';
+ import { STIMULI, distToSegmentXZ } from './stimuli.js';
+ import { GROUPS } from './brain.js';
++import { PRESETS_BY_ID } from '../character/presets/index.js';
++import { fallbackInteractables } from '../world/interaction/fallback.js';
++import { seatSpec } from '../game/seat.js';
++import { hitTestNpcs, hitClip, deathClip, PART_MULTIPLIER } from './combat.js';
++import { ROUTES_BY_LOCATION } from './routes.js';
++
++// Workstream H's apartment-life activities (src/npc/activities/index.js), when present.
++const ACTIVITY_MODULES = import.meta.glob('./activities/index.js');
++async function loadActivities() {
++  const load = Object.values(ACTIVITY_MODULES)[0];
++  if (!load) return null;
++  try {
++    const m = await load();
++    return m.ACTIVITIES && typeof m.pickActivity === 'function' ? m : null;
++  } catch (err) {
++    console.warn(`NPC activities unavailable: ${err.message}`);
++    return null;
++  }
++}
++
++/** Seats the loft cast prefers, in order (contracts §5: the main characters chill in the loft). */
++export const LOFT_SEATS = ['loft.sofa.a2', 'loft.sofa.a4', 'loft.sofa.b2', 'loft.shellChair', 'loft.sofa.b4', 'loft.sofa.a1', 'loft.sofa.a3', 'loft.sofa.a5', 'loft.sofa.b1', 'loft.sofa.b3'];
+ 
+ // Social clips join the shared registry when workstream A's clips.js offers registerSamplers;
+ // NPCs bake them directly either way (see defaultClipsFor).
+@@ -57,7 +79,7 @@ export const FALLBACK_SPAWNS = [
+ /** LOD tiers: think / step rates (Hz) by distance to the player (m). Beyond `hide` NPCs are culled. */
+ export const LOD = { near: { dist: 20, think: 10, step: 60 }, mid: { dist: 45, think: 4, step: 20 }, far: { dist: Infinity, think: 1, step: 6 }, hide: 90 };
+ 
+-const REACT_COOLDOWN = { weaponDrawn: 8, aimedAt: 3, crouchSneak: 25, playerNear: 40, sprint: 12, bump: 1.2, door: 10, panic: 6, weaponHolstered: 6 };
++const REACT_COOLDOWN = { weaponDrawn: 8, aimedAt: 3, crouchSneak: 25, playerNear: 40, sprint: 12, bump: 1.2, door: 10, panic: 6, weaponHolstered: 6, panicSeen: 6, scream: 4, hitSeen: 1.5, gunshot: 0.6, gunshotNear: 0.4 };
+ const v3 = (p) => (Array.isArray(p) ? { x: p[0], y: p[1] ?? 0, z: p[2] } : p ? { x: p.x, y: p.y ?? 0, z: p.z } : null);
+ 
+ /**
+@@ -70,7 +92,7 @@ const v3 = (p) => (Array.isArray(p) ? { x: p[0], y: p[1] ?? 0, z: p[2] } : p ? {
+  *   (a DialogueDirector to start on talk), build: false (headless NPCs for tests).
+  */
+ export class NpcManager {
+-  constructor({ world = null, scene = null, player = null, clipsFor = defaultClipsFor, events = null, relationships = null, barks = null, dialogue = null, build = true, lod = LOD } = {}) {
++  constructor({ world = null, scene = null, player = null, clipsFor = defaultClipsFor, events = null, relationships = null, barks = null, dialogue = null, build = true, lod = LOD, activities = undefined, routes = undefined } = {}) {
+     this.world = world;
+     this.scene = scene;
+     this.player = player;
+@@ -95,6 +117,11 @@ export class NpcManager {
+     this.raycast = collision?.raycast ? collision.raycast.bind(collision) : null;
+     this.unsub = this.listen();
+     this.pairTimer = 0;
++    this.routes = routes ?? ROUTES_BY_LOCATION[world?.location?.id] ?? [];
++    this.claims = new Map();
++    // Activities: injected (tests), or H's registry loaded when it exists; null → built-in idles.
++    this.activities = activities ?? null;
++    if (activities === undefined) this.activitiesReady = loadActivities().then((m) => { if (m && !this.activities) this.activities = m; return this.activities; });
+   }
+ 
+   // --- spawning -----------------------------------------------------------------------------
+@@ -148,6 +175,144 @@ export class NpcManager {
+     return npc;
+   }
+ 
++  /**
++   * Spawns the loft cast (contracts §5): [{ presetId, def?, slot?, id?, name? }]. `def` (a saved
++   * definition) wins over the preset; `slot` is a seat interactable id, a seat item, or omitted (next
++   * free loft seat). These are the main characters, as guests: friends of the player and each other.
++   */
++  spawnCast(list = []) {
++    const seats = this.seatItems();
++    const out = [];
++    for (const entry of list) {
++      const def = entry.def ?? PRESETS_BY_ID[entry.presetId];
++      if (!def) {
++        console.warn(`spawnCast: no definition for ${entry.presetId}`);
++        continue;
++      }
++      let seat = typeof entry.slot === 'object' && entry.slot ? entry.slot : seats.find((s) => s.id === entry.slot);
++      if (!seat) seat = LOFT_SEATS.map((id) => seats.find((s) => s.id === id)).find((s) => s && !this.claims.has(s.id)) ?? null;
++      const id = entry.id ?? entry.presetId ?? def.id;
++      const spec = seat ? seatSpec(seat, this.collision) : null;
++      const pos = spec ? [spec.root.x, spec.root.y, spec.root.z] : entry.pos ?? [12.4, 0.1, 5];
++      const npc = this.spawn({ id, name: entry.name ?? def.name ?? id, archetype: entry.archetype ?? 'friend', definition: def, pos, yaw: spec?.yaw ?? entry.yaw ?? 0, traits: entry.traits });
++      if (spec) {
++        this.claims.set(spec.id, npc.id);
++        npc.sitAt(spec);
++      }
++      out.push(npc);
++    }
++    // The cast are friends: each grieves for / avenges the others.
++    for (const a of out) for (const b of out) if (a !== b) a.friends.add(b.id);
++    return out;
++  }
++
++  /** Seat interactables of the world (declared, else the location fallbacks). */
++  seatItems() {
++    if (!this.world) return [];
++    try {
++      return fallbackInteractables(this.world).filter((i) => i.kind === 'seat');
++    } catch {
++      return (this.world.data?.interactables ?? []).filter((i) => i.kind === 'seat');
++    }
++  }
++
++  /** Slot / seat claims shared with activities (one NPC per slot). */
++  claim(key, npc) {
++    const holder = this.claims.get(key);
++    if (holder && holder !== npc.id) return false;
++    this.claims.set(key, npc.id);
++    return true;
++  }
++
++  releaseSeat(key, npc) {
++    if (key && this.claims.get(key) === npc?.id) this.claims.delete(key);
++  }
++
++  /** Context handed to activities (contracts §7). */
++  activityContext(npc) {
++    return {
++      manager: this, world: this.world, npc, time: this.time, events: this.events, audio: this.ctx?.audio ?? globalThis.window?.game?.audio ?? null,
++      claim: (key) => this.claim(key, npc), release: (key) => this.releaseSeat(key, npc), seats: () => this.seatItems(),
++    };
++  }
++
++  // --- combat -------------------------------------------------------------------------------
++
++  /** Ray vs NPC hit volumes (contract §6): { npc, point, normal, distance, part, side } | null. */
++  hitTest(origin, dir, maxDist = 100) {
++    return hitTestNpcs(this.npcs, origin, dir, maxDist);
++  }
++
++  /**
++   * Applies a hit (contract §6): { amount = 1, point, dir, part = 'torso', side, source = 'player' }.
++   * Five pistol hits kill; the head counts double. Returns { health, killed }.
++   */
++  damage(target, { amount = 1, point = null, dir = null, part = 'torso', side = null, source = 'player' } = {}) {
++    const npc = typeof target === 'string' ? this.get(target) : target;
++    if (!npc || npc.dead) return { health: npc?.health ?? 0, killed: false };
++    const p = v3(point) ?? { x: npc.pos.x, y: npc.pos.y + 1.2, z: npc.pos.z };
++    const d = v3(dir) ?? (() => {
++      const from = this.playerPos() ?? { x: npc.pos.x, z: npc.pos.z - 1 };
++      const l = Math.hypot(npc.pos.x - from.x, npc.pos.z - from.z) || 1;
++      return { x: (npc.pos.x - from.x) / l, y: 0, z: (npc.pos.z - from.z) / l };
++    })();
++    if (!side && part !== 'head' && part !== 'torso') {
++      // Which side of the body the point is on (character space +X = left).
++      const lx = (p.x - npc.pos.x) * Math.cos(npc.facing) - (p.z - npc.pos.z) * Math.sin(npc.facing);
++      side = lx >= 0 ? 'Left' : 'Right';
++    }
++    npc.health -= amount * (PART_MULTIPLIER[part] ?? 1);
++    const killed = npc.health <= 0;
++    this.events.emit('npc:hit', { npc: npc.id, ref: npc, point: p, dir: d, part, side, health: Math.max(0, npc.health), source });
++    if (source === 'player') this.relationships.deed(npc.id, killed ? 'murdered' : 'wounded');
++    if (killed) this.kill(npc, { point: p, dir: d, part });
++    else this.hitReact(npc, { point: p, dir: d, part, side, source });
++    return { health: Math.max(0, npc.health), killed };
++  }
++
++  hitReact(npc, { dir, part, side, source }) {
++    if (npc.inDialogue) this.interruptDialogue(npc, 'hit');
++    const wasSeated = !!npc.seat;
++    if (wasSeated) npc.leaveSeat({ quick: true });
++    npc.releaseGesture();
++    npc.oneShot(wasSeated ? 'stumble' : hitClip(npc, { part, dir, side }));
++    npc.wounded({ part, side });
++    const from = source === 'player' ? this.playerPos() : null;
++    npc.threat = { type: 'gunshotNear', pos: from ?? { x: npc.pos.x - (dir?.x ?? 0) * 5, y: 0, z: npc.pos.z - (dir?.z ?? 0) * 5 }, time: npc.clock };
++    npc.drives.fear = Math.min(1, npc.drives.fear + 0.9 * (1.2 - npc.traits.bravery * 0.5));
++    npc.drives.alarm = 1;
++    npc.drives.anger = Math.min(1, npc.drives.anger + npc.traits.aggression * 0.8);
++    const fight = npc.temperament === 'tough' && npc.health > 2;
++    npc.intent = { id: fight ? 'combat' : 'flee', weight: 1, hold: 10 };
++    npc.bark('hurt', { part }, { force: true });
++    npc.lod.think = Infinity;
++    this.emitPanic(npc);
++    // Witnesses: the hit is seen (sight) and the scream heard (sound).
++    this.broadcast({ type: 'hitSeen', pos: { ...npc.pos }, source: npc.id, data: { victim: npc.id } }, { except: npc });
++    this.broadcast({ type: 'scream', pos: { ...npc.pos }, source: npc.id }, { except: npc });
++  }
++
++  kill(npc, { point, dir, part }) {
++    if (npc.inDialogue) this.interruptDialogue(npc, 'death');
++    if (npc.partner) {
++      npc.partner.partner = null;
++      npc.partner = null;
++    }
++    // Leave whatever the brain was doing (activities release their seats / props); no state after.
++    npc.brain.states[npc.brain.current]?.exit?.(npc, {});
++    npc.brain.current = 'dead';
++    const clip = deathClip(npc, { part, dir }, npc.rng);
++    npc.die(clip);
++    this.events.emit('npc:death', { npc: npc.id, ref: npc, point, dir, pos: { ...npc.pos }, clip });
++    this.broadcast({ type: 'death', pos: { ...npc.pos }, source: npc.id, data: { victim: npc.id } }, { except: npc });
++  }
++
++  emitPanic(npc) {
++    if (this.time - (npc.panicEmittedAt ?? -Infinity) < 5) return;
++    npc.panicEmittedAt = this.time;
++    this.events.emit('npc:panic', { npc: npc.id, pos: { ...npc.pos } });
++  }
++
+   get(id) {
+     return this.byId.get(typeof id === 'string' ? id.replace(/^npc:/, '') : id?.id);
+   }
+@@ -229,6 +394,7 @@ export class NpcManager {
+ 
+   /** Sense → react pipeline for one NPC. Returns the reaction (or null when not sensed / cooling down). */
+   stimulate(npc, stim, { visibility = null, force = false } = {}) {
++    if (npc.dead) return null;
+     const intensity = force ? stim.scale ?? 1 : npc.perception.sense(npc.pos, npc.facing, stim, { visibility });
+     if (intensity <= 0) return null;
+     const cd = REACT_COOLDOWN[stim.type] ?? 0;
+@@ -246,7 +412,9 @@ export class NpcManager {
+       this.relationships.deed(npc.id, deed, { scale: Math.max(0.35, intensity) });
+       if (stim.type === 'bump') npc.memory.vars.bumps = (npc.memory.vars.bumps ?? 0) + 1;
+     }
+-    const r = selectReaction({ type: stim.type, intensity, traits: npc.traits, temperament: npc.temperament, rank: npc.rank(), distance, repeats: npc.memory.vars.bumps ?? 0, state: npc.brain.state });
++    const victim = stim.data?.victim ? this.get(stim.data.victim) : null;
++    const friend = !!victim && (npc.friends.has(victim.id) || (victim.personality.faction === npc.personality.faction && npc.personality.faction !== 'civilians'));
++    const r = selectReaction({ type: stim.type, intensity, traits: npc.traits, temperament: npc.temperament, rank: npc.rank(), distance, repeats: npc.memory.vars.bumps ?? 0, state: npc.brain.state, friend });
+     if (!r || r.id === 'ignore') return r;
+     for (const [k, v] of Object.entries(r.drives ?? {})) {
+       const gain = v > 0 ? driveGain(k, npc.traits) * Math.max(0.4, intensity) : 1;
+@@ -258,6 +426,9 @@ export class NpcManager {
+     if (r.state && (!npc.intent || npc.intent.weight < 0.3 || groupOf(r.state) >= groupOf(npc.intent.id))) npc.intent = { id: r.state, weight: 1, hold: threat >= 0.5 ? 8 : 4 };
+     if (threat >= 0.3) npc.threat = { type: stim.type, pos: { ...stim.pos }, time: npc.clock };
+     if (npc.inDialogue && threat >= 0.4) this.interruptDialogue(npc, stim.type);
++    // Seated people jump up at anything dangerous.
++    if (npc.seat && threat >= 0.3 && r.id !== 'stare' && r.id !== 'glance') npc.leaveSeat({ quick: true });
++    if (r.state === 'flee' || r.state === 'cower' || r.panic) this.emitPanic(npc);
+     const sameState = r.state && r.state === npc.brain.state;
+     if (r.anim && !npc.inDialogue && !sameState) npc.oneShot(r.anim);
+     if (r.look) npc.look({ x: stim.pos.x, y: (stim.pos.y ?? 0) + 1.5, z: stim.pos.z }, r.look);
+@@ -278,6 +449,7 @@ export class NpcManager {
+   }
+ 
+   requestTalk(npc) {
++    if (!npc || npc.dead) return false;
+     const tree = npc.personality.dialogue;
+     if (npc.brain.state && GROUPS[npc.brain.states[npc.brain.state].group] >= GROUPS.threat) return false;
+     if (!tree || npc.rank() === 'hostile') {
+@@ -344,6 +516,7 @@ export class NpcManager {
+     }
+     let best = null;
+     for (const n of this.npcs) {
++      if (n.dead) continue;
+       const dx = n.pos.x - pos.x;
+       const dz = n.pos.z - pos.z;
+       const d = Math.hypot(dx, dz);
+@@ -399,7 +572,7 @@ export class NpcManager {
+       this.pairSocial();
+     }
+ 
+-    const others = this.npcs.map((n) => n.pos);
++    const others = this.npcs.filter((n) => !n.dead && !n.seat).map((n) => n.pos);
+     this.npcs.forEach((npc, i) => {
+       const d = view ? Math.hypot(npc.pos.x - pos.x, npc.pos.z - pos.z) : 0;
+       const tier = d < this.lodTable.near.dist ? 'near' : d < this.lodTable.mid.dist ? 'mid' : 'far';
+@@ -413,7 +586,13 @@ export class NpcManager {
+       const env = { time: this.time, player: view ? { ...view, dist: d, visible: npc.perception.visibility > 0.15 } : null, neighbours: [...others.filter((o) => o !== npc.pos), ...(pos ? [pos] : [])] };
+       // Senses at ≥ 5 Hz near, else with the think rate.
+       const senseRate = tier === 'near' ? 1 / 8 : 1 / L.think;
++      if (npc.dead) {
++        npc.lod.sense = 0;
++        npc.lod.think = 0;
++        npc.lod.thinkDt = 0;
++      }
+       if (npc.lod.sense >= senseRate - 1e-9) {
++        this.senseCrowd(npc);
+         this.sensePlayer(npc, view, d, npc.lod.sense);
+         npc.decay(npc.lod.sense, env);
+         npc.lod.sense = 0;
+@@ -433,6 +612,16 @@ export class NpcManager {
+     });
+   }
+ 
++  /** Panic by sight: someone visibly running or cowering nearby is itself a stimulus. */
++  senseCrowd(npc) {
++    for (const o of this.npcs) {
++      if (o === npc || o.dead || !['flee', 'cower'].includes(o.brain.state)) continue;
++      if (Math.hypot(o.pos.x - npc.pos.x, o.pos.z - npc.pos.z) > STIMULI.panicSeen.radius) continue;
++      this.stimulate(npc, { type: 'panicSeen', pos: { ...o.pos }, source: o.id });
++      break;
++    }
++  }
++
+   /** Continuous player-driven stimuli (visibility, weapon, aim, sneaking, proximity, bumps). */
+   sensePlayer(npc, view, d, dt) {
+     if (!view) return;
+@@ -460,7 +649,7 @@ export class NpcManager {
+   /** Pairs nearby sociable idle NPCs into conversations; breaks pairs that drift or get busy. */
+   pairSocial() {
+     // NPCs holding a scenario point (leaning, behind a counter) stay put; free ones pair up.
+-    const ambient = (n) => !n.home.scenario && !n.inDialogue && ['idle', 'social', null, undefined].includes(n.brain.state) && n.drives.fear < 0.2 && n.drives.alarm < 0.3;
++    const ambient = (n) => !n.dead && !n.home.scenario && !n.inDialogue && ['idle', 'social', null, undefined].includes(n.brain.state) && n.drives.fear < 0.2 && n.drives.alarm < 0.3;
+     for (const n of this.npcs) {
+       if (n.partner && (!ambient(n) || !ambient(n.partner) || Math.hypot(n.pos.x - n.partner.pos.x, n.pos.z - n.partner.pos.z) > 4)) {
+         n.partner.partner = null;
+@@ -481,7 +670,7 @@ export class NpcManager {
+ 
+   /** NPCs as interactables (contract §2 shape, kind 'npc') for C's interaction prompts. */
+   interactables() {
+-    return this.npcs.map((n) => ({
++    return this.npcs.filter((n) => !n.dead).map((n) => ({
+       id: `npc:${n.id}`, kind: 'npc', pos: [n.pos.x, n.pos.y + 1.0, n.pos.z], yaw: n.facing, radius: 1.8,
+       prompt: n.personality.dialogue ? `Talk to ${n.name}` : 'Greet', data: { npc: n, npcId: n.id, tree: n.personality.dialogue },
+     }));
+@@ -489,7 +678,7 @@ export class NpcManager {
+ 
+   /** Capsule bodies for World.update(dt, { bodies }) (doors, physics props). */
+   bodies() {
+-    return this.npcs.map((n) => n.body());
++    return this.npcs.map((n) => n.body()).filter(Boolean);
+   }
+ 
+   nearest(pos, maxDist = Infinity, filter = () => true) {
+@@ -503,7 +692,7 @@ export class NpcManager {
+ 
+   /** Active barks for an overlay: [{ npc, text, emotion, head }]. */
+   speeches() {
+-    return this.npcs.filter((n) => n.speech && n.holder?.visible !== false).map((n) => ({ npc: n, text: n.speech.text, emotion: n.speech.emotion, head: n.headPos() }));
++    return this.npcs.filter((n) => !n.dead && n.speech && n.holder?.visible !== false).map((n) => ({ npc: n, text: n.speech.text, emotion: n.speech.emotion, head: n.headPos() }));
+   }
+ 
+   dispose() {
+diff --git a/src/npc/npc.js b/src/npc/npc.js
+index d2daecc..dffda83 100644
+--- a/src/npc/npc.js
++++ b/src/npc/npc.js
+@@ -8,6 +8,9 @@ import { Brain } from './brain.js';
+ import { LookAt } from './look-at.js';
+ import { temperament } from './reactions.js';
+ import { SPEEDS, arrive, avoidWalls, separation, turnToward, wrapAngle, vlen } from './steering.js';
++import { seatSpec } from '../game/seat.js';
++import { MAX_HEALTH, clutchClip } from './combat.js';
++import { DEATH_CLIPS } from '../anim/social-clips.js';
+ 
+ /**
+  * Clip substitutes when a clip is missing (a character baked without social clips, or a name another
+@@ -19,6 +22,10 @@ export const CLIP_FALLBACKS = {
+   npc_flee_run: 'run', npc_anger_point: 'angry', npc_confront: 'idle', npc_greet_wave: 'wave', npc_greet_nod: null, npc_shrug: 'shrug',
+   npc_listen: 'idle', npc_talk_gesture_1: 'talk', npc_talk_gesture_2: 'talk', npc_talk_gesture_3: 'talk', npc_talk_gesture_4: 'talk',
+   lookAround: 'idle', sprint: 'run', melee_jab: 'angry', crouchIdle: 'idle', stepInPlace: 'idle', angry: 'point', hitReact: null,
++  sitIdle_sofa: 'sitIdle', sitIdle_chair: 'sitIdle', sitIdle_bench: 'sitIdle', sitIdle_stool: 'sitIdle', sitIdle: 'sit',
++  npc_hit_head: 'hitReact', npc_hit_torso_front: 'hitReact', npc_hit_torso_back: 'stumble', npc_hit_arm_left: 'hitReact', npc_hit_arm_right: 'hitReact',
++  npc_hit_leg_left: 'stumble', npc_hit_leg_right: 'stumble', npc_duck: 'npc_fear_cower', npc_death_back: 'death', npc_death_forward: 'death', npc_death_crumple: 'death',
++  npc_dead_pose_back: null, npc_dead_pose_front: null, npc_dead_pose_side: null,
+ };
+ 
+ const DRIVE_DECAY = { fear: 0.045, anger: 0.035, alarm: 0.12, interest: 0.09, social: 0.2, surrender: 0.12 };
+@@ -70,6 +77,12 @@ export class Npc {
+     this.character = character;
+     this.height = character?.userData.layout?.measures.height ?? 1.75;
+     this.lod = { tier: 'near', think: 0, anim: 0 };
++    this.health = MAX_HEALTH;
++    this.maxHealth = MAX_HEALTH;
++    this.dead = false;
++    this.seat = null;
++    this.wound = null;
++    this.friends = new Set();
+     if (character) this.attachBody(character);
+   }
+ 
+@@ -110,8 +123,15 @@ export class Npc {
+     return this.manager?.relationships.score(this.id) ?? 0;
+   }
+ 
++  /** Eye position: from the posed head bone when there is a body, else from the standing height. */
+   headPos() {
+-    return { x: this.pos.x, y: this.pos.y + this.height * EYE_FRACTION, z: this.pos.z };
++    const bones = this.character?.userData.rig?.bones;
++    if (bones) {
++      this.headBone ??= bones.find((b) => b.name.endsWith('Head'));
++      const p = this.headBone.getWorldPosition(new THREE.Vector3());
++      return { x: p.x, y: p.y + 0.07 * (this.height / 1.78), z: p.z };
++    }
++    return { x: this.pos.x, y: this.pos.y + this.height * EYE_FRACTION * (this.seat ? 0.72 : 1), z: this.pos.z };
+   }
+ 
+   intentBonus(id) {
+@@ -120,9 +140,100 @@ export class Npc {
+ 
+   scenarioClip() {
+     const s = this.home.scenario;
++    if (this.seat) return this.seatClip();
+     return s ? { lean: 'npc_lean_wall', phone: 'npc_phone', smoke: 'smoke', armsCrossed: 'npc_idle_armsCrossed', pockets: 'npc_idle_pockets', counter: 'npc_idle_weight' }[s] ?? null : null;
+   }
+ 
++  /** Seated loop for the current seat (A's per-variant sitIdle when present, else `sit`). */
++  seatClip() {
++    const v = this.seat?.variant;
++    return (v && this.resolveClip(`sitIdle_${v}`)) || this.resolveClip('sitIdle') || 'sit';
++  }
++
++  /**
++   * Sits on a seat interactable (contract §2 kind 'seat') or a seatSpec: the root goes to the seat's
++   * root point, facing out of it, and the body stays put (no collision push) until leaveSeat().
++   */
++  sitAt(item) {
++    const spec = item.hips && item.root ? item : seatSpec(item, this.collision);
++    this.seat = spec;
++    this.stop();
++    this.pos.x = spec.root.x;
++    this.pos.y = spec.root.y;
++    this.pos.z = spec.root.z;
++    this.facing = spec.yaw;
++    this.targetFacing = spec.yaw;
++    this.velocity = { x: 0, z: 0 };
++    this.home = { x: spec.root.x, y: spec.root.y, z: spec.root.z, yaw: spec.yaw, scenario: 'seated' };
++    this.setRest(this.seatClip());
++    this.sync();
++    return spec;
++  }
++
++  /**
++   * Gets up: the body glides to the seat's exit point (quick = a startled jump up). Home becomes the
++   * standing spot (the seat belongs to whatever activity claims it next).
++   */
++  leaveSeat({ quick = false } = {}) {
++    const s = this.seat;
++    if (!s) return false;
++    this.seat = null;
++    const exit = s.exit ?? s.root;
++    this.transition = { from: { ...this.pos }, to: { x: exit.x, y: exit.y, z: exit.z }, t: 0, dur: quick ? 0.35 : 0.7 };
++    this.home = { x: exit.x, y: exit.y, z: exit.z, yaw: s.yaw, scenario: null };
++    this.setRest(null);
++    if (!quick && this.resolveClip(`standUp_${s.variant}`)) this.oneShot(`standUp_${s.variant}`);
++    else if (!quick && this.resolveClip('standUp')) this.oneShot('standUp');
++    this.manager?.releaseSeat?.(s.id, this);
++    return true;
++  }
++
++  /** Wound bookkeeping after a non-lethal hit: clutch the part, limp on a leg wound. */
++  wounded({ part, side }) {
++    this.wound = { part, side, time: this.clock };
++    this.gesture(clutchClip({ part, side }), { duration: 8 });
++  }
++
++  /**
++   * Death: everything stops, the fall clip plays as a full-body one-shot over a base that already
++   * holds the matching dead pose, so the body ends on the floor and stays there.
++   */
++  die(clip) {
++    this.dead = true;
++    this.health = 0;
++    this.stop();
++    this.inDialogue = false;
++    this.velocity = { x: 0, z: 0 };
++    this.speech = null;
++    if (this.seat) {
++      // Slide forward off the seat as the body goes down.
++      const s = this.seat;
++      this.seat = null;
++      this.pos.x = s.root.x + Math.sin(s.yaw) * 0.35;
++      this.pos.z = s.root.z + Math.cos(s.yaw) * 0.35;
++      this.manager?.releaseSeat?.(s.id, this);
++    }
++    const g = this.collision?.groundAt(this.pos.x, this.pos.z, this.pos.y + 0.5);
++    if (g) this.pos.y = g.y;
++    this.deathClip = clip;
++    this.deadPose = DEATH_CLIPS[clip] ?? null;
++    const a = this.animator;
++    if (!a) return;
++    a.setGround(null);
++    this.lookAt.setTarget(null);
++    this.lookAt.weight = 0;
++    this.gestureTimer = null;
++    a.locked = null;
++    a.queued = null;
++    a.after = null;
++    a.release();
++    const hold = this.resolveClip(this.deadPose);
++    if (hold) a.locomotion(hold);
++    const fall = this.resolveClip(clip);
++    if (fall) a.oneShot(fall);
++    this.sync();
++  }
++
+   pickIdle() {
+     return this.rng.pick(this.personality.idles);
+   }
+@@ -150,7 +261,11 @@ export class Npc {
+   // --- commands (used by brain states and dialogue) -------------------------------------------
+ 
+   moveTo(target, gait = 'walk', { stop = 0.35 } = {}) {
+-    this.nav = { target: { x: target.x, y: target.y ?? this.pos.y, z: target.z }, speed: SPEEDS[gait] ?? SPEEDS.walk, gait, stop };
++    if (this.dead) return;
++    if (this.seat) this.leaveSeat({ quick: gait !== 'walk' });
++    // A leg wound limps: no faster than a hurried walk.
++    const speed = Math.min(SPEEDS[gait] ?? SPEEDS.walk, this.wound?.part === 'leg' ? SPEEDS.walk * 1.3 : Infinity);
++    this.nav = { target: { x: target.x, y: target.y ?? this.pos.y, z: target.z }, speed, gait, stop };
+     this.moving = true;
+     this.stuck = false;
+     this.stuckTime = 0;
+@@ -266,6 +381,22 @@ export class Npc {
+   }
+ 
+   integrate(dt, env) {
++    if (this.dead || this.seat) {
++      this.speed = 0;
++      return;
++    }
++    if (this.transition) {
++      // Getting up off a seat: glide to the standing spot (the seat's collider is not involved).
++      const tr = this.transition;
++      tr.t = Math.min(1, tr.t + dt / tr.dur);
++      const e = tr.t * tr.t * (3 - 2 * tr.t);
++      this.pos.x = tr.from.x + (tr.to.x - tr.from.x) * e;
++      this.pos.y = tr.from.y + (tr.to.y - tr.from.y) * e;
++      this.pos.z = tr.from.z + (tr.to.z - tr.from.z) * e;
++      this.speed = 0;
++      if (tr.t >= 1) this.transition = null;
++      return;
++    }
+     let desired = { x: 0, z: 0 };
+     if (this.nav) {
+       desired = arrive(this.pos, this.nav.target, this.nav.speed, { stop: this.nav.stop, slow: this.nav.speed > 2 ? 2.2 : 1.2 });
+@@ -310,6 +441,8 @@ export class Npc {
+   }
+ 
+   locomotionClip() {
++    if (this.dead) return this.deadPose ?? 'idle';
++    if (this.seat) return this.rest ?? this.seatClip();
+     const s = this.speed ?? 0;
+     if (s > 0.2) {
+       if (this.fleeing) return s > 2 ? 'npc_flee_run' : 'walk';
+@@ -323,8 +456,8 @@ export class Npc {
+   animate(dt) {
+     const a = this.animator;
+     if (!a) return;
+-    const want = this.resolveClip(this.locomotionClip()) ?? 'idle';
+-    if (want !== a.baseName) a.locomotion(want);
++    const want = this.resolveClip(this.locomotionClip()) ?? (this.dead ? a.baseName : 'idle');
++    if (want && want !== a.baseName) a.locomotion(want);
+     const clipSpeed = this.clips[want]?.userData.speed;
+     if (a.base) a.base.timeScale = clipSpeed && this.speed > 0.2 ? THREE.MathUtils.clamp(this.speed / clipSpeed, 0.6, 1.6) : 1;
+     this.sync();
+@@ -332,8 +465,10 @@ export class Npc {
+     if (this.phone) this.phone.visible = want === 'npc_phone';
+     else if (want === 'npc_phone') this.attachPhone();
+     if (this.lookTime > 0) this.lookTime -= dt;
+-    this.lookAt.setTarget(this.lookTime > 0 ? this.lookTarget : null);
+-    this.lookAt.update(dt, this.facing, this.headPos());
++    if (!this.dead) {
++      this.lookAt.setTarget(this.lookTime > 0 ? this.lookTarget : null);
++      this.lookAt.update(dt, this.facing, this.headPos());
++    }
+     if (this.lod.tier !== 'far') updateCorrectives(this.character);
+   }
+ 
+@@ -359,6 +494,7 @@ export class Npc {
+ 
+   /** Capsule body for door pushing / physics (contract §3). */
+   body() {
++    if (this.dead || this.seat) return null;
+     return { id: `npc:${this.id}`, x: this.pos.x, y: this.pos.y, z: this.pos.z, vx: this.velocity.x, vz: this.velocity.z, radius: 0.3, height: this.height, mass: 70, npc: this.id };
+   }
+ }
+diff --git a/src/npc/reactions.js b/src/npc/reactions.js
+index 29535f3..8b5d615 100644
+--- a/src/npc/reactions.js
++++ b/src/npc/reactions.js
+@@ -38,6 +38,9 @@ export const REACTIONS = {
+   confront: { drives: { anger: 0.65, alarm: 0.5 }, bark: 'confront', look: 6, state: 'confront' },
+   fight: { drives: { anger: 1, alarm: 0.8 }, bark: 'fight', look: 6, state: 'combat' },
+   calm: { drives: { fear: -0.35, anger: -0.2, alarm: -0.2, surrender: -1 }, bark: 'relief' },
++  duck: { drives: { fear: 0.95, alarm: 0.8 }, anim: 'npc_duck', bark: 'scream', panic: true, state: 'cower' },
++  grief: { drives: { fear: 0.55, alarm: 0.8 }, bark: 'grief', look: 8, panic: true, state: 'cower' },
++  avenge: { drives: { anger: 1, alarm: 0.9 }, bark: 'avenge', look: 8, state: 'combat' },
+ };
+ 
+ const hostile = (c) => rankIndex(c.rank) <= 1;
+@@ -48,7 +51,7 @@ const close = (c, m) => c.distance < m;
+ export const REACTION_MATRIX = {
+   gunshot: {
+     coward: (c) => (close(c, 10) ? 'cower' : 'flee'),
+-    normal: (c) => (close(c, 4) ? 'cower' : 'flee'),
++    normal: (c) => (close(c, 6) ? 'duck' : 'flee'),
+     hothead: 'flee',
+     tough: (c) => (hostile(c) ? 'fight' : c.intensity > 0.6 ? 'flee' : 'wary'),
+   },
+@@ -69,6 +72,21 @@ export const REACTION_MATRIX = {
+   melee: { coward: 'flee', normal: (c) => (close(c, 5) ? 'flee' : 'startle'), hothead: 'confront', tough: (c) => (close(c, 6) ? 'confront' : 'stare') },
+   assault: { coward: 'cower', normal: 'flee', hothead: 'fight', tough: 'fight' },
+   panic: { coward: 'flee', normal: (c) => (c.intensity > 0.45 ? 'flee' : 'startle'), hothead: 'startle', tough: 'stare' },
++  panicSeen: { coward: 'flee', normal: (c) => (c.intensity > 0.35 ? 'flee' : 'startle'), hothead: 'startle', tough: 'stare' },
++  scream: { coward: 'flee', normal: (c) => (c.intensity > 0.4 ? 'flee' : 'startle'), hothead: 'startle', tough: 'stare' },
++  // Someone shot / killed in view. `friend`: the victim is one of theirs.
++  hitSeen: {
++    coward: (c) => (c.friend && close(c, 10) ? 'grief' : close(c, 7) ? 'duck' : 'flee'),
++    normal: (c) => (close(c, 5) ? 'duck' : 'flee'),
++    hothead: (c) => (c.friend ? 'avenge' : 'flee'),
++    tough: (c) => (c.friend || hostile(c) ? 'avenge' : 'confront'),
++  },
++  death: {
++    coward: (c) => (c.friend && close(c, 12) ? 'grief' : close(c, 6) ? 'cower' : 'flee'),
++    normal: (c) => (c.friend && close(c, 8) ? 'grief' : 'flee'),
++    hothead: (c) => (c.friend ? 'avenge' : 'flee'),
++    tough: (c) => (c.friend ? 'avenge' : hostile(c) ? 'confront' : 'flee'),
++  },
+   bump: {
+     coward: 'complain',
+     normal: 'complain',
+@@ -83,7 +101,7 @@ export const REACTION_MATRIX = {
+ };
+ 
+ /** Deed recorded against the player when an NPC senses a stimulus (null = none). */
+-export const STIMULUS_DEEDS = { gunshot: 'gunfireNearby', gunshotNear: 'shotAt', aimedAt: 'aimedAt', weaponDrawn: 'weaponShown', bump: 'bumped', assault: 'assaulted', crouchSneak: 'stared' };
++export const STIMULUS_DEEDS = { gunshot: 'gunfireNearby', gunshotNear: 'shotAt', aimedAt: 'aimedAt', weaponDrawn: 'weaponShown', bump: 'bumped', assault: 'assaulted', crouchSneak: 'stared', hitSeen: 'witnessedShooting', death: 'witnessedKilling' };
+ 
+ /** Drive gains by trait: fear is damped by bravery, anger fed by aggression, social by sociability. */
+ export function driveGain(drive, traits) {
+diff --git a/src/npc/routes.js b/src/npc/routes.js
+new file mode 100644
+index 0000000..6570c43
+--- /dev/null
++++ b/src/npc/routes.js
+@@ -0,0 +1,53 @@
++import { UNIT, CORRIDOR, HALL } from '../world/locations/foundry/layout.js';
++
++/**
++ * Escape routes: waypoint chains from an enclosed zone to the street, used by fleeing NPCs instead of
++ * open-ground flee steering (which cannot find a door). A route applies while the NPC stands inside
++ * `zone` (x/z rectangle, optional y range); the NPC joins at the first waypoint ahead of it.
++ * Locations without routes fall back to steering. Add routes per location here.
++ */
++const mid = (a, b) => (a + b) / 2;
++const loftDoorX = mid(UNIT.door.x0, UNIT.door.x1);
++const corridorZ = mid(CORRIDOR.z0, CORRIDOR.z1);
++const hallX = mid(HALL.x0, HALL.x1);
++const street = [[hallX, 0.9], [hallX, -1.6], [hallX + 1.5, -2.6]];
++
++export const FOUNDRY_ROUTES = [
++  // Loft 1B ground floor → loft door → corridor → entry hall → street.
++  { id: 'loft', zone: { x0: UNIT.x0, x1: UNIT.x1, z0: UNIT.z0, z1: UNIT.z1, y1: 2 }, path: [[loftDoorX, UNIT.door.z - 0.7], [loftDoorX, UNIT.door.z + 0.2], [loftDoorX, corridorZ], [hallX, corridorZ], [hallX, CORRIDOR.z0 - 0.6], ...street] },
++  // Corridor → hall → street.
++  { id: 'corridor', zone: { x0: CORRIDOR.x0, x1: CORRIDOR.x1, z0: CORRIDOR.z0, z1: CORRIDOR.z1 }, path: [[hallX, corridorZ], [hallX, CORRIDOR.z0 - 0.6], ...street] },
++  // Entry hall → street.
++  { id: 'hall', zone: { x0: HALL.x0, x1: HALL.x1, z0: HALL.z0, z1: HALL.z1 }, path: street },
++];
++
++export const ROUTES_BY_LOCATION = { 'foundry-st': FOUNDRY_ROUTES };
++
++const inside = (z, p) => p.x >= z.x0 && p.x <= z.x1 && p.z >= z.z0 && p.z <= z.z1 && (z.y1 === undefined || (p.y ?? 0) <= z.y1);
++
++/**
++ * Waypoints ({ x, z }) to follow from `pos` (null when no route covers it). Skips the first waypoint
++ * when the NPC is already past it, and refuses a route whose next leg runs within
++ * `avoidRadius` of the threat (then plain flee steering is safer).
++ */
++export function escapeRoute(routes, pos, threat = null, { avoidRadius = 1.6 } = {}) {
++  const r = routes?.find((x) => inside(x.zone, pos));
++  if (!r) return null;
++  const pts = r.path.map(([x, z]) => ({ x, z }));
++  // Routes are authored from inside the zone outwards; skip the first waypoint when already past it.
++  let start = 0;
++  if (pts.length > 1) {
++    const [a, b] = pts;
++    if ((pos.x - a.x) * (b.x - a.x) + (pos.z - a.z) * (b.z - a.z) > 0) start = 1;
++  }
++  const path = pts.slice(start);
++  if (threat && path.length) {
++    const p = path[0];
++    const ex = p.x - pos.x;
++    const ez = p.z - pos.z;
++    const len2 = ex * ex + ez * ez || 1e-9;
++    const t = Math.max(0, Math.min(1, ((threat.x - pos.x) * ex + (threat.z - pos.z) * ez) / len2));
++    if (Math.hypot(threat.x - (pos.x + ex * t), threat.z - (pos.z + ez * t)) < avoidRadius) return null;
++  }
++  return { id: r.id, path };
++}
+diff --git a/src/npc/stimuli.js b/src/npc/stimuli.js
+index 516cbe7..c7c4f22 100644
+--- a/src/npc/stimuli.js
++++ b/src/npc/stimuli.js
+@@ -22,6 +22,11 @@ export const STIMULI = {
+   door: { sense: 'sound', radius: 10, threat: 0.03, memory: 6 },
+   panic: { sense: 'sound', radius: 14, threat: 0.55, memory: 20 },
+   playerNear: { sense: 'sight', radius: 4, threat: 0, memory: 3 },
++  // Violence seen or heard: someone shot, someone dying, people screaming / running.
++  hitSeen: { sense: 'sight', radius: 22, threat: 0.9, memory: 60 },
++  death: { sense: 'sight', radius: 25, threat: 1, memory: 120 },
++  scream: { sense: 'sound', radius: 16, threat: 0.5, memory: 20 },
++  panicSeen: { sense: 'sight', radius: 15, threat: 0.5, memory: 20 },
+   talkRequest: { sense: 'touch', radius: 3, threat: 0, memory: 2 },
+ };
+ 
+diff --git a/tests/npc-combat.test.js b/tests/npc-combat.test.js
+new file mode 100644
+index 0000000..2d6c051
+--- /dev/null
++++ b/tests/npc-combat.test.js
+@@ -0,0 +1,197 @@
++import { describe, test, expect, vi } from 'vitest';
++import * as THREE from 'three';
++import { NpcManager } from '../src/npc/manager.js';
++import { EventBus } from '../src/npc/events.js';
++import { rayCapsule, hitVolumes, MAX_HEALTH } from '../src/npc/combat.js';
++import { escapeRoute, FOUNDRY_ROUTES } from '../src/npc/routes.js';
++import { MAIN_PRESETS } from '../src/character/presets/index.js';
++
++const P = (x, z) => ({ x, y: 0, z });
++
++function setup(defs = [], { player = { pos: P(0, 0), facing: 0 }, ...opts } = {}) {
++  const bus = new EventBus();
++  const events = [];
++  bus.on('*', (p, type) => events.push([type, p]));
++  const m = new NpcManager({ build: false, events: bus, player, activities: null, ...opts });
++  const npcs = defs.map((d) => m.spawn(d));
++  const run = (seconds, dt = 1 / 30) => {
++    for (let t = 0; t < seconds; t += dt) m.update(dt);
++  };
++  return { m, bus, npcs, run, events };
++}
++
++/** A sofa-like seat item (contract §2) at (x, z) facing +Z with an exit spot in front. */
++const seat = (id, x, z) => ({ id, kind: 'seat', pos: [x, 0.45, z], yaw: 0, data: { seatHeight: 0.45, variant: 'sofa', exit: [x, 0, z + 0.65] } });
++
++describe('hit volumes and ray tests', () => {
++  test('ray vs capsule and sphere', () => {
++    const o = new THREE.Vector3(0, 1, -5);
++    const d = new THREE.Vector3(0, 0, 1);
++    expect(rayCapsule(o, d, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 2, 0), 0.2)).toBeCloseTo(4.8, 3);
++    expect(rayCapsule(o, d, new THREE.Vector3(0.5, 0, 0), new THREE.Vector3(0.5, 2, 0), 0.2)).toBeNull();
++    expect(rayCapsule(o, d, new THREE.Vector3(0, 1, 0), null, 0.3)).toBeCloseTo(4.7, 3);
++  });
++
++  test('hitTest finds the part the ray crosses, nearest NPC first', () => {
++    const { m, npcs } = setup([{ id: 'a', pos: [0, 0, 5], yaw: Math.PI }, { id: 'b', pos: [0, 0, 8], yaw: Math.PI }]);
++    const head = m.hitTest([0, 1.67, 0], [0, 0, 1], 50);
++    expect(head).toMatchObject({ part: 'head' });
++    expect(head.npc).toBe(npcs[0]);
++    expect(head.distance).toBeGreaterThan(4.6);
++    expect(head.distance).toBeLessThan(5);
++    expect(m.hitTest([0, 1.2, 0], [0, 0, 1], 50).part).toBe('torso');
++    // Facing the shooter, the NPC's left arm is on world −X.
++    const arm = m.hitTest([-0.24, 1.15, 0], [0, 0, 1], 50);
++    expect(arm).toMatchObject({ part: 'arm', side: 'Left' });
++    expect(m.hitTest([0.11, 0.5, 0], [0, 0, 1], 50)).toMatchObject({ part: 'leg', side: 'Right' });
++    expect(m.hitTest([0, 2.4, 0], [0, 0, 1], 50)).toBeNull();
++    expect(m.hitTest([0, 1.2, 0], [0, 0, 1], 3)).toBeNull();
++    expect(hitVolumes(npcs[0]).length).toBe(10);
++  });
++});
++
++describe('damage, death and witnesses', () => {
++  test('five body hits kill, the head counts double; events and bookkeeping follow', () => {
++    const { m, npcs, events, run } = setup([{ id: 'v', archetype: 'resident', pos: [0, 0, 6], yaw: Math.PI }]);
++    run(0.2);
++    for (let i = 0; i < MAX_HEALTH - 1; i++) expect(m.damage(npcs[0], { part: 'torso' }).killed).toBe(false);
++    expect(npcs[0].wound.part).toBe('torso');
++    expect(m.damage(npcs[0], { part: 'torso' }).killed).toBe(true);
++    expect(npcs[0].dead).toBe(true);
++    expect(m.damage(npcs[0], { part: 'torso' }).killed).toBe(false);
++    expect(events.filter(([t]) => t === 'npc:hit')).toHaveLength(MAX_HEALTH);
++    expect(events.filter(([t]) => t === 'npc:death')).toHaveLength(1);
++    expect(m.bodies()).toHaveLength(0);
++    expect(m.interactables()).toHaveLength(0);
++    run(2);
++    expect(npcs[0].pos.z).toBe(6);
++    const h = setup([{ id: 'h', pos: [0, 0, 6] }]);
++    h.m.damage('h', { part: 'head' });
++    h.m.damage('h', { part: 'head' });
++    expect(h.npcs[0].dead).toBe(false);
++    h.m.damage('h', { part: 'head' });
++    expect(h.npcs[0].dead).toBe(true);
++  });
++
++  test('a wounded NPC flees or fights; a witness panics and the panic event fires', () => {
++    const { m, npcs, run, events } = setup([
++      { id: 'victim', archetype: 'resident', pos: [0, 0, 6], yaw: Math.PI, traits: { bravery: 0.4, aggression: 0.2, wander: 0 } },
++      { id: 'witness', archetype: 'pedestrian', pos: [3, 0, 7], yaw: -Math.PI / 2, traits: { bravery: 0.4, aggression: 0.2, wander: 0 } },
++    ]);
++    run(0.3);
++    m.damage(npcs[0], { part: 'arm', point: { x: -0.2, y: 1.2, z: 6 }, dir: { x: 0, y: 0, z: 1 } });
++    run(1.5);
++    expect(npcs[0].brain.state).toBe('flee');
++    expect(['flee', 'cower']).toContain(npcs[1].brain.state);
++    expect(events.some(([t, p]) => t === 'npc:panic' && p.npc === 'witness')).toBe(true);
++    expect(events.some(([t, p]) => t === 'npc:bark' && p.concept === 'hurt')).toBe(true);
++  });
++
++  test('friends of the dead grieve or avenge; strangers flee', () => {
++    const { m, npcs, run } = setup([
++      { id: 'dead', archetype: 'resident', pos: [0, 0, 6], yaw: Math.PI },
++      { id: 'pal', archetype: 'resident', pos: [2, 0, 6], yaw: -Math.PI / 2, traits: { bravery: 0.2, aggression: 0.1, wander: 0 } },
++      { id: 'brother', archetype: 'thug', pos: [-2, 0, 6], yaw: Math.PI / 2, traits: { bravery: 0.95, aggression: 0.9, wander: 0 } },
++      { id: 'stranger', archetype: 'pedestrian', pos: [3, 0, 9], yaw: -Math.PI / 2, traits: { bravery: 0.4, aggression: 0.2, wander: 0 } },
++    ]);
++    npcs[2].friends.add('dead');
++    const reacts = [];
++    m.events.on('npc:react', (p) => reacts.push(p));
++    run(0.3);
++    m.damage(npcs[0], { part: 'head', amount: 5 });
++    run(1.2);
++    const by = (id) => reacts.filter((r) => r.npc === id && r.stimulus === 'death').map((r) => r.reaction);
++    expect(by('pal')).toContain('grief');
++    expect(by('brother')).toContain('avenge');
++    expect(by('stranger')).toContain('flee');
++    expect(['combat', 'confront']).toContain(npcs[2].brain.state);
++  });
++});
++
++describe('loft cast', () => {
++  test('spawnCast seats the main characters on free seats; a gunshot gets them up and running for the door', () => {
++    const seats = [seat('loft.sofa.a2', 11.5, 0.9), seat('loft.sofa.a4', 12.9, 0.9)];
++    const { m, run, bus } = setup([], { player: { pos: P(12.2, 6), facing: Math.PI }, routes: FOUNDRY_ROUTES });
++    m.seatItems = () => seats;
++    const cast = m.spawnCast(MAIN_PRESETS.slice(0, 2).map((p) => ({ presetId: p.id })));
++    expect(cast.map((n) => n.id)).toEqual(MAIN_PRESETS.slice(0, 2).map((p) => p.id));
++    expect(cast.every((n) => n.seat)).toBe(true);
++    expect(cast[0].friends.has(cast[1].id)).toBe(true);
++    expect(cast[0].personality.archetype).toBe('friend');
++    expect(m.claims.get('loft.sofa.a2')).toBe(cast[0].id);
++    run(2);
++    expect(cast.every((n) => n.seat && n.speed === 0)).toBe(true);
++    bus.emit('player:fire', { pos: { x: 12.2, y: 1.4, z: 6 }, dir: { x: 1, y: 0, z: 0 }, weapon: 'pistol' });
++    run(0.5);
++    expect(cast.every((n) => !n.seat)).toBe(true);
++    run(4);
++    // Heading for the loft door (x ≈ 11.75, z ≈ 11.4) rather than into the window wall.
++    for (const n of cast) {
++      if (n.brain.state !== 'flee') continue;
++      expect(n.pos.z).toBeGreaterThan(1.6);
++    }
++    expect(cast.some((n) => n.brain.state === 'flee' || n.brain.state === 'cower')).toBe(true);
++  });
++
++  test('a seated NPC who is shot is knocked off the seat; killed seated, the body ends off the seat', () => {
++    const { m } = setup([], { player: { pos: P(12, 5), facing: Math.PI } });
++    m.seatItems = () => [seat('s1', 12, 1), seat('s2', 13, 1)];
++    const [a, b] = m.spawnCast([{ presetId: MAIN_PRESETS[0].id }, { presetId: MAIN_PRESETS[1].id }]);
++    m.damage(a, { part: 'torso' });
++    expect(a.seat).toBeNull();
++    expect(a.transition).toBeTruthy();
++    m.damage(b, { part: 'head', amount: 5 });
++    expect(b.dead).toBe(true);
++    expect(b.seat).toBeNull();
++    expect(b.pos.z).toBeGreaterThan(1.06 + 0.2);
++    expect(m.claims.has('s2')).toBe(false);
++  });
++
++  test('escape routes start at the loft door and avoid a threat standing on the way', () => {
++    const r = escapeRoute(FOUNDRY_ROUTES, { x: 12, y: 0.1, z: 3 });
++    expect(r.id).toBe('loft');
++    expect(r.path[0].z).toBeGreaterThan(10);
++    expect(Math.abs(r.path[0].x - 11.75)).toBeLessThan(0.1);
++    expect(escapeRoute(FOUNDRY_ROUTES, { x: 12, y: 0.1, z: 3 }, { x: 11.9, z: 7 })).toBeNull();
++    expect(escapeRoute(FOUNDRY_ROUTES, { x: 30, y: 0, z: -5 })).toBeNull();
++  });
++});
++
++describe('activities (contract §7)', () => {
++  test('calm NPCs run registry activities; a threat interrupts and exits them', () => {
++    const enter = vi.fn();
++    const exit = vi.fn();
++    const update = vi.fn(() => 'continue');
++    const activities = { ACTIVITIES: { listen: {} }, pickActivity: () => ({ activity: { id: 'listen', enter, update, exit, interruptible: true }, slot: { pos: [0, 0, 0] } }) };
++    const { npcs, run, bus } = setup([{ id: 'c', archetype: 'friend', pos: [0, 0, 6], yaw: Math.PI, traits: { bravery: 0.4, wander: 0 } }], { activities });
++    run(1.5);
++    expect(npcs[0].brain.state).toBe('activity');
++    expect(enter).toHaveBeenCalledTimes(1);
++    expect(update).toHaveBeenCalled();
++    bus.emit('player:fire', { pos: { x: 0, y: 1.4, z: 0 }, dir: { x: 1, y: 0, z: 0 } });
++    run(0.5);
++    expect(exit).toHaveBeenCalledTimes(1);
++    expect(['flee', 'cower', 'alert']).toContain(npcs[0].brain.state);
++  });
++});
++
++describe('a built NPC dies onto the floor', () => {
++  test('after the death clip the hips rest near the ground and stay', () => {
++    const m = new NpcManager({ activities: null });
++    const npc = m.spawn({ id: 'body', archetype: 'resident', pos: [0, 0, 0] });
++    for (let i = 0; i < 10; i++) m.update(1 / 30);
++    m.damage(npc, { part: 'torso', amount: 5, dir: { x: 0, y: 0, z: -1 } });
++    for (let i = 0; i < 90; i++) m.update(1 / 30);
++    const hips = npc.character.userData.rig.bones.find((b) => b.name.endsWith('Hips'));
++    const head = npc.character.userData.rig.bones.find((b) => b.name.endsWith('Head'));
++    npc.character.updateMatrixWorld(true);
++    const hy = hips.getWorldPosition(new THREE.Vector3()).y;
++    const y1 = head.getWorldPosition(new THREE.Vector3()).y;
++    expect(hy).toBeLessThan(0.32);
++    expect(y1).toBeLessThan(0.4);
++    expect(y1).toBeGreaterThan(0);
++    for (let i = 0; i < 60; i++) m.update(1 / 30);
++    npc.character.updateMatrixWorld(true);
++    expect(Math.abs(head.getWorldPosition(new THREE.Vector3()).y - y1)).toBeLessThan(0.02);
++  });
++});
