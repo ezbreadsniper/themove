@@ -131,3 +131,22 @@ go in `docs/animation/animation_sources.md`.
   Exposes `game.audio = { music: { bpm, beatPhase(), playing, toggle() }, play(name, pos) }`.
   G calls it from `world-play.js` via optional dynamic import. The audio context starts on first
   user gesture (browser autoplay rules).
+
+## 7. Apartment life: activities & chill animations (H ↔ B)
+
+- **H owns** `src/anim/chill-clips.js` (registered through `registerSamplers`) and
+  `src/npc/activities/**` (activity / smart-object registry). B owns the rest of `src/npc/**`.
+- **Activity** = `{ id, tags, slots(world) → [{ pos, yaw, seat?, prop? }], enter(npc, slot, ctx),
+  update(npc, dt, ctx) → 'continue'|'done', exit(npc, ctx), interruptible: true }`, exported from
+  `src/npc/activities/index.js` as `ACTIVITIES` + `pickActivity(npc, ctx)`. B's brain, while calm,
+  runs activities through this registry (idle/scenario state); any threat stimulus (gunfire,
+  weapon aimed, death) interrupts immediately and B's reactions take over.
+- Activities in the loft: sit and listen (head-nod to `game.audio.music.beatPhase()`, foot tap,
+  shoulder bounce, eyes closed vibe), sit and drink (sip, rest bottle on knee), sit and talk in
+  pairs (gestures, laugh, lean in), dance/two-step by the speakers, lean on the kitchen counter,
+  grab a drink from the fridge, look out the big window, scroll phone, play video games with a
+  controller facing the TV, smoke by the window (reuse A's smoke clips), stretch/yawn, lean on the
+  mezzanine railing, sit on the stair, flip a record / pick music at the console. NPCs rotate
+  between activities over minutes so the room feels alive; at most one NPC per slot.
+- Held props (`src/npc/activities/props.js`): bottle (unbranded clear lager + lime), phone,
+  controller, cup; attached to hand bones with a grip offset.
