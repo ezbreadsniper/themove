@@ -86,7 +86,7 @@ function entry(kit, o) {
   kit.box('steelBlack', [o.x0, doorTop, 0.17], [o.x1, doorTop + 0.08, 0.27], { seg: 9, occlude: false });
   kit.panel('glass', [mid, (doorTop + 0.08 + o.y1) / 2, 0.22], [o.x1 - o.x0, o.y1 - doorTop - 0.08], '-z');
   kit.box('concreteRough', [o.x0 - 0.3, -0.02, -0.6], [o.x1 + 0.3, GROUND.floor, T], { seg: 9, walk: true, collide: true, occlude: false });
-  swingDoor(kit, 'door-street', { hx: o.x0, hz: 0.22, width: o.x1 - o.x0, y: GROUND.floor, height: 2.13, mat: 'steelBlack', glassPanel: true, swing: 'neg', kick: true });
+  swingDoor(kit, 'door-street', { hx: o.x0, hz: 0.22, width: o.x1 - o.x0, y: GROUND.floor, height: 2.13, mat: 'steelBlack', glassPanel: true, swing: 'both', kick: true });
   kit.box('steelBlack', [mid - 0.9, 3.3, -1.1], [mid + 0.9, 3.4, 0], { seg: 9 });
   for (const x of [mid - 0.8, mid + 0.8]) kit.tube('steelBlack', [[x, 3.4, -1.05], [x, 4.2, -0.02]], 0.016, { sides: 4 });
   kit.panel('signBuilding', [mid + 1.9, 3.55, -0.15], [2.6, 0.34], '-z');
@@ -119,7 +119,7 @@ function eastFacade(kit, rng, len) {
   }
   doorFrame(kit, { x0: ex.z0, x1: ex.z1, y0: GROUND.floor - 0.02, y1: GROUND.floor + 2.13, z0: 0, z1: T });
   kit.box('concreteRough', [ex.z0 - 0.3, -0.02, -0.6], [ex.z1 + 0.3, GROUND.floor, T], { seg: 9, walk: true, collide: true, occlude: false });
-  swingDoor(kit, 'door-exit', { hx: ex.z0, hz: 0.2, y: GROUND.floor, width: ex.z1 - ex.z0, height: 2.13, mat: 'steelGray', swing: 'pos', kick: true });
+  swingDoor(kit, 'door-exit', { hx: ex.z0, hz: 0.2, y: GROUND.floor, width: ex.z1 - ex.z0, height: 2.13, mat: 'steelGray', swing: 'both', kick: true });
   wallPack(kit, 'wallpack-exit', (ex.z0 + ex.z1) / 2, 2.6, true);
   kit.panel('ghostSign', [7.5, 6.55, -0.006], [6.0, 1.3], '-z');
   kit.box('electricPanel', [10.3, 1.1, -0.16], [10.75, 1.85, 0], { seg: 9, uv: 'fit' });

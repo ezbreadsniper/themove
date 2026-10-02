@@ -103,6 +103,7 @@ export const MATERIALS = {
   drainGrate: { tex: 'drainGrate' },
   paintBlack: { color: '#1e1e1e' },
   paintWhiteGloss: { color: '#e2e0d8' },
+  doorGrey: { color: '#6f7174' },
   plasticBlack: { color: '#141415' },
   plasticWhite: { color: '#e8e8e4' },
   rubber: { color: '#1a1a1a' },

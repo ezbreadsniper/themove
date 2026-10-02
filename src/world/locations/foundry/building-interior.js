@@ -3,7 +3,7 @@ import { wall } from '../../kit/arch.js';
 import { swingDoor, doorFrame } from '../../kit/openings.js';
 import { spiralStair } from '../../kit/stairs.js';
 import { slab } from '../../kit/shapes.js';
-import { baseboard, outlet, lightSwitch, radiator, conduit, sprinklers, smokeDetector, fluorescent, sconce, exitSign, doorSpill, extinguisher, wallBox, doormat } from '../../props/fixtures.js';
+import { baseboard, outlet, lightSwitch, radiator, conduit, sprinklers, smokeDetector, fluorescent, exitSign, extinguisher, wallBox, doormat } from '../../props/fixtures.js';
 import { debris, cardboardBox, bucket, trashBin, bottle } from '../../props/clutter.js';
 
 /**
@@ -13,7 +13,7 @@ import { debris, cardboardBox, bucket, trashBin, bottle } from '../../props/clut
  *
  * The corridor is the building's lighting set-piece: a long, dark, lived-in hall where practical
  * fixtures carry the look — three cool fluorescent wraps (one with a tired starter) making pools
- * with dark gaps between them, warm sconces by the apartment doors, light leaking under the doors
+ * with dark gaps between them, doorbells by the apartment doors
  * of occupied units, a red exit sign at the far end and orange sodium streetlight through the end
  * window. Wear is ordinary age: scuffed two-tone paint, stained ceiling tiles, flyers, grit.
  */
@@ -60,7 +60,7 @@ function door(kit, d) {
   kit.at(H.x1, 0, U.z1, 0, () => {
     const x0 = d.x - H.x1;
     doorFrame(kit, { x0, x1: x0 + 0.92, y0: SLAB, y1: F + DOOR_H, z0: 0, z1: 0.2, mat: 'trimDark' });
-    swingDoor(kit, d.name, { hx: x0, hz: 0.1, y: F, width: 0.92, height: DOOR_H, mat: 'woodDark', locked: !!d.locked, style: 'panel', kick: true, peephole: true, hardware: 'brass', swing: 'pos' });
+    swingDoor(kit, d.name, { hx: x0 + 0.008, hz: 0.1, y: F, width: 0.904, height: DOOR_H, mat: 'doorGrey', locked: !!d.locked, style: 'panel', kick: true, peephole: true, hardware: 'brass', swing: 'both' });
     kit.panel('houseNumber', [x0 + 0.46, F + 2.32, 0.222], [0.3, 0.11], '+z');
   });
 }
@@ -95,7 +95,7 @@ function corridor(kit, rng) {
   south(kit, () => kit.at(H.x1, 0, 0, 0, () => wainscot(kit, C.x1 - H.x1, doorGaps.map(([a, b]) => [a - H.x1, b - H.x1]))));
   north(kit, () => kit.at(-C.x1, 0, 0, 0, () => wainscot(kit, C.x1 - C.x0, [])));
 
-  // practicals: cool fluorescents in pools (one tired), warm sconces by the doors, exit sign, door spill
+  // practicals: cool fluorescents in pools (one tired), exit sign; doorbells by the doors
   const fl = [
     { x: 8.85, flicker: null },
     { x: 14.0, flicker: { rate: 0.55, depth: 0.55, seed: 'corridor-14', dropout: 0.16, dim: 0.22, hum: 0.06 } },
@@ -105,12 +105,8 @@ function corridor(kit, rng) {
   for (const d of DOORS) {
     const sx = d.x + 0.92 + 0.32;
     south(kit, () => {
-      if (d.unit !== '1C') sconce(kit, `sconce-${d.unit}`, sx, 1.95, { zone: 'corridor', intensity: 0.9, range: 2.8 });
-      else {
-        kit.box('brass', [sx - 0.06, 1.85, 0], [sx + 0.06, 2.05, 0.012], { seg: 9, occlude: false });
-        kit.box('plasticBlack', [sx - 0.05, 1.88, 0.012], [sx + 0.05, 2.02, 0.05], { seg: 9, occlude: false });
-      }
-      if (d.occupied) doorSpill(kit, `spill-${d.unit}`, d.x + 0.46, 0, { zone: 'corridor', layer: d.unit === '1B' ? 'loft-track' : `unit-${d.unit}`, intensity: d.unit === '1B' ? 0.6 : 0.45 });
+      kit.box('brass', [sx - 0.06, 1.85, 0], [sx + 0.06, 2.05, 0.012], { seg: 9, occlude: false });
+      kit.box('plasticBlack', [sx - 0.05, 1.88, 0.012], [sx + 0.05, 2.02, 0.05], { seg: 9, occlude: false });
       kit.decal('scuff', [d.x + 0.46, 0.14, 0.03], [1.1, 0.28], '+z');
     });
   }
@@ -158,7 +154,6 @@ function corridor(kit, rng) {
 
 /** Entry hall: lobby tile, mailboxes with names, bench, notice board, two warm dome lights on a switch. */
 function hall(kit, rng) {
-  kit.box('lobbyFloor', [H.x0, F, H.z0], [H.x1, F + 0.004, C.z0], { seg: 1.0, uv: 'world', occlude: false });
   kit.at(H.x1, F, 3.0, -Math.PI / 2, () => {
     slab(kit, 'steelGray', [-0.62, 0.88, 0], [0.62, 1.82, 0.05], { r: 0.006, occlude: false });
     kit.panel('mailboxes', [0, 1.35, 0.052], [1.2, 0.9], '+z');
@@ -261,7 +256,7 @@ function loft(kit) {
   partition(kit, 'x', bz - 0.1, U.bath.x0, U.x1, [{ mat: 'drywall', t: 0.05 }, { mat: 'tileWhite', t: 0.05 }], { y0: SLAB, y1: M.top - M.thick, seg: 0.6 });
   kit.at(U.bath.x0 + 0.05, 0, bz, -Math.PI / 2, () => {
     doorFrame(kit, { x0: 0.3, x1: 1.12, y0: SLAB, y1: F + 2.05, z0: 0, z1: 0.1, mat: 'paintWhiteGloss' });
-    swingDoor(kit, 'door-bath', { hx: 0.3, hz: 0.05, y: F, width: 0.82, height: 1.95, mat: 'paintWhiteGloss', style: 'panel', swing: 'pos' });
+    swingDoor(kit, 'door-bath', { hx: 0.3, hz: 0.05, y: F, width: 0.82, height: 1.95, mat: 'paintWhiteGloss', style: 'panel', swing: 'both' });
   });
   kit.box('tileWhite', [U.bath.x0 + 0.05, F, bz], [U.x1, F + 0.005, U.z1], { seg: 9, occlude: false, uv: 'world' });
 
