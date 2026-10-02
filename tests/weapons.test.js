@@ -158,3 +158,38 @@ describe('animator state machine', () => {
     expect(r.final).toBe(null);
   });
 });
+
+describe('sustained automatic fire', () => {
+  test('the SMG muzzle climbs onto a plateau while the trigger is held, recovers on release, hands stay on', () => {
+    const c = buildCharacter(trial);
+    attachWeapon(c, 'smg');
+    const anim = new Animator(c, bakeAllClips(c.userData.layout, { weapons: ['smg'] }));
+    anim.locomotion('idle');
+    anim.play('smg_aimIdle');
+    const model = c.userData.weapon.models.smg;
+    const pitch = () => {
+      c.updateMatrixWorld(true);
+      const f = new THREE.Vector3(0, 0, 1).applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion()));
+      return THREE.MathUtils.radToDeg(Math.asin(f.y));
+    };
+    const run = (seconds, on) => {
+      let contact = 0;
+      for (let t = 0; t < seconds; t += 1 / 30) {
+        anim.sustain('smg_autoFire', on);
+        anim.update(1 / 30);
+        contact = Math.max(contact, weaponContact(c).left);
+      }
+      return contact;
+    };
+    run(1, false);
+    const rest = pitch();
+    const contact = run(0.9, true);
+    expect(anim.sustained.smg_autoFire.weight).toBeGreaterThan(0.9);
+    expect(pitch() - rest).toBeGreaterThan(1.5);
+    expect(contact).toBeLessThan(0.002);
+    // Back at the same phase of the aim idle's sway (4 s loop) for a like-for-like comparison.
+    run(3.1, false);
+    expect(anim.sustained.smg_autoFire.action).toBe(null);
+    expect(Math.abs(pitch() - rest)).toBeLessThan(0.5);
+  });
+});

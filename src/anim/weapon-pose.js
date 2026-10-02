@@ -120,7 +120,7 @@ export function offsetXform(base, spec, { cant = 0, tilt = 0, yaw = 0, lift = 0 
 
 /** Weapon-local recoil offset: kick back along −Z and muzzle rise about the grip. */
 export function recoilXform(base, spec, kick) {
-  const k = spec.kind === 'pistol' ? { back: 0.03, rise: 9 } : { back: 0.035, rise: 4 };
+  const k = spec.kind === 'pistol' ? { back: 0.038, rise: 12 } : { back: 0.035, rise: 4.5 };
   const pivot = socket(spec, spec.kind === 'pistol' ? 'grip' : 'butt');
   const rot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -THREE.MathUtils.degToRad(k.rise * kick));
   const q = base.quaternion.clone().multiply(rot);

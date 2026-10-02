@@ -88,7 +88,7 @@ export const WEAPONS = {
     magDrop: 0.17,
     /** How far below the magazine socket the support hand cups the magazine base (grip magazine). */
     magWellDepth: 0.065,
-    rounds: 32,
+    rounds: 30,
     mount: { bone: 'Hips', grip: [-0.235, 0.06, -0.06], forward: [0.18, -0.85, -0.5], up: [-0.95, -0.1, 0.1] },
   },
   rifle: {

@@ -61,6 +61,13 @@ function aimBody(L, p, s) {
   Pose.spineTwist(p, 'Spine2', s.flinch * 10);
   Pose.headNod(p, -s.pitch * 0.35 + s.cheek * 6 - s.flinch * 16);
   Pose.headTilt(p, -s.cheek * 9);
+  // A shot carries into the body: the chest gives a little and the head rocks back with the kick.
+  const kick = Math.max(0, s.kick);
+  if (kick) {
+    Pose.spineFlex(p, 'Spine1', -0.8 * kick);
+    Pose.spineFlex(p, 'Spine2', -1.8 * kick);
+    Pose.headNod(p, -1.2 * kick);
+  }
   if (s.look || s.lookTurn) {
     Pose.headNod(p, s.look);
     Pose.headTurn(p, s.lookTurn);
@@ -130,7 +137,8 @@ function timeline(type, keys, { duration = keys[keys.length - 1][0], loop = fals
     loop,
     weapon: type,
     events,
-    meta: () => ({ layer, ...(additive ? { additive: true } : {}), ...(reference ? { additiveReference: reference } : {}) }),
+    // A loop over a gait shares the gait's sync group, so the Animator starts it in phase with the legs.
+    meta: (L) => ({ layer, ...(additive ? { additive: true } : {}), ...(reference ? { additiveReference: reference } : {}), ...(loop && body && bases[body].meta?.(L).syncGroup ? { syncGroup: bases[body].meta(L).syncGroup } : {}) }),
     sample: (L, t) => {
       const { a, b, u } = stateAt(resolved, t);
       const under = body ? bases[body].sample(L, t % bases[body].duration, bases[body].duration) : null;
@@ -167,6 +175,22 @@ const shot = (t0, { strength = 1, next = Infinity } = {}) => [
   [t0 + 0.14, { kick: -strength * 0.07 }],
   [t0 + 0.21, { kick: strength * 0.02 }],
 ].filter(([time]) => time < next - 1e-6);
+/**
+ * One 0.6 s cycle of automatic fire at 10 rounds/s: each shot kicks from a sustained 0.3 to 0.9 and
+ * relaxes back by the next; the aim sits climbed (pitch) with a slow sideways wander. Closed-bolt guns
+ * cycle the bolt (`cycle` 1); the open-bolt SMG's top knob stays put.
+ */
+function autoFireKeys(aim, cycle) {
+  const keys = [[0, { ...aim, kick: 0.3, slide: 0, aim: [0, 3.2] }]];
+  for (let i = 0; i < 6; i += 1) {
+    const t0 = i * 0.1;
+    keys.push([t0 + 0.025, { kick: 0.9, slide: cycle, aim: [[0.3, -0.4, 0.5, -0.2, 0.4, -0.3][i], 3.6 + (i % 2) * 0.3] }]);
+    keys.push([t0 + 0.06, { kick: 0.5, slide: 0 }]);
+    keys.push([t0 + 0.1, { kick: 0.3, aim: [i === 5 ? 0 : [0.15, -0.2, 0.25, -0.1, 0.2][i], 3.2] }]);
+  }
+  return keys;
+}
+
 /** Shots at the given times; each recovery is cut where the next shot starts. */
 const burst = (times, strengths) => times.flatMap((t0, i) => shot(t0, { strength: strengths[i], next: times[i + 1] }));
 
@@ -328,6 +352,9 @@ function longGunClips(T, type) {
     [n('dryFire')]: T(type, [[0, aim], [0.05, { kick: 0.05 }], [0.25, { kick: 0 }], [0.4, {}]], { events: [{ name: 'click', time: 0.04 }] }),
     [n('burst')]: T(type, [[0, aim], ...burst([0, 0.09, 0.18], [1, 1.1, 1.25]), [0.5, { kick: 0 }]], { events: [0, 0.09, 0.18].map((time) => ({ name: 'fire', time })) }),
     [n('recoil')]: T(type, [[0, aim], ...shot(0), [0.25, { kick: 0 }]], { additive: true, layer: 'additive', events: [{ name: 'fire', time: 0 }] }),
+    // Sustained fire (additive loop, weight eased by Animator.sustain): ten rounds a second, the muzzle
+    // climbing to a plateau and wandering a little; the weight ramp is the climb, its decay the recovery.
+    [n('autoFire')]: T(type, autoFireKeys(aim, type === 'smg' ? 0 : 1), { duration: 0.6, loop: true, layer: 'additive', additive: true, reference: n('aimIdle'), events: [0, 0.1, 0.2, 0.3, 0.4, 0.5].map((time) => ({ name: 'fire', time })) }),
     [n('reload')]: T(type, [[0, aim], ...tactical(0.12), [1.8, { ...ready, ...square }], [2.05, aim]], { events: [{ name: 'magOut', time: 0.58 }, { name: 'magIn', time: 1.44 }, { name: 'tap', time: 1.5 }] }),
     [n('reloadEmpty')]: T(type, [[0, aim], ...empty(0.12), [2.05, { ...ready, ...square }], [2.3, aim]], { events: [{ name: 'magOut', time: 0.4 }, { name: 'magIn', time: 1.12 }, { name: 'tap', time: 1.18 }, { name: 'boltRelease', time: 1.74 }] }),
     [n('magOut')]: T(type, [[0, ready], ...magOut(0.05), [0.75, { L: 'free', magDrop: 1 }]], { events: [{ name: 'magOut', time: 0.35 }] }),
