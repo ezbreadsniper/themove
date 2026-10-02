@@ -185,12 +185,8 @@ export class Stage {
       e.mixer.update(dt);
       updateCorrectives(e.character);
       if (!e.smoke) continue;
-      const clip = e.action?.getClip();
-      const t = e.action ? e.action.time : 0;
-      for (const ev of clip?.userData?.events ?? []) {
-        if (ev.name === 'exhale' && ((e.lastTime <= ev.time && t > ev.time) || (t < e.lastTime && ev.time < t))) e.smoke.exhale();
-      }
-      e.lastTime = t;
+      // The emitter fires the clip's smoke events (exhale, ash, toss ...) crossed since last frame.
+      if (e.action) e.smoke.sync(e.action.getClip(), e.action.time);
       e.smoke.update(dt);
     }
   }
