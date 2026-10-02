@@ -97,29 +97,43 @@ export const PROP_TEXTURES = {
       for (let i = 0; i < 30; i++) r.plot(rng.next() * 16, rng.next() * 16, '#a5841c', 0.8);
     },
   },
-  pillowRainbow: {
-    size: [32, 16], tile: [1, 1],
-    paint(r) {
-      const bands = ['#d2232a', '#f08a1c', '#f2c818', '#2f9e44', '#1f6fc4', '#7a3ea0', '#e45a9a', '#121212'];
-      bands.forEach((c, i) => r.rect(i * 4, 0, 4, 16, c));
-    },
-  },
-  pillowKilim: {
-    size: [32, 32], tile: [1, 1],
-    paint(r) {
-      r.fill('#f1e6d6');
-      for (let y = 0; y < 32; y += 8) {
-        for (let x = 0; x < 32; x += 8) r.polygon([[x + 4, y], [x + 8, y + 4], [x + 4, y + 8], [x, y + 4]], (x + y) % 16 ? '#e2457e' : '#1f9fa8');
+  marbleBlack: {
+    size: [64, 64], tile: [0.9, 0.9],
+    paint(r, rng) {
+      r.fill('#121214');
+      for (let i = 0; i < 9; i++) {
+        let x = rng.next() * 64;
+        let y = rng.next() * 64;
+        let a = rng.next() * Math.PI * 2;
+        for (let s = 0; s < 40; s++) {
+          a += (rng.next() - 0.5) * 0.5;
+          const nx = x + Math.cos(a) * 1.6;
+          const ny = y + Math.sin(a) * 1.6;
+          r.line(x, y, nx, ny, i % 3 ? '#3a3a3e' : '#6a6a70', 1, 0.55);
+          x = nx;
+          y = ny;
+        }
       }
-      r.rect(0, 14, 32, 4, '#151515');
-      for (let x = 0; x < 32; x += 4) r.rect(x, 14, 2, 2, '#f1e6d6');
+      for (let i = 0; i < 6; i++) r.toneEllipse(rng.next() * 64, rng.next() * 64, 10, 6, 1.25, 0.6);
     },
   },
-  pillowStripeBW: {
-    size: [16, 16], tile: [1, 1],
-    paint(r) {
-      r.fill('#ece7dc');
-      for (let y = 1; y < 16; y += 4) r.rect(0, y, 16, 2, '#1d1d1d');
+  cardboard: {
+    size: [32, 32], tile: [0.5, 0.5],
+    paint(r, rng) {
+      r.fill('#a37a4a');
+      for (let x = 0; x < 32; x += 2) r.rect(x, 0, 1, 32, '#97703f', 0.5);
+      r.rect(0, 15, 32, 2, '#c9a46a', 0.7);
+      for (let i = 0; i < 5; i++) r.toneEllipse(rng.next() * 32, rng.next() * 32, 5, 3, 0.86);
+    },
+  },
+  doormat: {
+    size: [32, 16], tile: [1, 1],
+    paint(r, rng) {
+      r.fill('#3a2f26');
+      for (let y = 0; y < 16; y += 2) r.rect(0, y, 32, 1, '#2c231c');
+      r.rect(1, 1, 30, 1, '#5a4a3a');
+      r.rect(1, 14, 30, 1, '#5a4a3a');
+      for (let i = 0; i < 40; i++) r.plot(rng.next() * 32, rng.next() * 16, '#6a5a48', 0.5);
     },
   },
   rugPersian: {
@@ -237,30 +251,38 @@ export const PROP_TEXTURES = {
       r.rect(28, 9, 8, 1, '#e8e2ea');
     },
   },
-  artGun: {
+  /** Original pop-art screenprint: a cassette tape, flat red field, white mat (frame is geometry). */
+  artPop: {
     size: [64, 48], tile: [1, 1],
     paint(r) {
       r.fill('#f3efe6');
-      r.rect(4, 6, 56, 38, '#c2242c');
-      r.polygon([[18, 30], [44, 30], [44, 26], [22, 26], [20, 18], [14, 18], [16, 27]], '#efe9e0');
-      r.polyline([[18, 30], [44, 30], [44, 26], [22, 26], [20, 18], [14, 18], [16, 27], [18, 30]], '#121212', 1);
-      r.ellipse(27, 28, 3, 3, '#121212');
-      r.line(30, 24, 33, 22, '#121212', 1);
-      frame(r, '#141414', 2);
+      r.rect(5, 6, 54, 36, '#c2242c');
+      r.rect(5, 6, 54, 9, '#b01d26');
+      r.rect(17, 14, 30, 19, '#efe9e0');
+      r.polyline([[17, 14], [47, 14], [47, 33], [17, 33], [17, 14]], '#121212', 1);
+      r.rect(21, 23, 22, 7, '#121212');
+      r.ellipse(26, 26.5, 2.5, 2.5, '#efe9e0');
+      r.ellipse(38, 26.5, 2.5, 2.5, '#efe9e0');
+      r.polygon([[22, 14], [42, 14], [40, 18], [24, 18]], '#d9d2c4');
+      r.rect(20, 30, 24, 1, '#c2242c');
+      r.rect(5, 4, 54, 1, '#9a948a');
     },
   },
-  artHands: {
-    size: [48, 48], tile: [1, 1],
+  /** Original photographic print: a wet street corner at night, one lit window. */
+  artPhoto: {
+    size: [48, 64], tile: [1, 1],
     paint(r, rng) {
-      r.fill('#1b1c1e');
-      r.rect(10, 18, 30, 12, '#0c0c0d');
-      for (const [x, y] of [[14, 30], [18, 12]]) {
-        r.ellipse(x + 8, y + 4, 10, 4, '#b98f6c');
-        for (let f = 0; f < 4; f++) r.rect(x + 14 + f * 2, y + 2 + f, 7, 2, '#a97e5c');
-        r.ellipse(x + 3, y + 2, 2, 1.5, '#e6e2da');
-      }
-      r.grain(rng, 0.05);
-      frame(r, '#0e0e0e', 2);
+      r.fill('#ece8de');
+      r.verticalGradient(6, 58, '#1a2236', '#0b0d12');
+      r.rect(5, 6, 38, 52, '#0e1018', 0.5);
+      r.rect(8, 22, 14, 30, '#231d1a');
+      r.rect(26, 18, 16, 34, '#1d1916');
+      r.rect(30, 40, 4, 5, '#e2a44e');
+      for (let y = 26; y < 50; y += 6) for (let x = 10; x < 20; x += 5) r.rect(x, y, 3, 3, '#2e2a2a');
+      r.rect(5, 6, 38, 12, '#14161c');
+      for (let i = 0; i < 18; i++) r.line(31 + rng.next() * 2, 16 - rng.next() * 8, 31 + rng.next() * 2, 16, '#c08a44', 1, 0.4);
+      r.grain(rng, 0.06);
+      r.rect(4, 4, 40, 1, '#9a948a');
     },
   },
   artAbstract: {
@@ -290,8 +312,8 @@ export const PROP_TEXTURES = {
       r.ellipse(30, 12, 28, 10, '#cfd6dc');
       r.ellipse(30, 12, 26, 8.5, '#3a4048');
       r.polygon([[54, 12], [63, 20], [63, 4]], '#cfd6dc');
-      drawTextCentered(r, 'THE WORLD', 30, 13, '#f2f6f8');
-      drawTextCentered(r, 'IS YOURS', 30, 4, '#f2f6f8');
+      drawTextCentered(r, 'STAY UP', 30, 13, '#f2f6f8');
+      drawTextCentered(r, 'LATE', 30, 4, '#f2f6f8');
     },
   },
   case48: {
@@ -457,19 +479,6 @@ export const PROP_TEXTURES = {
       r.rect(15, 4, 2, 52, '#e7e2d4');
       r.rect(5, 30, 22, 2, '#e7e2d4');
       r.verticalGradient(32, 58, '#7d8c96', '#3b4650', 0.35);
-    },
-  },
-  carWindow: {
-    size: [16, 16], tile: [1, 1],
-    paint(r) {
-      r.verticalGradient(0, 16, '#8c9ba6', '#1f262c');
-    },
-  },
-  tire: {
-    size: [16, 16], tile: [0.6, 0.6],
-    paint(r, rng) {
-      r.fill('#1b1b1b');
-      for (let i = 0; i < 16; i += 3) r.rect(i, 0, 1, 16, '#2a2a2a');
     },
   },
   mailboxes: {

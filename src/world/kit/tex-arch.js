@@ -80,6 +80,33 @@ export const ARCH_TEXTURES = {
       for (let i = 0; i < 40; i++) r.plot(rng.next() * 128, rng.next() * 128, '#4a4e4a', 0.6);
     },
   },
+  /** 600 mm acoustic drop-ceiling tiles in a T-bar grid, fissured, a few aged/yellowed. */
+  ceilingTile: {
+    size: [64, 64], tile: [1.2, 1.2],
+    paint(r, rng) {
+      r.fill('#d4cfc2');
+      for (const [x, y] of [[0, 0], [32, 0], [0, 32], [32, 32]]) {
+        const tint = rng.chance(0.35) ? '#c7bc9f' : '#d4cfc2';
+        r.rect(x + 1, y + 1, 30, 30, vary(rng, tint, 0.03));
+        for (let i = 0; i < 26; i++) r.rect(x + 2 + rng.next() * 27, y + 2 + rng.next() * 27, 1 + rng.int(0, 2), 1, '#aaa494', 0.7);
+      }
+      r.rect(0, 0, 64, 1, '#efece4');
+      r.rect(0, 32, 64, 1, '#efece4');
+      r.rect(0, 0, 1, 64, '#efece4');
+      r.rect(32, 0, 1, 64, '#efece4');
+      r.rect(0, 31, 64, 1, '#8f8a7e', 0.6);
+      r.rect(31, 0, 1, 64, '#8f8a7e', 0.6);
+    },
+  },
+  /** Smooth painted plaster (loft walls): warm off-white with faint roller marks. */
+  plasterWhite: {
+    size: [64, 64], tile: [2.4, 2.4],
+    paint(r, rng) {
+      r.fill('#e2ded3');
+      blotches(r, rng, 12, 8, 22, 0.97, 1.02);
+      for (let i = 0; i < 10; i++) r.rect(rng.next() * 64, 0, 4, 64, '#dad5c9', 0.25);
+    },
+  },
   drywall: {
     size: [64, 64], tile: [2.4, 2.4],
     paint(r, rng) {

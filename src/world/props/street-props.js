@@ -6,8 +6,11 @@ import * as THREE from 'three';
  */
 const circle = (r, n = 8) => Array.from({ length: n }, (_, i) => [Math.cos((i / n) * Math.PI * 2) * r, Math.sin((i / n) * Math.PI * 2) * r]);
 
-/** Cobra-head streetlight; the arm reaches toward +Z over the road. */
-export function streetlight(kit, name, { height = 8.2, reach = 2.2 } = {}) {
+/**
+ * Cobra-head streetlight; the arm reaches toward +Z over the road. Its sodium lamp is a light layer
+ * (so it can flicker), a shadowed rig candidate, and glows through a faint haze cone.
+ */
+export function streetlight(kit, name, { height = 8.2, reach = 2.2, flicker = null, intensity = 22 } = {}) {
   kit.cylinder('concreteGray', [0, 0, 0], 0.22, 0.35, { sides: 8 });
   kit.cylinder('galvanized', [0, 0.35, 0], 0.11, height - 0.35, { radiusTop: 0.07, sides: 8 });
   const arm = [];
@@ -19,9 +22,13 @@ export function streetlight(kit, name, { height = 8.2, reach = 2.2 } = {}) {
   const hz = reach + 0.25;
   const hy = height + 0.32;
   kit.box('steelGray', [-0.2, hy - 0.08, hz - 0.45], [0.2, hy + 0.1, hz + 0.25], { seg: 9 });
-  kit.panel('sodium', [0, hy - 0.085, hz - 0.1], [0.3, 0.5], '-y');
+  kit.glow(name, () => {
+    kit.panel('sodium', [0, hy - 0.085, hz - 0.1], [0.3, 0.5], '-y');
+    const cone = new THREE.CylinderGeometry(0.2, 2.6, hy - 0.4, 10, 1, true);
+    kit.geometry('beamSodium', cone, new THREE.Matrix4().makeTranslation(0, (hy - 0.4) / 2, hz - 0.1));
+  });
   kit.solid(circle(0.24), 0, height, 'pole');
-  kit.light({ name, pos: [0, hy - 0.3, hz - 0.1], color: '#ffad55', intensity: 22, range: 15, dir: [0, -1, 0], cone: Math.cos((68 * Math.PI) / 180), dynamic: true, zone: 'street' });
+  kit.light({ name, pos: [0, hy - 0.3, hz - 0.1], color: '#ffa04a', intensity, range: 15, dir: [0, -1, 0], cone: Math.cos((68 * Math.PI) / 180), dynamic: true, zone: 'street', layer: name, flicker, shadow: true, fill: 0 });
 }
 
 /** Wooden utility pole with crossarm and insulators. Returns world attachment points for wires. */
@@ -133,39 +140,4 @@ export function tree(kit, rng, { height = 5.2 } = {}) {
   canopy.push([lean, height * 0.95, 0.1]);
   for (const c of canopy) kit.sphere('treeLeaves', c, 0.9 + rng.next() * 0.5, { detail: 1, uvScale: [3, 2] });
   kit.solid(circle(0.18), 0, height, 'tree');
-}
-
-/** Low-poly parked car facing +Z, centred on its footprint. variant: 'sedan' | 'van'. */
-export function car(kit, paint = 'carRed', variant = 'sedan') {
-  const van = variant === 'van';
-  const L = van ? 5.2 : 4.6;
-  const W = van ? 2.0 : 1.8;
-  const bodyTop = van ? 1.05 : 0.85;
-  kit.box(paint, [-W / 2, 0.32, -L / 2], [W / 2, bodyTop, L / 2], { seg: 9 });
-  if (van) {
-    kit.box(paint, [-W / 2 + 0.03, bodyTop, -L / 2 + 0.05], [W / 2 - 0.03, 2.1, L / 2 - 1.15], { seg: 9 });
-    kit.prism(paint, [[-W / 2 + 0.03, L / 2 - 1.15], [W / 2 - 0.03, L / 2 - 1.15], [W / 2 - 0.03, L / 2 - 0.5], [-W / 2 + 0.03, L / 2 - 0.5]], bodyTop, 1.95);
-    kit.panel('carWindow', [0, 1.55, L / 2 - 0.49], [W - 0.2, 0.7], '+z');
-    for (const s of [-1, 1]) kit.panel('carWindow', [s * (W / 2 + 0.002), 1.55, L / 2 - 1.0], [0.8, 0.55], s > 0 ? '+x' : '-x');
-  } else {
-    const cab = [[-W / 2 + 0.12, -0.9], [W / 2 - 0.12, -0.9], [W / 2 - 0.12, 0.9], [-W / 2 + 0.12, 0.9]];
-    kit.prism('carWindow', cab, bodyTop, 1.38);
-    kit.box(paint, [-W / 2 + 0.14, 1.38, -0.75], [W / 2 - 0.14, 1.42, 0.75], { seg: 9 });
-    for (const z of [-0.9, 0, 0.9]) kit.box(paint, [-W / 2 + 0.1, bodyTop, z - 0.05], [W / 2 - 0.1, 1.39, z + 0.05], { seg: 9 });
-  }
-  for (const x of [-W / 2 + 0.05, W / 2 - 0.05]) {
-    for (const z of [-L / 2 + 0.85, L / 2 - 0.85]) {
-      kit.geometry('tire', new THREE.CylinderGeometry(0.33, 0.33, 0.24, 10), new THREE.Matrix4().makeRotationZ(Math.PI / 2).setPosition(x, 0.33, z), { uvScale: [3, 1] });
-      kit.geometry('chrome', new THREE.CylinderGeometry(0.17, 0.17, 0.25, 8), new THREE.Matrix4().makeRotationZ(Math.PI / 2).setPosition(x, 0.33, z));
-    }
-  }
-  for (const s of [-1, 1]) {
-    kit.panel('bulbWarm', [s * (W / 2 - 0.22), 0.7, L / 2 + 0.003], [0.3, 0.14], '+z');
-    kit.panel('hydrantRed', [s * (W / 2 - 0.2), 0.75, -L / 2 - 0.003], [0.28, 0.14], '-z');
-  }
-  kit.box('chrome', [-W / 2, 0.3, L / 2 - 0.05], [W / 2, 0.42, L / 2 + 0.06], { seg: 9 });
-  kit.box('chrome', [-W / 2, 0.3, -L / 2 - 0.06], [W / 2, 0.42, -L / 2 + 0.05], { seg: 9 });
-  kit.panel('oilStain', [0, 0.004, 0], [W + 0.4, L + 0.2], '+y');
-  kit.solid([[-W / 2, -L / 2], [W / 2, -L / 2], [W / 2, L / 2], [-W / 2, L / 2]], 0, van ? 2.1 : 1.42, 'car');
-  kit.occluder([-W / 2, 0.3, -L / 2], [W / 2, van ? 2.1 : 1.3, L / 2]);
 }

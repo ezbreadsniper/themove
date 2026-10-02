@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import { slab } from './shapes.js';
+
 /**
  * Openings: industrial steel windows, swing doors (dynamic, collidable, lockable) and roll-up doors.
  * Authored in a wall frame (local +X along the wall, z across it).
@@ -47,24 +50,65 @@ export function steelWindow(kit, { x0, x1, y0, y1, z, colsPerSide = 3, rowsBelow
  * Hinged door, dynamic. The hinge sits at (hx, hz); the closed leaf runs along +X (dir = 1) or -X
  * (dir = -1) from it. data: { locked, auto } — auto doors open toward the side away from the player.
  */
-export function swingDoor(kit, name, { hx, hz, y = 0, width = 0.92, height = 2.13, thickness = 0.045, dir = 1, mat = 'paintBlack', locked = false, glassPanel = false, label = name }) {
+export function swingDoor(kit, name, { hx, hz, y = 0, width = 0.92, height = 2.13, thickness = 0.045, dir = 1, mat = 'paintBlack', locked = false, glassPanel = false, label = name, style = 'flat', kick = false, peephole = false, hardware = 'chrome', interact = true }) {
   const yaw = dir === 1 ? 0 : Math.PI;
   kit.beginDynamic(name, [hx, y, hz], yaw, { door: true, locked, width, height, label });
-  kit.box(mat, [0.005, 0, -thickness / 2], [width - 0.005, height, thickness / 2], { seg: 9, occlude: false });
-  if (glassPanel) kit.panel('glassDark', [width / 2, height * 0.62, thickness / 2 + 0.002], [width * 0.6, height * 0.5], '+z');
-  kit.box('chrome', [width - 0.14, 0.98, thickness / 2], [width - 0.04, 1.02, thickness / 2 + 0.05], { seg: 9, occlude: false });
-  kit.box('chrome', [width - 0.14, 0.98, -thickness / 2 - 0.05], [width - 0.04, 1.02, -thickness / 2], { seg: 9, occlude: false });
-  kit.solid([[0, -thickness / 2 - 0.02], [width, -thickness / 2 - 0.02], [width, thickness / 2 + 0.02], [0, thickness / 2 + 0.02]], 0, height, 'door');
+  const t2 = thickness / 2;
+  slab(kit, mat, [0.005, 0.008, -t2], [width - 0.005, height - 0.003, t2], { r: 0.004, occlude: false });
+  if (style === 'panel') {
+    // two recessed panels per face, framed by applied mouldings
+    for (const s of [-1, 1]) {
+      const z0 = s > 0 ? t2 : -t2 - 0.007;
+      const z1 = z0 + 0.007;
+      const m = (a, b) => kit.box(mat, [a[0], a[1], z0], [b[0], b[1], z1], { seg: 9, occlude: false });
+      for (const [py0, py1] of [[0.18, height * 0.45], [height * 0.5, height - 0.16]]) {
+        const px0 = 0.14;
+        const px1 = width - 0.14;
+        m([px0, py0], [px1, py0 + 0.022]);
+        m([px0, py1 - 0.022], [px1, py1]);
+        m([px0, py0 + 0.022], [px0 + 0.022, py1 - 0.022]);
+        m([px1 - 0.022, py0 + 0.022], [px1, py1 - 0.022]);
+      }
+    }
+  }
+  if (glassPanel) kit.panel('glassDark', [width / 2, height * 0.62, t2 + 0.002], [width * 0.6, height * 0.5], '+z');
+  if (kick) for (const s of [-1, 1]) kit.box('stainless', [0.04, 0.012, s > 0 ? t2 : -t2 - 0.002], [width - 0.04, 0.24, s > 0 ? t2 + 0.002 : -t2], { seg: 9, occlude: false });
+  for (const s of [-1, 1]) {
+    const zf = s * t2;
+    kit.geometry(hardware, new THREE.CylinderGeometry(0.027, 0.027, 0.012, 8).rotateX(Math.PI / 2), new THREE.Matrix4().makeTranslation(width - 0.07, 0.98, zf + s * 0.006));
+    kit.tube(hardware, [[width - 0.07, 0.98, zf + s * 0.012], [width - 0.07, 0.98, zf + s * 0.055], [width - 0.19, 0.975, zf + s * 0.06]], 0.009, { sides: 4 });
+    kit.geometry(hardware, new THREE.CylinderGeometry(0.022, 0.022, 0.014, 8).rotateX(Math.PI / 2), new THREE.Matrix4().makeTranslation(width - 0.07, 1.2, zf + s * 0.007));
+  }
+  if (peephole) kit.geometry('brass', new THREE.CylinderGeometry(0.009, 0.009, thickness + 0.012, 6).rotateX(Math.PI / 2), new THREE.Matrix4().makeTranslation(width / 2, 1.52, 0));
+  for (const yy of [0.22, height / 2, height - 0.24]) kit.cylinder(hardware === 'chrome' ? 'steelGray' : hardware, [0.0, yy - 0.05, 0], 0.008, 0.1, { sides: 5 });
+  kit.solid([[0, -t2 - 0.02], [width, -t2 - 0.02], [width, t2 + 0.02], [0, t2 + 0.02]], 0, height, 'door');
   kit.endDynamic();
+  if (interact) {
+    kit.at(hx, y, hz, yaw, () => kit.interactable({ id: `door.${name}`, kind: 'door', pos: [width / 2, 1.0, 0], yaw: 0, radius: 1.4, prompt: locked ? 'Locked' : 'Door', data: { door: name, locked } }));
+  }
 }
 
-/** Door frame (casing) around an opening [x0,x1]×[y0,y1] on both wall faces (z0 outer, z1 inner). */
-export function doorFrame(kit, { x0, x1, y0, y1, z0, z1, mat = 'paintBlack', w = 0.06 }) {
-  for (const [za, zb] of [[z0 - 0.02, z0 + 0.01], [z1 - 0.01, z1 + 0.02]]) {
-    kit.box(mat, [x0 - w, y0, za], [x0, y1 + w, zb], { seg: 9, occlude: false });
-    kit.box(mat, [x1, y0, za], [x1 + w, y1 + w, zb], { seg: 9, occlude: false });
-    kit.box(mat, [x0, y1, za], [x1, y1 + w, zb], { seg: 9, occlude: false });
+/**
+ * Door frame around an opening [x0,x1]×[y0,y1] on both wall faces (z0 outer, z1 inner): casing
+ * with a back band (two steps, so it reads as profiled trim), plinth blocks, jamb liners through
+ * the wall, a door stop and a worn threshold.
+ */
+export function doorFrame(kit, { x0, x1, y0, y1, z0, z1, mat = 'paintBlack', w = 0.07 }) {
+  for (const [za, zb, s] of [[z0 - 0.018, z0 + 0.002, -1], [z1 - 0.002, z1 + 0.018, 1]]) {
+    const zo = s > 0 ? zb : za;
+    const band = s > 0 ? [zb, zb + 0.008] : [za - 0.008, za];
+    slab(kit, mat, [x0 - w, y0, za], [x0, y1 + w, zb], { r: 0.003, occlude: false });
+    slab(kit, mat, [x1, y0, za], [x1 + w, y1 + w, zb], { r: 0.003, occlude: false });
+    slab(kit, mat, [x0, y1, za], [x1, y1 + w, zb], { r: 0.003, occlude: false });
+    kit.box(mat, [x0 - w - 0.012, y0, band[0]], [x0 - w + 0.01, y1 + w + 0.012, band[1]], { seg: 9, occlude: false });
+    kit.box(mat, [x1 + w - 0.01, y0, band[0]], [x1 + w + 0.012, y1 + w + 0.012, band[1]], { seg: 9, occlude: false });
+    kit.box(mat, [x0 - w - 0.012, y1 + w, band[0]], [x1 + w + 0.012, y1 + w + 0.012, band[1]], { seg: 9, occlude: false });
+    const plinth = s > 0 ? [zo - 0.004, zo + 0.01] : [zo - 0.01, zo + 0.004];
+    for (const x of [x0 - w - 0.012, x1 - 0.004]) kit.box(mat, [x, y0, plinth[0]], [x + w + 0.016, y0 + 0.16, plinth[1]], { seg: 9, occlude: false });
   }
+  kit.box(mat, [x0 - 0.004, y0, z0], [x0, y1, z1], { seg: 9, occlude: false });
+  kit.box(mat, [x1, y0, z0], [x1 + 0.004, y1, z1], { seg: 9, occlude: false });
+  kit.box(mat, [x0, y1, z0], [x1, y1 + 0.004, z1], { seg: 9, occlude: false });
   kit.box('concreteGray', [x0, y0, z0], [x1, y0 + 0.02, z1], { seg: 9, occlude: false });
 }
 

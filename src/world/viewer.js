@@ -7,7 +7,22 @@ import { bakeUniforms } from './kit/materials.js';
  * No collision: the camera flies through walls. WASD move, Q/E down/up, Shift fast, right-drag
  * (or left-drag) to look, wheel changes fly speed. Bookmarks jump to reference-matched shots.
  */
+/**
+ * Camera bookmarks. Optional per shot: `night` (0 dusk .. 1 night), `off` (lights / circuits to
+ * switch off; every other light returns to its default), `character` (show the stand-in).
+ */
 export const SHOTS = {
+  'ref: entry view (6-IMG_4108)': { pos: [13.25, 1.45, 7.75], target: [12.0, 2.55, 0.4] },
+  'ref: top-down from mezz (2)': { pos: [12.0, 5.35, 7.75], target: [12.6, 0.3, 2.3] },
+  'corridor: pools of light': { pos: [5.0, 1.62, 12.75], target: [24.5, 1.25, 12.45] },
+  'corridor: doors, east to west': { pos: [24.3, 1.62, 13.0], target: [4.5, 1.15, 12.0] },
+  'corridor: loft door spill': { pos: [13.6, 1.4, 13.15], target: [11.4, 0.4, 11.7] },
+  'loft: lamp-lit night': { pos: [13.7, 1.55, 6.6], target: [11.4, 1.05, 1.0], night: 1 },
+  'loft: lights off, TV only': { pos: [13.9, 1.2, 5.6], target: [10.1, 1.6, 3.4], night: 1, off: ['loft-track', 'orb-high', 'orb-low', 'floor-lamp', 'kitchen', 'neon-sign'] },
+  'close: sofa': { pos: [12.9, 1.05, 2.55], target: [13.9, 0.4, 0.9] },
+  'close: console + TV': { pos: [11.65, 1.15, 3.6], target: [10.1, 0.75, 4.0] },
+  'close: kitchen run': { pos: [11.9, 1.45, 9.4], target: [10.2, 0.95, 9.9] },
+  'gameplay: loft 3rd person': { pos: [12.6, 1.7, 7.9], target: [12.3, 1.2, 3.0], character: true },
   'street (spawn)': { pos: [2.5, 1.7, -4.2], target: [12, 4, 2] },
   'street, wide': { pos: [-6, 2.0, -12.5], target: [15, 4.5, 4] },
   'corner (collage)': { pos: [34, 1.8, -11.5], target: [17, 4.5, 6] },
@@ -42,7 +57,7 @@ export class WorldViewer {
     this.lookAt(SHOTS['street (spawn)'].target);
     this.keys = new Set();
     this.drag = null;
-    this.settings = { shot: 'street (spawn)', speed: 4, colliders: false, walkables: false, fog: true, bake: 1, sun: 1, character: true };
+    this.settings = { shot: 'street (spawn)', speed: 4, colliders: false, walkables: false, interactables: false, fog: true, bake: 1, sun: 1, night: 0, shadows: true, character: true };
     this.debug = new THREE.Group();
     this.bindInput();
   }
@@ -111,6 +126,13 @@ export class WorldViewer {
     if (!s) return;
     this.cam.pos.set(...s.pos);
     this.lookAt(s.target);
+    if (this.world) {
+      this.settings.night = s.night ?? 0;
+      this.world.setTimeOfDay(this.settings.night);
+      for (const l of this.world.lightsByName.values()) this.world.setLight(l.name, l.def.on !== false);
+      for (const n of s.off ?? []) this.world.setLight(n, false);
+      this.nightCtrl?.updateDisplay();
+    }
   }
 
   forward() {
@@ -174,7 +196,10 @@ export class WorldViewer {
     const s = this.settings;
     this.stage.scene.fog = s.fog ? this.world.fog : null;
     bakeUniforms.uBakeScale.value = s.bake;
-    this.world.sun.intensity = 4.2 * s.sun;
+    this.world.setTimeOfDay(s.night);
+    this.world.sun.intensity = this.world.sunBase * s.sun;
+    this.world.rig.shadows = s.shadows;
+    this.world.rig.timer = 0;
     this.entries?.forEach((e) => { e.holder.visible = s.character; });
     this.rebuildDebug();
   }
@@ -207,6 +232,19 @@ export class WorldViewer {
       }
       this.debug.add(lines(pts, '#3bff8a'));
     }
+    if (this.settings.interactables) {
+      const pts = [];
+      const colors = { seat: '#40c0ff', switch: '#ffd040', door: '#ff8040', lamp: '#fff080', tv: '#c080ff', item: '#80ff80', container: '#80ffc0' };
+      const byKind = {};
+      for (const it of this.world.interactables) {
+        const [x, y, z] = it.pos;
+        const f = [Math.sin(it.yaw) * 0.3, Math.cos(it.yaw) * 0.3];
+        (byKind[it.kind] ??= []).push(x - 0.08, y, z, x + 0.08, y, z, x, y - 0.08, z, x, y + 0.08, z, x, y, z, x + f[0], y, z + f[1]);
+        if (it.data.exit) byKind[it.kind].push(x, y, z, ...it.data.exit);
+      }
+      for (const [k, p] of Object.entries(byKind)) this.debug.add(lines(p, colors[k] ?? '#ffffff'));
+      void pts;
+    }
   }
 
   /** lil-gui folder with bookmarks, toggles and stats. */
@@ -219,11 +257,20 @@ export class WorldViewer {
     f.add(s, 'character').name('show character').onChange(() => this.applySettings());
     f.add(s, 'colliders').name('show colliders').onChange(() => this.applySettings());
     f.add(s, 'walkables').name('show walkable surfaces').onChange(() => this.applySettings());
+    f.add(s, 'interactables').name('show interactables').onChange(() => this.applySettings());
     f.add(s, 'fog').onChange(() => this.applySettings());
     f.add(s, 'bake', 0, 2, 0.05).name('baked light').onChange(() => this.applySettings());
     f.add(s, 'sun', 0, 2, 0.05).name('sun').onChange(() => this.applySettings());
+    this.nightCtrl = f.add(s, 'night', 0, 1, 0.05).name('dusk → night').onChange(() => this.applySettings());
+    f.add(s, 'shadows').name('lamp shadows').onChange(() => this.applySettings());
+    const lf = f.addFolder('Lights (circuits)');
+    const circuits = {};
+    for (const layer of this.world.data.layers) circuits[layer.name] = this.world.rig.isOn(layer.name);
+    for (const name of Object.keys(circuits)) lf.add(circuits, name).onChange((v) => this.world.setLight(name, v)).listen();
+    this.circuits = circuits;
+    lf.close();
     const st = this.world.stats();
-    f.add({ v: `${Math.round(st.triangles / 1000)}k tris · ${st.drawCalls} draws · bake ${st.bakeMs} ms` }, 'v').name('stats').disable();
+    f.add({ v: `${Math.round(st.triangles / 1000)}k tris · ${st.drawCalls}+${st.dynamicDrawCalls} draws · bake ${st.bakeMs} ms` }, 'v').name('stats').disable();
     f.open();
     return f;
   }
