@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { applySupportIK } from './runtime-ik.js';
+import { applyFootIK } from './foot-ik.js';
 
 /** Bones driven by the upper-body layer (weapon handling, gestures); everything else is the base. */
 export const UPPER_BONES = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'Jaw', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand'];
@@ -205,10 +206,39 @@ export class Animator {
 
   /** Advances the mixer, then re-solves the support hand onto the weapon (layer / additive drift). */
   update(dt) {
+    // The mixer only writes a property when its sampled value changes, so post-processing (stabilise,
+    // foot IK, support IK) is undone before each mixer step; otherwise it would compound on frames
+    // where a clip holds still.
+    this.restorePose();
     this.mixer.update(dt);
+    this.snapshotPose();
     this.stabilizeWeight += (this.stabilizeTarget - this.stabilizeWeight) * Math.min(1, dt * STABILIZE_RATE);
     if (this.upper && this.stabilizeWeight > 0.001) this.stabilizeUpperBody(this.stabilizeWeight);
+    this.foot = this.groundAt ? applyFootIK(this.character, this.groundAt, dt) : null;
     this.supportIK = applySupportIK(this.character);
+  }
+
+  snapshotPose() {
+    const bones = this.character.userData.rig.bones;
+    this.snapshot ??= bones.map(() => [new THREE.Quaternion(), new THREE.Vector3()]);
+    bones.forEach((b, i) => {
+      this.snapshot[i][0].copy(b.quaternion);
+      this.snapshot[i][1].copy(b.position);
+    });
+  }
+
+  restorePose() {
+    if (!this.snapshot) return;
+    this.character.userData.rig.bones.forEach((b, i) => {
+      b.quaternion.copy(this.snapshot[i][0]);
+      b.position.copy(this.snapshot[i][1]);
+    });
+  }
+
+  /** Uneven ground for foot IK: groundAt(x, z) → world height or null (flat floor when unset). */
+  setGround(groundAt) {
+    this.groundAt = groundAt;
+    return this;
   }
 
   /**

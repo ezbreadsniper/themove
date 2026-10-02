@@ -19,6 +19,7 @@ const advance = (s) => page.evaluate((x) => window.play.advance(x), s);
 
 const steps = [
   ['walk forward', { move: { x: 0, z: 0.5 } }, 1.5, (s) => s.locomotion === 'walk' && s.position[2] > 0.5],
+  ['walk up onto the 15 cm step', {}, 2.3, (s) => s.position[2] > 3.4 && s.position[2] < 6 && Math.abs(s.position[1] - 0.15) < 0.02],
   ['draw pistol while walking', { weapon: 'pistol' }, 1.6, (s) => s.weapon === 'pistol' && s.upper === 'pistol_idleTwoHand'],
   ['stop and aim', { move: { x: 0, z: 0 }, aim: true }, 0.8, (s) => s.locomotion === 'idle' && s.upper === 'pistol_aimIdle'],
   ['fire three', { fire: true }, 0.7, (s) => s.ammo === 12],

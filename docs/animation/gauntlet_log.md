@@ -139,8 +139,22 @@ Tools:
 
 ---
 
+## W9: runtime foot IK and a mixer write-skip bug
+**Added:**
+- `src/anim/foot-ik.js`: each foot is re-based on `groundAt(x, z)`; the pelvis drops (smoothed) for the lower foot; legs are re-solved with two-bone IK (`solveTwoBone`, now shared by arms and legs); planted feet pitch to the heel-to-toe slope. It is an exact no-op on flat ground.
+- `Animator.setGround`; the controller follows the ground height (smoothed).
+- the playground has a test course (15 cm step, 0.6 m ramp, raised pad), and the in-game run walks up the step.
+
+**Failed and fixed:** three.js's mixer only writes a property when its sampled value changes. Post-mixer edits (stabilise, foot IK, support IK) therefore compounded on frames where a clip held still: the foot IK test showed 1.5 m of hip drift, and stabilisation could keep twisting the spine during a static aim. The animator now snapshots the mixer's pose after each step and restores it before the next.
+
+**Verified:**
+- tests: flat no-op, 15 cm step, −12 cm drop (pelvis follows), 15° ramp pitch, no compounding on a still pose;
+- 679 tests pass; the in-game run passes 16 steps;
+- evidence `foot-ik.png` (step edge and ramp, with and without IK).
+
+---
+
 ## Still open (next highest-value first)
-1. **Foot IK at runtime.** Uneven ground and slopes aren't handled; the clips assume flat ground.
-2. **Weapon drop/pickup and first-person view** aren't built.
-3. **UniMate** is blocked (no CUDA GPU here); see `unimate_plan.md`.
-4. **Skirt sit poke-through** (pre-existing clothing issue, see `docs/character/gauntlet_log.md`).
+1. **Weapon drop/pickup and first-person view** aren't built.
+2. **UniMate** is blocked (no CUDA GPU here); see `unimate_plan.md`.
+3. **Skirt sit poke-through** (pre-existing clothing issue, see `docs/character/gauntlet_log.md`).

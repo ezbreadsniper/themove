@@ -4,6 +4,8 @@ import { WEAPONS } from '../weapons/specs.js';
 
 const COMPASS = [['N', 0], ['NW', 45], ['W', 90], ['SW', 135], ['S', 180], ['SE', -135], ['E', -90], ['NE', -45]];
 const TURN_RATE = 9;
+/** How fast the root settles onto the ground height under the body (1/s). */
+const GROUND_FOLLOW = 10;
 /** Standing and aiming: the upper body covers this much yaw before the feet step round (degrees). */
 const AIM_DEAD_ZONE = 45;
 const AIM_SETTLE = 8;
@@ -35,7 +37,7 @@ const clipFor = (type, action) => {
  *   weapon: 'pistol' | 'rifle' | 'smg' | null, aimPitch (deg) }
  */
 export class CharacterController {
-  constructor(character, clips, { root = character.parent } = {}) {
+  constructor(character, clips, { root = character.parent, ground = null } = {}) {
     this.character = character;
     this.root = root;
     this.clips = clips;
@@ -46,6 +48,9 @@ export class CharacterController {
     this.state = { locomotion: 'idle', upper: null };
     this.animator.locomotion('idle');
     this.fireCooldown = 0;
+    // ground(x, z) → height: the root rides the ground under the body, foot IK plants each foot.
+    this.ground = ground;
+    if (ground) this.animator.setGround(ground);
   }
 
   locomotionFor(input) {
@@ -141,6 +146,10 @@ export class CharacterController {
       this.root.position.addScaledVector(v, dt);
     }
     if (this.root) this.root.rotation.y = this.facing;
+    if (this.root && this.ground) {
+      const y = this.ground(this.root.position.x, this.root.position.z) ?? this.root.position.y;
+      this.root.position.y += (y - this.root.position.y) * Math.min(1, dt * GROUND_FOLLOW);
+    }
     this.state.upper = a.upperName;
   }
 

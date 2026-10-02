@@ -53,12 +53,28 @@ export function solveArm(layout, pose, side, wrist, handWorld, elbowPole) {
  * consistent space): returns local rotations { arm, foreArm, hand } plus reachability and error.
  */
 export function solveArmFrom(layout, side, root, shoulderWorld, wrist, handWorld, elbowPole) {
+  const r = solveTwoBone(layout, [`${side}Arm`, `${side}ForeArm`, `${side}Hand`], root, shoulderWorld, wrist, handWorld, elbowPole, REST_ELBOW_POLE, MIN_REACH);
+  return { arm: r.upper, foreArm: r.lower, hand: r.end, reachable: r.reachable, error: r.error };
+}
+
+/**
+ * Generic two-bone limb solve (arm or leg) from the root joint position and the root's parent world
+ * rotation: returns local rotations { upper, lower, end }. restPole is the rest bend direction (−Z
+ * for elbows, +Z for knees); minReach keeps the end off the root (joint flexion limit).
+ */
+export function solveTwoBone(layout, [j0, j1, j2], root, parentWorld, endTarget, endWorld, polePrefer, restPole, minReachFraction = 0) {
   const w = layout.world;
-  const upper = w[`${side}Arm`].distanceTo(w[`${side}ForeArm`]);
-  const lower = w[`${side}ForeArm`].distanceTo(w[`${side}Hand`]);
+  const upper = w[j0].distanceTo(w[j1]);
+  const lower = w[j1].distanceTo(w[j2]);
+  const wrist = endTarget;
+  const elbowPole = polePrefer;
+  const handWorld = endWorld;
+  const shoulderWorld = parentWorld;
+  const REST = restPole;
+  const MIN = minReachFraction;
   const toTarget = wrist.clone().sub(root);
-  // Elbow flexion stops near 152°: a wrist target closer to the shoulder than that is held off.
-  const minReach = (upper + lower) * MIN_REACH;
+  // Flexion limit: a target closer to the root than minReach (fraction of limb length) is held off.
+  const minReach = (upper + lower) * MIN;
   if (toTarget.length() < minReach) toTarget.setLength(minReach);
   const distance = toTarget.length();
   const maxReach = (upper + lower) * 0.9995;
@@ -68,16 +84,16 @@ export function solveArmFrom(layout, side, root, shoulderWorld, wrist, handWorld
   const cosA = THREE.MathUtils.clamp((upper ** 2 + d ** 2 - lower ** 2) / (2 * upper * d), -1, 1);
   const elbow = root.clone().addScaledVector(dir, upper * cosA).addScaledVector(pole, upper * Math.sqrt(1 - cosA * cosA));
   const reached = root.clone().addScaledVector(dir, d);
-  const restUpper = w[`${side}ForeArm`].clone().sub(w[`${side}Arm`]).normalize();
-  const restLower = w[`${side}Hand`].clone().sub(w[`${side}ForeArm`]).normalize();
+  const restUpper = w[j1].clone().sub(w[j0]).normalize();
+  const restLower = w[j2].clone().sub(w[j1]).normalize();
   const upperDir = elbow.clone().sub(root).normalize();
   const lowerDir = reached.clone().sub(elbow).normalize();
-  const armGlobal = frameRotation(restUpper, orthoPole(restUpper, REST_ELBOW_POLE), upperDir, orthoPole(upperDir, pole));
-  const foreGlobal = frameRotation(restLower, orthoPole(restLower, REST_ELBOW_POLE), lowerDir, orthoPole(lowerDir, pole));
+  const upperGlobal = frameRotation(restUpper, orthoPole(restUpper, REST), upperDir, orthoPole(upperDir, pole));
+  const lowerGlobal = frameRotation(restLower, orthoPole(restLower, REST), lowerDir, orthoPole(lowerDir, pole));
   return {
-    arm: shoulderWorld.clone().invert().multiply(armGlobal),
-    foreArm: armGlobal.clone().invert().multiply(foreGlobal),
-    hand: foreGlobal.clone().invert().multiply(handWorld),
+    upper: shoulderWorld.clone().invert().multiply(upperGlobal),
+    lower: upperGlobal.clone().invert().multiply(lowerGlobal),
+    end: lowerGlobal.clone().invert().multiply(handWorld),
     reachable: distance <= maxReach,
     error: reached.distanceTo(wrist),
   };
