@@ -14,6 +14,7 @@
     "gauntlet": "npm test && node scripts/export-characters.mjs && node scripts/render-evidence.mjs"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
     "lil-gui": "^0.21.0",
     "three": "^0.186.1"
   },
