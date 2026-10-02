@@ -60,11 +60,14 @@ if (dialogue.active) { /* freeze player input; face dialogue.playerFacing */ }
    ```js
    bouncer: { label: 'Bouncer', faction: 'club', traits: { bravery: 0.9, aggression: 0.5, sociability: 0.3, curiosity: 0.3, wander: 0 },
      disposition: -5, perception: { fov: 150, sightRange: 24, hearing: 1 },
-     idles: ['npc_idle_armsCrossed'], talk: ['npc_talk_gesture_3'], dialogue: 'bouncer', voice: 'bouncer',
-     presets: ['sheet-04-camo-cargo'] },
+     idles: ['npc_idle_armsCrossed'], talk: ['npc_talk_gesture_3'], dialogue: 'bouncer', voice: 'bouncer' },
    ```
-2. Optionally add the faction to `FACTIONS`.
-3. Place it: a marker `kit.marker('npc_club_door', pos, { yaw, role: 'bouncer', scenario: 'armsCrossed' })`
+2. Add a wardrobe for it to `WARDROBES` in `src/npc/casting.js`: top, bottom, outer and shoe
+   choices, colour palettes, an age range and accessory odds. NPC looks are procedural variants seeded
+   by the NPC id. A named NPC may use an `NPC_PRESETS` look exactly (`look: 'sheet-07-puffer-balaclava'`).
+   **Main characters (`MAIN_PRESETS`) are never cast as NPCs.** `castNpc` refuses them.
+3. Optionally add the faction to `FACTIONS`.
+4. Place it: a marker `kit.marker('npc_club_door', pos, { yaw, role: 'bouncer', scenario: 'armsCrossed' })`
    (D), or `manager.spawn({ id, archetype: 'bouncer', pos, yaw, scenario })`.
    Temperament (coward / normal / hothead / tough) is derived from the traits and selects the matrix
    column.

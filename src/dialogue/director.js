@@ -48,8 +48,11 @@ export class DialogueDirector {
     this.seed = seed;
     const raycast = collision?.raycast ? collision.raycast.bind(collision) : null;
     this.cam = camera ? new DialogueCamera(camera, { raycast }) : null;
+    // hud: a DialogueHud, a container element, false/null (headless) or anything else (a game HUD
+    // object) → our own overlay on document.body.
+    const isElement = typeof HTMLElement !== 'undefined' && hud instanceof HTMLElement;
     if (hud instanceof DialogueHud || hud === false || hud === null) this.hud = hud || null;
-    else if (typeof document !== 'undefined') this.hud = new DialogueHud(hud ?? document.body);
+    else if (typeof document !== 'undefined') this.hud = new DialogueHud(isElement ? hud : document.body);
     else this.hud = null;
     this.npc = null;
     this.runner = null;
@@ -69,7 +72,7 @@ export class DialogueDirector {
 
   playerHead() {
     const p = this.player;
-    const src = p?.pos ?? p?.root?.position ?? p?.holder?.position ?? p?.position ?? null;
+    const src = p?.pos ?? p?.root?.position ?? p?.holder?.position ?? p?.position ?? this.npc?.manager?.playerPos?.() ?? null;
     return src ? new THREE.Vector3(src.x, (src.y ?? 0) + 1.6, src.z) : null;
   }
 

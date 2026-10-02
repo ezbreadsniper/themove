@@ -2,7 +2,8 @@ import { createRng } from '../core/rng.js';
 
 /**
  * NPC archetypes: personality traits (0..1), faction, perception tuning, ambient preferences and
- * content hooks (dialogue tree, bark voice). An NPC is an archetype + per-instance overrides + a small
+ * content hooks (dialogue tree, bark voice). Looks are cast separately (casting.js: NPC_PRESETS or
+ * procedural variants from the archetype wardrobe, never main characters). An NPC is an archetype + per-instance overrides + a small
  * deterministic jitter so two residents never react identically.
  *
  *   bravery      resists fear; high bravery turns threats into confrontation instead of flight
@@ -22,7 +23,6 @@ export const ARCHETYPES = {
     talk: ['npc_talk_gesture_1', 'npc_talk_gesture_2', 'npc_talk_gesture_4'],
     dialogue: 'neighbour',
     voice: 'resident',
-    presets: ['sheet-05-curly-denim', 'sheet-06-floral-cutoffs', 'sheet-03-red-rugby'],
   },
   clerk: {
     label: 'Shop clerk',
@@ -34,7 +34,6 @@ export const ARCHETYPES = {
     talk: ['npc_talk_gesture_1', 'npc_talk_gesture_4'],
     dialogue: 'clerk',
     voice: 'clerk',
-    presets: ['sheet-01-black-tee'],
   },
   thug: {
     label: 'Corner crew',
@@ -46,7 +45,6 @@ export const ARCHETYPES = {
     talk: ['npc_talk_gesture_3', 'npc_talk_gesture_2'],
     dialogue: 'thug',
     voice: 'thug',
-    presets: ['sheet-07-puffer-balaclava', 'sheet-04-camo-cargo', 'sheet-02-denim-vest'],
   },
   pedestrian: {
     label: 'Passer-by',
@@ -58,7 +56,6 @@ export const ARCHETYPES = {
     talk: ['npc_talk_gesture_1', 'npc_talk_gesture_2'],
     dialogue: null,
     voice: 'pedestrian',
-    presets: ['trial-default', 'sheet-03-red-rugby'],
   },
 };
 
