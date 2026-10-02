@@ -87,7 +87,7 @@ export function torsoRings(layout, { skin = false } = {}) {
     { key: 'neck', y: m.neckY + 0.03 * k, rx: m.neckRadius, rzF: m.neckRadius * 1.02, rzB: m.neckRadius, cz: -0.014, n: 2 },
     { key: 'neckTop', y: m.headY + 0.02 * k, rx: m.neckRadius * 0.95, rzF: m.neckRadius * 0.95, rzB: m.neckRadius * 0.95, cz: -0.012, n: 2 },
   ].filter((r) => !skin || r.key !== 'crotch')
-    .map((r) => (skin && r.key === 'seat' ? { ...r, rx: m.hipHalfWidth * 0.96, n: 2.3 } : r))
+    .map((r) => (skin && r.key === 'seat' ? { ...r, rx: m.hipHalfWidth * 0.985, rzF: r.rzF * 1.12, n: 2.3 } : skin && r.key === 'hips' ? { ...r, rx: r.rx * 0.975 } : r))
     .map((r) => (r.t === undefined ? r : {
     key: r.key,
     y: r.y,
@@ -180,7 +180,7 @@ export function gluteForm(layout) {
     foldY,
     low: foldY,
     high: topY,
-    skin: (theta, y) => amount * vertical(y) * (lobe(fromSpine(theta), 0.52, 0.3, 0.42) - 0.4 * gaussA(fromSpine(theta), 0.13)),
+    skin: (theta, y) => amount * vertical(y) * (lobe(fromSpine(theta), 0.52, 0.42, 0.42) - 0.3 * gaussA(fromSpine(theta), 0.13)),
     cloth: (theta, y) => amount * vertical(y) * (fromSpine(theta) < 0.52 ? (y >= peakY ? 0.9 : 0.5) + (y >= peakY ? 0 : 0.4 * (fromSpine(theta) / 0.52) ** 2) : lobe(fromSpine(theta), 0.52, 0.3, 0.42)),
   };
 }
@@ -296,10 +296,10 @@ const ringArc = (start, from, to) => Array.from({ length: Math.abs(to - from) + 
 }));
 
 /**
- * Bare legs grown out of the pelvis as one surface: each thigh starts on a junction ring whose
- * outer half rises to the torso's seat ring and whose inner half meets the other thigh at the
- * crotch. Torso halves are zipped to the outer halves, the inner halves are bridged across the
- * perineum, and the two leftover gaps (pubic front, sacral back) are closed with one triangle each.
+ * Bare legs grown out of the pelvis as one surface (classic trouser topology). Each thigh's top loop
+ * is half of the torso's seat ring (outer half, a little below it) plus the crotch seam: a U-curve
+ * on the midline from the pubic front, down through the crotch, up into the gluteal cleft. Torso
+ * halves are zipped to the outer halves, and the two seams (8 mm apart) are bridged.
  */
 function buildConnectedLegs(mb, layout, bottom) {
   const m = layout.measures;
@@ -310,6 +310,9 @@ function buildConnectedLegs(mb, layout, bottom) {
   const crotchY = glute.foldY;
   const halfW = seat.rx * 0.5;
   const L = bottom.sides / 2 + 4;
+  const yTop = seat.y - 0.016 * k;
+  const zFront = seat.cz + ringRadius(seat, 0) * 0.985;
+  const zBack = seat.cz - ringRadius(seat, Math.PI) * 0.985;
   const saved = mb.group;
   mb.group = bottom.group;
   const junction = {};
@@ -318,20 +321,24 @@ function buildConnectedLegs(mb, layout, bottom) {
     const all = legStations(layout, side);
     const top = all[0].y;
     const low = all[all.length - 1].y;
-    const outer = (theta) => Math.max(0, -s * Math.sin(theta));
-    const lift = seat.y - 0.012 * k - crotchY;
-    const keepInside = (inner) => (theta, p) => V(s * p.x < inner ? s * inner - p.x : 0, 0, 0);
+    const inner = (theta) => s * Math.sin(theta) > 1e-6;
+    const seamPoint = (theta) => {
+      if (!inner(theta)) {
+        const phi = -theta;
+        const r = ringRadius(seat, phi) * 0.985;
+        return V(Math.abs(Math.sin(phi)) < 1e-6 ? 0 : Math.sin(phi) * r, yTop, seat.cz + Math.cos(phi) * r);
+      }
+      const u = Math.abs(theta) / Math.PI;
+      const dip = Math.sin(Math.PI * u ** 1.35) ** 0.8;
+      return V(s * 0.004 * k * Math.sin(Math.PI * u) ** 0.5, yTop - (yTop - crotchY) * dip, zFront + (zBack - zFront) * u);
+    };
+    const keepInside = (limit) => (theta, p) => V(s * p.x < limit ? s * limit - p.x : 0, 0, 0);
     const legRing = (c, rx, rzF, rzB, y, w, extra = {}) => ({ c, x: X.clone().multiplyScalar(-1), z: Z, rx, rzF, rzB, v: 1 - (top - y) / (top - low), w, ...extra });
     const upY = crotchY - 0.05 * k;
-    const lc = legCenter(layout, side, upY);
     const upR = m.thighRadius * (1.02 + fem * 0.05);
-    const junctionWeights = (theta) => {
-      const o = outer(theta);
-      return [[J.Hips, 0.3 + 0.35 * o], [U, 0.7 - 0.35 * o]];
-    };
     const rings = [
-      legRing(V(s * halfW, crotchY, seat.cz), halfW - 0.003 * k, seat.rzF * 0.94, seat.rzB * 0.8 + glute.amount * 0.75, crotchY, junctionWeights, { n: 2.2, offset: (theta) => V(0, lift * outer(theta) ** 1.5, 0) }),
-      legRing(V(s * (halfW + Math.abs(lc.x)) * 0.5, upY, seat.cz), upR * 0.98, upR * 0.82, upR * (0.9 + (m.butt ?? 0.3) * 0.15), upY, [[J.Hips, 0.1], [U, 0.9]], { offset: keepInside(0.004 * k) }),
+      legRing(V(0, 0, 0), 1e-6, 1e-6, 1e-6, yTop, (theta) => (inner(theta) ? [[J.Hips, 0.55], [U, 0.45]] : [[J.Hips, 0.75], [U, 0.25]]), { offset: (theta, p) => seamPoint(theta).sub(p) }),
+      legRing(V(s * (halfW + 0.002 * k), upY, seat.cz), upR * 0.86, upR * 0.76, upR * (0.9 + (m.butt ?? 0.3) * 0.15) + glute.amount * 0.45, upY, [[J.Hips, 0.15], [U, 0.85]], { offset: keepInside(0.004 * k) }),
       ...all.filter((st) => st.y < upY - 0.06 * k).map((st) => legRing(legCenter(layout, side, st.y), st.r * 0.96, st.r * (st.front ?? 1), st.r * st.back, st.y, st.w)),
     ];
     junction[side] = mb.loft(rings, { sides: L, uv: SKIN_ATLAS[side === 'Left' ? 'legL' : 'legR'] }).starts[0];
