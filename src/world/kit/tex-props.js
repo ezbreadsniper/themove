@@ -309,36 +309,50 @@ export const PROP_TEXTURES = {
     },
   },
   /** Original pop-art screenprint: a cassette tape, flat red field, white mat (frame is geometry). */
+  /** Pop-art revolver homage (as in the loft reference): side-on gun in black line on flat red, white mat. */
   artPop: {
     size: [64, 48], tile: [1, 1],
     paint(r) {
       r.fill('#f3efe6');
-      r.rect(5, 6, 54, 36, '#c2242c');
-      r.rect(5, 6, 54, 9, '#b01d26');
-      r.rect(17, 14, 30, 19, '#efe9e0');
-      r.polyline([[17, 14], [47, 14], [47, 33], [17, 33], [17, 14]], '#121212', 1);
-      r.rect(21, 23, 22, 7, '#121212');
-      r.ellipse(26, 26.5, 2.5, 2.5, '#efe9e0');
-      r.ellipse(38, 26.5, 2.5, 2.5, '#efe9e0');
-      r.polygon([[22, 14], [42, 14], [40, 18], [24, 18]], '#d9d2c4');
-      r.rect(20, 30, 24, 1, '#c2242c');
-      r.rect(5, 4, 54, 1, '#9a948a');
+      r.rect(5, 5, 54, 36, '#c8202a');
+      r.rect(5, 5, 54, 1, '#e04048');
+      // barrel + frame + cylinder
+      r.rect(12, 15, 26, 4, '#f4f0ea');
+      r.polyline([[12, 15], [38, 15], [38, 19], [12, 19], [12, 15]], '#141414', 1);
+      r.rect(10, 14, 3, 2, '#141414');
+      r.rect(36, 13, 12, 9, '#f4f0ea');
+      r.polyline([[36, 13], [48, 13], [48, 22], [36, 22], [36, 13]], '#141414', 1);
+      for (const y of [15, 18]) r.line(38, y, 46, y, '#141414', 1);
+      r.ellipse(42, 17.5, 2, 2, '#141414');
+      // hammer, trigger guard, grip
+      r.polygon([[47, 13], [51, 10], [52, 12], [48, 15]], '#141414');
+      r.polyline([[38, 22], [38, 27], [44, 27], [45, 22]], '#141414', 1);
+      r.line(41, 22, 40, 25, '#141414', 1);
+      r.polygon([[44, 22], [50, 21], [55, 33], [49, 35]], '#f4f0ea');
+      r.polyline([[44, 22], [50, 21], [55, 33], [49, 35], [44, 22]], '#141414', 1);
+      for (let i = 0; i < 4; i++) r.line(47 + i, 25 + i * 2, 51 + i, 24 + i * 2, '#141414', 1, 0.7);
+      r.rect(5, 41, 54, 1, '#9a948a');
     },
   },
-  /** Original photographic print: a wet street corner at night, one lit window. */
+  /** Fashion-photo homage: weathered old hands clasping a black leather bag, unbranded. */
   artPhoto: {
     size: [48, 64], tile: [1, 1],
     paint(r, rng) {
       r.fill('#ece8de');
-      r.verticalGradient(6, 58, '#1a2236', '#0b0d12');
-      r.rect(5, 6, 38, 52, '#0e1018', 0.5);
-      r.rect(8, 22, 14, 30, '#231d1a');
-      r.rect(26, 18, 16, 34, '#1d1916');
-      r.rect(30, 40, 4, 5, '#e2a44e');
-      for (let y = 26; y < 50; y += 6) for (let x = 10; x < 20; x += 5) r.rect(x, y, 3, 3, '#2e2a2a');
-      r.rect(5, 6, 38, 12, '#14161c');
-      for (let i = 0; i < 18; i++) r.line(31 + rng.next() * 2, 16 - rng.next() * 8, 31 + rng.next() * 2, 16, '#c08a44', 1, 0.4);
-      r.grain(rng, 0.06);
+      r.verticalGradient(5, 59, '#2a2e2c', '#141614');
+      // bag body + gold clasp
+      r.polygon([[9, 30], [39, 26], [41, 50], [11, 54]], '#0d0d0f');
+      r.line(9, 30, 39, 26, '#3a3a40', 1);
+      r.ellipse(36, 29, 2, 2, '#c9a24e');
+      // two hands (wrinkled skin, rings)
+      for (const [x, y] of [[13, 17], [16, 40]]) {
+        r.ellipse(x + 10, y + 5, 11, 5, '#c79a7e');
+        for (let f = 0; f < 4; f++) r.ellipse(x + 3 + f * 5, y + 9, 2.2, 4, '#be8f72');
+        for (let i = 0; i < 10; i++) r.line(x + rng.next() * 20, y + 2 + rng.next() * 8, x + rng.next() * 20, y + 2 + rng.next() * 8, '#8e6450', 1, 0.35);
+        r.rect(x + 8, y + 9, 2, 1, '#d8c27a');
+      }
+      r.rect(30, 22, 5, 2, '#e8e4dc');
+      r.grain(rng, 0.05);
       r.rect(4, 4, 40, 1, '#9a948a');
     },
   },
