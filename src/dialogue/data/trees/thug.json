@@ -1,0 +1,39 @@
+{
+  "id": "thug",
+  "title": "Corner crew enforcer (placeholder)",
+  "start": "entry",
+  "speakers": {
+    "npc": { "color": "#ff8a7a" },
+    "player": { "name": "You", "color": "#ffd34a" }
+  },
+  "nodes": {
+    "entry": { "type": "condition", "branches": [
+      { "if": { "deed": "aimedAt" }, "next": "grudge" },
+      { "if": { "rank": "friendly" }, "next": "respect" }
+    ], "else": "challenge" },
+
+    "challenge": { "type": "line", "speaker": "npc", "text": "You lost? This is our corner.", "emotion": "cold", "shot": "two", "anim": "npc_talk_gesture_3", "next": "standoff" },
+    "grudge": { "type": "line", "speaker": "npc", "text": "You're the one who pulled a piece on me. You got some nerve walking up here.", "emotion": "angry", "shot": "close", "anim": "npc_anger_point", "next": "standoff" },
+    "respect": { "type": "line", "speaker": "npc", "text": "Ay. You're alright. What's good?", "emotion": "neutral", "anim": "npc_greet_nod", "next": "standoff" },
+
+    "standoff": { "type": "choice", "timeout": 8, "default": 0, "options": [
+      { "text": "My mistake. I'm going.", "tone": "defuse", "effects": [{ "deed": "defused" }], "next": "let_go" },
+      { "text": "Your corner? I live here.", "tone": "firm", "next": "firm" },
+      { "text": "Step aside before I make you.", "tone": "intimidate", "check": { "skill": "intimidate", "dc": 14, "fail": "called_bluff" }, "next": "backs_down" },
+      { "text": "Here's twenty. We good? ($20)", "tone": "bribe", "requires": { "if": { "var": "global.cash", "gte": 20 }, "label": "Needs $20" }, "effects": [{ "add": { "global.cash": -20 } }, { "disposition": 25 }, { "deed": "paid" }], "next": "bribed" },
+      { "text": "Who runs this corner?", "tone": "curious", "requires": { "if": { "rank": "neutral" }, "label": "Needs: Neutral" }, "once": true, "next": "who_runs" },
+      { "text": "Nice balaclava. Cold, is it?", "tone": "rude", "effects": [{ "deed": "insulted" }, { "deed": "insulted" }], "next": "insulted" }
+    ] },
+
+    "let_go": { "type": "line", "speaker": "npc", "text": "Smart.", "emotion": "cold", "next": "end_ok" },
+    "firm": { "type": "line", "speaker": "npc", "text": "Then live quiet. Feel me?", "emotion": "cold", "anim": "npc_anger_point", "shot": "close", "next": "standoff" },
+    "backs_down": { "type": "line", "speaker": "npc", "text": "...Aight. Aight. Relax. Nobody's stopping you.", "emotion": "afraid", "anim": "npc_shrug", "effects": [{ "drive": { "fear": 0.4 } }, { "disposition": 5 }], "next": "end_ok" },
+    "called_bluff": { "type": "line", "speaker": "npc", "text": "Make me? Ha. Go on then.", "emotion": "angry", "shot": "close", "anim": "npc_anger_point", "effects": [{ "drive": { "anger": 0.9 } }, { "intent": "confront" }], "next": "end_fight" },
+    "bribed": { "type": "line", "speaker": "npc", "text": "We're good. For now.", "emotion": "neutral", "anim": "npc_greet_nod", "next": "end_ok" },
+    "who_runs": { "type": "line", "speaker": "npc", "text": "Questions like that get people hurt. Ask Dana in 1C, she talks enough for everyone.", "emotion": "cold", "anim": "npc_talk_gesture_2", "next": "standoff" },
+    "insulted": { "type": "line", "speaker": "npc", "text": "Oh, you're funny. Let's see you laugh with no teeth.", "emotion": "angry", "shot": "close", "effects": [{ "drive": { "anger": 1 } }, { "intent": "combat" }], "next": "end_fight" },
+
+    "end_ok": { "type": "end", "outcome": "defused" },
+    "end_fight": { "type": "end", "outcome": "hostile" }
+  }
+}

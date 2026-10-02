@@ -1,0 +1,34 @@
+{
+  "id": "clerk",
+  "title": "Shop clerk (placeholder)",
+  "start": "entry",
+  "speakers": {
+    "npc": { "color": "#a8f0a0" },
+    "player": { "name": "You", "color": "#ffd34a" }
+  },
+  "nodes": {
+    "entry": { "type": "condition", "if": { "var": "global.armed" }, "then": "armed", "else": "greet" },
+    "armed": { "type": "line", "speaker": "npc", "text": "Whoa, whoa. Is that... are you robbing me?", "emotion": "afraid", "shot": "close", "next": "armed_choice" },
+    "armed_choice": { "type": "choice", "timeout": 6, "default": 1, "options": [
+      { "text": "Empty the register.", "tone": "aggressive", "effects": [{ "deed": "threatened" }, { "intent": "handsUp" }, { "drive": { "fear": 1, "surrender": 1 } }], "next": "robbed" },
+      { "text": "Relax, I'm just carrying. I'll put it away.", "tone": "calm", "effects": [{ "deed": "defused" }, { "emit": "dialogue:holster" }], "next": "greet" }
+    ] },
+    "robbed": { "type": "line", "speaker": "npc", "text": "Okay! Okay, take it, please!", "emotion": "afraid", "anim": "npc_handsUp", "effects": [{ "add": { "global.cash": 40 } }], "next": "end_robbed" },
+
+    "greet": { "type": "line", "speaker": "npc", "text": "Evening. What can I get you?", "emotion": "neutral", "shot": "two", "anim": "npc_talk_gesture_1", "next": "menu" },
+    "menu": { "type": "choice", "options": [
+      { "text": "Pack of smokes. ($8)", "tone": "neutral", "requires": { "if": { "var": "global.cash", "gte": 8 }, "label": "Needs $8" }, "effects": [{ "add": { "global.cash": -8 } }, { "give": "cigarettes" }, { "deed": "paid" }], "next": "sold" },
+      { "text": "Coffee. ($2)", "tone": "neutral", "requires": { "if": { "var": "global.cash", "gte": 2 }, "label": "Needs $2" }, "effects": [{ "add": { "global.cash": -2 } }, { "give": "coffee" }, { "deed": "paid" }], "next": "sold" },
+      { "text": "Any chance of a neighbour discount?", "tone": "charming", "once": true, "check": { "skill": "persuade", "dc": 12, "fail": "haggle_fail" }, "next": "haggle_ok" },
+      { "text": "Heard anything about the corner crew?", "tone": "curious", "requires": { "if": { "rank": "friendly" }, "label": "Needs: Friendly" }, "once": true, "next": "rumour" },
+      { "text": "Just looking.", "tone": "neutral", "next": "bye" }
+    ] },
+    "sold": { "type": "line", "speaker": "npc", "text": "There you go. Have a good night.", "emotion": "happy", "anim": "npc_greet_nod", "next": "menu" },
+    "haggle_ok": { "type": "line", "speaker": "npc", "text": "Ha, fine. Ten percent, and you tell nobody.", "emotion": "amused", "effects": [{ "set": { "npc.discount": 0.1 } }, { "disposition": 5 }], "next": "menu" },
+    "haggle_fail": { "type": "line", "speaker": "npc", "text": "Discount's for people who pay their tab.", "emotion": "annoyed", "anim": "npc_shrug", "next": "menu" },
+    "rumour": { "type": "line", "speaker": "npc", "text": "They come in, they don't pay, I don't argue. Someone should do something. Not me, though.", "emotion": "worried", "anim": "npc_talk_gesture_4", "effects": [{ "set": { "global.tip_crew": true } }], "next": "menu" },
+    "bye": { "type": "line", "speaker": "npc", "text": "Take your time.", "emotion": "neutral", "next": "end" },
+    "end": { "type": "end", "outcome": "neutral" },
+    "end_robbed": { "type": "end", "outcome": "robbed" }
+  }
+}
