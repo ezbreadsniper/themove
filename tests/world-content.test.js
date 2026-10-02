@@ -60,7 +60,7 @@ describe('interactables (contracts §2)', () => {
     expect(seats.length).toBeGreaterThanOrEqual(9);
     for (const s of seats) {
       const { seatHeight, variant, exit } = s.data;
-      expect(['chair', 'sofa', 'stool', 'bed'], s.id).toContain(variant);
+      expect(['chair', 'sofa', 'stool', 'bed', 'stair'], s.id).toContain(variant);
       expect(seatHeight, s.id).toBeGreaterThan(0.35);
       expect(seatHeight, s.id).toBeLessThan(0.85);
       const floor = world.collision.groundAt(s.pos[0], s.pos[2], s.pos[1] - seatHeight + 0.05);
@@ -102,11 +102,11 @@ describe('interactables (contracts §2)', () => {
     expect(phys.length).toBeGreaterThanOrEqual(8);
     for (const p of phys) {
       const { shape, mass } = p.data.physical;
-      expect(['box', 'cylinder']).toContain(shape);
+      expect(['box', 'cylinder', 'sphere']).toContain(shape);
       expect(mass).toBeGreaterThan(0);
       if (shape === 'box') expect(p.data.physical.size).toHaveLength(3);
       else expect(p.data.physical.radius).toBeGreaterThan(0);
-      expect(p.solids.length).toBe(1);
+      expect(p.solids.length).toBeGreaterThanOrEqual(1);
       expect(p.group.children.length).toBeGreaterThan(0);
     }
   });
@@ -185,11 +185,15 @@ describe('lighting system', () => {
     for (const l of world.data.lights) if (l.shadow) expect(l.layer, l.name).toBeGreaterThanOrEqual(0);
   });
 
-  it('time of day blends the sky scale', () => {
-    world.setTimeOfDay(1);
-    expect(world.lib.uniforms.uSkyScale.value).toBeLessThan(0.5);
-    world.setTimeOfDay(0);
+  it('defaults to night (moon as the live light) and blends to dusk', () => {
+    expect(world.timeOfDay).toBe(1);
     expect(world.lib.uniforms.uSkyScale.value).toBe(1);
+    const moonY = world.sun.position.y;
+    world.setTimeOfDay(0);
+    expect(world.lib.uniforms.uSkyScale.value).toBeGreaterThan(1.5);
+    expect(world.sun.position.y).toBeLessThan(moonY);
+    world.setTimeOfDay(1);
+    expect(world.sky.getObjectByName('moon').visible).toBe(true);
   });
 });
 
@@ -282,7 +286,8 @@ describe('geometry hygiene and budgets', () => {
   it('stays within the frame budget', () => {
     const s = world.stats();
     expect(s.triangles).toBeLessThan(130000);
-    expect(s.drawCalls + s.dynamicDrawCalls).toBeLessThan(320);
+    // Every loose loft item is its own physical node now (contracts §8); batching them is open work.
+    expect(s.drawCalls + s.dynamicDrawCalls).toBeLessThan(700);
     expect(s.shadowMaps).toBeLessThanOrEqual(3);
   });
 

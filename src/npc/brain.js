@@ -1,6 +1,7 @@
 import { rankIndex } from './disposition.js';
 import { STIMULI } from './stimuli.js';
 import { fleeTarget } from './steering.js';
+import { escapeRoute } from './routes.js';
 
 /**
  * Behaviour layer: a two-level hierarchical state machine whose transitions are chosen by utility.
@@ -35,10 +36,14 @@ export const STATES = {
     enter(npc) {
       npc.boredom = 0;
       npc.idleSwap = 4 + npc.rng.next() * 6;
-      if (dist2(npc.pos, npc.home) > 1.2) npc.moveTo(npc.home, 'walk');
+      if (!npc.seat && dist2(npc.pos, npc.home) > 1.2) npc.moveTo(npc.home, 'walk');
       npc.setRest(npc.scenarioClip() ?? npc.pickIdle());
     },
     update(npc, dt, env) {
+      if (npc.seat) {
+        if (nearPlayer(env, 6) && env.player.visible) npc.look(env.player.head, 1);
+        return;
+      }
       npc.boredom += dt * (0.5 + npc.traits.wander);
       if (!npc.moving && dist2(npc.pos, npc.home) < 1.4 && npc.home.yaw !== undefined && !npc.lookTarget) npc.faceYaw(npc.home.yaw);
       npc.idleSwap -= dt;
@@ -63,6 +68,48 @@ export const STATES = {
       if (npc.moving) return;
       npc.wanderWait += dt;
       if (npc.wanderWait > 2.5) npc.boredom = 0;
+    },
+  },
+  /**
+   * Calm life through workstream H's activity registry (src/npc/activities): pick an activity and a
+   * free slot, run it until it reports 'done', then pick again. Any threat state interrupts it (higher
+   * group) and exit() lets the activity release its seat / props.
+   */
+  activity: {
+    group: 'ambient',
+    minTime: 4,
+    score: (npc) => (npc.manager?.activities && !npc.dead && npc.clock >= (npc.activityRetry ?? 0) ? 0.24 : 0),
+    enter(npc) {
+      const m = npc.manager;
+      const ctx = m.activityContext(npc);
+      let pick = null;
+      try {
+        pick = m.activities.pickActivity(npc, ctx);
+      } catch (err) {
+        console.warn(`pickActivity: ${err.message}`);
+      }
+      const activity = pick?.activity ?? (pick?.update ? pick : null);
+      npc.activity = activity ? { activity, slot: pick.slot ?? null, ctx } : null;
+      if (!npc.activity) {
+        npc.activityRetry = npc.clock + 5;
+        return;
+      }
+      activity.enter?.(npc, npc.activity.slot, ctx);
+    },
+    update(npc, dt) {
+      const a = npc.activity;
+      if (!a) return;
+      a.ctx.time = npc.manager.time;
+      if (a.activity.update?.(npc, dt, a.ctx) === 'done') {
+        a.activity.exit?.(npc, a.ctx);
+        npc.activity = null;
+        npc.activityRetry = npc.clock + 1 + npc.rng.next() * 2;
+      }
+    },
+    exit(npc) {
+      const a = npc.activity;
+      npc.activity = null;
+      a?.activity.exit?.(npc, a.ctx);
     },
   },
   social: {
@@ -216,11 +263,25 @@ export const STATES = {
       npc.fleeing = true;
       STATES.flee.plan(npc, env);
     },
+    /**
+     * Indoors: run the location's escape route (loft → door → corridor → hall → street). Outdoors, or
+     * when the route leads past the threat: steer away along the clearest heading.
+     */
     plan(npc, env) {
       const t = threatPos(npc, env);
       if (!t) return;
+      const gait = npc.drives.fear > 0.7 ? 'sprint' : 'run';
+      if (!npc.path) {
+        const route = escapeRoute(npc.manager?.routes, npc.pos, t);
+        if (route?.path.length) npc.path = route.path;
+      }
+      if (npc.path?.length) {
+        npc.moveTo(npc.path[0], gait, { stop: 0.55 });
+        npc.replan = 6;
+        return;
+      }
       const target = fleeTarget(npc.pos, t, npc.raycast, { distance: 16 });
-      npc.moveTo(target, npc.drives.fear > 0.7 ? 'sprint' : 'run', { stop: 0.6 });
+      npc.moveTo(target, gait, { stop: 0.6 });
       npc.replan = 2.5;
     },
     update(npc, dt, env) {
@@ -228,11 +289,21 @@ export const STATES = {
       const t = threatPos(npc, env);
       const far = t && dist2(t, npc.pos) > 24;
       if (far) npc.drives.fear = Math.max(0, npc.drives.fear - dt * 0.25);
+      if (npc.path?.length) {
+        // Following the escape route: next waypoint on arrival; a stuck leg skips ahead.
+        if (!npc.moving || npc.stuck) {
+          npc.path.shift();
+          if (npc.path.length) npc.moveTo(npc.path[0], npc.nav?.gait ?? 'run', { stop: 0.55 });
+          else npc.path = null;
+        }
+        return;
+      }
       if ((!npc.moving || npc.stuck || npc.replan <= 0) && !far) STATES.flee.plan(npc, env);
       if (far && !npc.moving) npc.setRest('npc_idle_weight');
     },
     exit(npc) {
       npc.fleeing = false;
+      npc.path = null;
       npc.stop();
     },
   },

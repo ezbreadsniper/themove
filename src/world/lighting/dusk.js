@@ -1,13 +1,27 @@
 import * as THREE from 'three';
 
 /**
- * Late-dusk ("blue hour") lighting shared by every exterior location: the sun has just set, so it
- * is a weak orange grazing light (still the only live shadowed light on world geometry), the sky is
- * a deep blue gradient with a last orange band toward the sun that feeds the bake, haze fog is cool
- * and close, and practical lights (streetlights, windows, lamps) carry the scene. NIGHT is the
- * fully dark variant; World.setTimeOfDay(k) blends the live parts (sky dome, fog, sun, baked sky
- * scale) between them without re-baking.
+ * Night lighting shared by every exterior location (contracts §5: the game is set at night). The
+ * bake sees a moonlit sky — deep blue zenith, a cool band toward the moon and a faint warm city
+ * glow on the far horizon — so interiors only get a whisper of window light and their practicals
+ * carry them. The live directional light is the moon (cool, high, shadowed); sodium streetlights,
+ * lit windows and lamps do the rest. DUSK (blue hour) remains as an alternative:
+ * World.setTimeOfDay(k) blends the live parts (sky dome, fog, sun/moon, baked sky scale) between
+ * DUSK (k = 0) and NIGHT (k = 1, the default) without re-baking.
  */
+export const NIGHT = Object.freeze({
+  sky: { zenith: '#0b1128', horizon: '#26324e', horizonAway: '#2a2330', ground: '#15130f', intensity: 0.42 },
+  sunDir: new THREE.Vector3(-0.35, 0.62, -0.7).normalize().toArray(),
+  sunColor: '#a8bce6',
+  sunIntensity: 0.55,
+  fog: { color: '#141826', near: 18, far: 115 },
+  below: '#0d0c12',
+  glow: 0.12,
+  moon: 1,
+  skyScale: 1,
+  exposure: 1.0,
+});
+
 export const DUSK = Object.freeze({
   sky: { zenith: '#1a2346', horizon: '#b0684e', horizonAway: '#4c4d6e', ground: '#2c2824', intensity: 0.55 },
   sunDir: new THREE.Vector3(0.42, 0.07, -0.88).normalize().toArray(),
@@ -16,19 +30,8 @@ export const DUSK = Object.freeze({
   fog: { color: '#4c4a62', near: 22, far: 130 },
   below: '#2a2430',
   glow: 0.8,
-  skyScale: 1,
-  exposure: 1.0,
-});
-
-export const NIGHT = Object.freeze({
-  sky: { zenith: '#05070f', horizon: '#2a1f2a', horizonAway: '#11131f', ground: '#100f0d', intensity: 0.3 },
-  sunDir: DUSK.sunDir,
-  sunColor: '#7d8fc0',
-  sunIntensity: 0.12,
-  fog: { color: '#14141d', near: 16, far: 110 },
-  below: '#0c0b10',
-  glow: 0.1,
-  skyScale: 0.28,
+  moon: 0,
+  skyScale: 2.0,
   exposure: 1.0,
 });
 
@@ -38,7 +41,8 @@ export function blendPresets(a, b, k) {
   const n = (x, y) => x + (y - x) * k;
   return {
     sky: { zenith: c(a.sky.zenith, b.sky.zenith), horizon: c(a.sky.horizon, b.sky.horizon), horizonAway: c(a.sky.horizonAway, b.sky.horizonAway), ground: c(a.sky.ground, b.sky.ground), intensity: n(a.sky.intensity, b.sky.intensity) },
-    sunDir: a.sunDir,
+    sunDir: new THREE.Vector3(...a.sunDir).lerp(new THREE.Vector3(...b.sunDir), k).normalize().toArray(),
+    moon: n(a.moon ?? 0, b.moon ?? 0),
     sunColor: c(a.sunColor, b.sunColor),
     sunIntensity: n(a.sunIntensity, b.sunIntensity),
     fog: { color: c(a.fog.color, b.fog.color), near: n(a.fog.near, b.fog.near), far: n(a.fog.far, b.fog.far) },
@@ -91,10 +95,28 @@ export function paintSkyDome(mesh, preset) {
     colors.set([c.r, c.g, c.b], i * 3);
   }
   g.attributes.color.needsUpdate = true;
+  let moon = mesh.getObjectByName('moon');
+  if (!moon) {
+    moon = new THREE.Mesh(new THREE.CircleGeometry(7, 12), new THREE.MeshBasicMaterial({ color: '#e4e9f4', fog: false, transparent: true, depthWrite: false }));
+    moon.name = 'moon';
+    moon.renderOrder = -9;
+    mesh.add(moon);
+  }
+  const r = mesh.geometry.parameters.radius * 0.95;
+  moon.position.set(sun.x * r, sun.y * r, sun.z * r);
+  moon.lookAt(0, 0, 0);
+  moon.material.opacity = preset.moon ?? 0;
+  moon.visible = (preset.moon ?? 0) > 0.02;
+}
+
+/** Points a directional light (sun or moon) along `dir` at its target. */
+export function aimSun(sun, dir) {
+  const t = sun.target.position;
+  sun.position.set(t.x + dir[0] * 80, dir[1] * 80, t.z + dir[2] * 80);
 }
 
 /** Directional sun with a shadow frustum covering `bounds` (world XZ box). */
-export function createSun(bounds, preset = DUSK) {
+export function createSun(bounds, preset = NIGHT) {
   const sun = new THREE.DirectionalLight(preset.sunColor, preset.sunIntensity);
   const cx = (bounds.minX + bounds.maxX) / 2;
   const cz = (bounds.minZ + bounds.maxZ) / 2;

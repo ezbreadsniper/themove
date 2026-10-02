@@ -22,6 +22,11 @@ export const STIMULI = {
   door: { sense: 'sound', radius: 10, threat: 0.03, memory: 6 },
   panic: { sense: 'sound', radius: 14, threat: 0.55, memory: 20 },
   playerNear: { sense: 'sight', radius: 4, threat: 0, memory: 3 },
+  // Violence seen or heard: someone shot, someone dying, people screaming / running.
+  hitSeen: { sense: 'sight', radius: 22, threat: 0.9, memory: 60 },
+  death: { sense: 'sight', radius: 25, threat: 1, memory: 120 },
+  scream: { sense: 'sound', radius: 16, threat: 0.5, memory: 20 },
+  panicSeen: { sense: 'sight', radius: 15, threat: 0.5, memory: 20 },
   talkRequest: { sense: 'touch', radius: 3, threat: 0, memory: 2 },
 };
 

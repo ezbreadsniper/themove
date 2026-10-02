@@ -8,6 +8,9 @@ import { Brain } from './brain.js';
 import { LookAt } from './look-at.js';
 import { temperament } from './reactions.js';
 import { SPEEDS, arrive, avoidWalls, separation, turnToward, wrapAngle, vlen } from './steering.js';
+import { seatSpec } from '../game/seat.js';
+import { MAX_HEALTH, clutchClip } from './combat.js';
+import { DEATH_CLIPS } from '../anim/social-clips.js';
 
 /**
  * Clip substitutes when a clip is missing (a character baked without social clips, or a name another
@@ -19,6 +22,10 @@ export const CLIP_FALLBACKS = {
   npc_flee_run: 'run', npc_anger_point: 'angry', npc_confront: 'idle', npc_greet_wave: 'wave', npc_greet_nod: null, npc_shrug: 'shrug',
   npc_listen: 'idle', npc_talk_gesture_1: 'talk', npc_talk_gesture_2: 'talk', npc_talk_gesture_3: 'talk', npc_talk_gesture_4: 'talk',
   lookAround: 'idle', sprint: 'run', melee_jab: 'angry', crouchIdle: 'idle', stepInPlace: 'idle', angry: 'point', hitReact: null,
+  sitIdle_sofa: 'sitIdle', sitIdle_chair: 'sitIdle', sitIdle_bench: 'sitIdle', sitIdle_stool: 'sitIdle', sitIdle: 'sit',
+  npc_hit_head: 'hitReact', npc_hit_torso_front: 'hitReact', npc_hit_torso_back: 'stumble', npc_hit_arm_left: 'hitReact', npc_hit_arm_right: 'hitReact',
+  npc_hit_leg_left: 'stumble', npc_hit_leg_right: 'stumble', npc_duck: 'npc_fear_cower', npc_death_back: 'death', npc_death_forward: 'death', npc_death_crumple: 'death',
+  npc_dead_pose_back: null, npc_dead_pose_front: null, npc_dead_pose_side: null,
 };
 
 const DRIVE_DECAY = { fear: 0.045, anger: 0.035, alarm: 0.12, interest: 0.09, social: 0.2, surrender: 0.12 };
@@ -70,6 +77,12 @@ export class Npc {
     this.character = character;
     this.height = character?.userData.layout?.measures.height ?? 1.75;
     this.lod = { tier: 'near', think: 0, anim: 0 };
+    this.health = MAX_HEALTH;
+    this.maxHealth = MAX_HEALTH;
+    this.dead = false;
+    this.seat = null;
+    this.wound = null;
+    this.friends = new Set();
     if (character) this.attachBody(character);
   }
 
@@ -110,8 +123,15 @@ export class Npc {
     return this.manager?.relationships.score(this.id) ?? 0;
   }
 
+  /** Eye position: from the posed head bone when there is a body, else from the standing height. */
   headPos() {
-    return { x: this.pos.x, y: this.pos.y + this.height * EYE_FRACTION, z: this.pos.z };
+    const bones = this.character?.userData.rig?.bones;
+    if (bones) {
+      this.headBone ??= bones.find((b) => b.name.endsWith('Head'));
+      const p = this.headBone.getWorldPosition(new THREE.Vector3());
+      return { x: p.x, y: p.y + 0.07 * (this.height / 1.78), z: p.z };
+    }
+    return { x: this.pos.x, y: this.pos.y + this.height * EYE_FRACTION * (this.seat ? 0.72 : 1), z: this.pos.z };
   }
 
   intentBonus(id) {
@@ -120,7 +140,98 @@ export class Npc {
 
   scenarioClip() {
     const s = this.home.scenario;
+    if (this.seat) return this.seatClip();
     return s ? { lean: 'npc_lean_wall', phone: 'npc_phone', smoke: 'smoke', armsCrossed: 'npc_idle_armsCrossed', pockets: 'npc_idle_pockets', counter: 'npc_idle_weight' }[s] ?? null : null;
+  }
+
+  /** Seated loop for the current seat (A's per-variant sitIdle when present, else `sit`). */
+  seatClip() {
+    const v = this.seat?.variant;
+    return (v && this.resolveClip(`sitIdle_${v}`)) || this.resolveClip('sitIdle') || 'sit';
+  }
+
+  /**
+   * Sits on a seat interactable (contract §2 kind 'seat') or a seatSpec: the root goes to the seat's
+   * root point, facing out of it, and the body stays put (no collision push) until leaveSeat().
+   */
+  sitAt(item) {
+    const spec = item.hips && item.root ? item : seatSpec(item, this.collision);
+    this.seat = spec;
+    this.stop();
+    this.pos.x = spec.root.x;
+    this.pos.y = spec.root.y;
+    this.pos.z = spec.root.z;
+    this.facing = spec.yaw;
+    this.targetFacing = spec.yaw;
+    this.velocity = { x: 0, z: 0 };
+    this.home = { x: spec.root.x, y: spec.root.y, z: spec.root.z, yaw: spec.yaw, scenario: 'seated' };
+    this.setRest(this.seatClip());
+    this.sync();
+    return spec;
+  }
+
+  /**
+   * Gets up: the body glides to the seat's exit point (quick = a startled jump up). Home becomes the
+   * standing spot (the seat belongs to whatever activity claims it next).
+   */
+  leaveSeat({ quick = false } = {}) {
+    const s = this.seat;
+    if (!s) return false;
+    this.seat = null;
+    const exit = s.exit ?? s.root;
+    this.transition = { from: { ...this.pos }, to: { x: exit.x, y: exit.y, z: exit.z }, t: 0, dur: quick ? 0.35 : 0.7 };
+    this.home = { x: exit.x, y: exit.y, z: exit.z, yaw: s.yaw, scenario: null };
+    this.setRest(null);
+    if (!quick && this.resolveClip(`standUp_${s.variant}`)) this.oneShot(`standUp_${s.variant}`);
+    else if (!quick && this.resolveClip('standUp')) this.oneShot('standUp');
+    this.manager?.releaseSeat?.(s.id, this);
+    return true;
+  }
+
+  /** Wound bookkeeping after a non-lethal hit: clutch the part, limp on a leg wound. */
+  wounded({ part, side }) {
+    this.wound = { part, side, time: this.clock };
+    this.gesture(clutchClip({ part, side }), { duration: 8 });
+  }
+
+  /**
+   * Death: everything stops, the fall clip plays as a full-body one-shot over a base that already
+   * holds the matching dead pose, so the body ends on the floor and stays there.
+   */
+  die(clip) {
+    this.dead = true;
+    this.health = 0;
+    this.stop();
+    this.inDialogue = false;
+    this.velocity = { x: 0, z: 0 };
+    this.speech = null;
+    if (this.seat) {
+      // Slide forward off the seat as the body goes down.
+      const s = this.seat;
+      this.seat = null;
+      this.pos.x = s.root.x + Math.sin(s.yaw) * 0.35;
+      this.pos.z = s.root.z + Math.cos(s.yaw) * 0.35;
+      this.manager?.releaseSeat?.(s.id, this);
+    }
+    const g = this.collision?.groundAt(this.pos.x, this.pos.z, this.pos.y + 0.5);
+    if (g) this.pos.y = g.y;
+    this.deathClip = clip;
+    this.deadPose = DEATH_CLIPS[clip] ?? null;
+    const a = this.animator;
+    if (!a) return;
+    a.setGround(null);
+    this.lookAt.setTarget(null);
+    this.lookAt.weight = 0;
+    this.gestureTimer = null;
+    a.locked = null;
+    a.queued = null;
+    a.after = null;
+    a.release();
+    const hold = this.resolveClip(this.deadPose);
+    if (hold) a.locomotion(hold);
+    const fall = this.resolveClip(clip);
+    if (fall) a.oneShot(fall);
+    this.sync();
   }
 
   pickIdle() {
@@ -150,7 +261,11 @@ export class Npc {
   // --- commands (used by brain states and dialogue) -------------------------------------------
 
   moveTo(target, gait = 'walk', { stop = 0.35 } = {}) {
-    this.nav = { target: { x: target.x, y: target.y ?? this.pos.y, z: target.z }, speed: SPEEDS[gait] ?? SPEEDS.walk, gait, stop };
+    if (this.dead) return;
+    if (this.seat) this.leaveSeat({ quick: gait !== 'walk' });
+    // A leg wound limps: no faster than a hurried walk.
+    const speed = Math.min(SPEEDS[gait] ?? SPEEDS.walk, this.wound?.part === 'leg' ? SPEEDS.walk * 1.3 : Infinity);
+    this.nav = { target: { x: target.x, y: target.y ?? this.pos.y, z: target.z }, speed, gait, stop };
     this.moving = true;
     this.stuck = false;
     this.stuckTime = 0;
@@ -266,6 +381,22 @@ export class Npc {
   }
 
   integrate(dt, env) {
+    if (this.dead || this.seat) {
+      this.speed = 0;
+      return;
+    }
+    if (this.transition) {
+      // Getting up off a seat: glide to the standing spot (the seat's collider is not involved).
+      const tr = this.transition;
+      tr.t = Math.min(1, tr.t + dt / tr.dur);
+      const e = tr.t * tr.t * (3 - 2 * tr.t);
+      this.pos.x = tr.from.x + (tr.to.x - tr.from.x) * e;
+      this.pos.y = tr.from.y + (tr.to.y - tr.from.y) * e;
+      this.pos.z = tr.from.z + (tr.to.z - tr.from.z) * e;
+      this.speed = 0;
+      if (tr.t >= 1) this.transition = null;
+      return;
+    }
     let desired = { x: 0, z: 0 };
     if (this.nav) {
       desired = arrive(this.pos, this.nav.target, this.nav.speed, { stop: this.nav.stop, slow: this.nav.speed > 2 ? 2.2 : 1.2 });
@@ -310,6 +441,8 @@ export class Npc {
   }
 
   locomotionClip() {
+    if (this.dead) return this.deadPose ?? 'idle';
+    if (this.seat) return this.rest ?? this.seatClip();
     const s = this.speed ?? 0;
     if (s > 0.2) {
       if (this.fleeing) return s > 2 ? 'npc_flee_run' : 'walk';
@@ -323,8 +456,8 @@ export class Npc {
   animate(dt) {
     const a = this.animator;
     if (!a) return;
-    const want = this.resolveClip(this.locomotionClip()) ?? 'idle';
-    if (want !== a.baseName) a.locomotion(want);
+    const want = this.resolveClip(this.locomotionClip()) ?? (this.dead ? a.baseName : 'idle');
+    if (want && want !== a.baseName) a.locomotion(want);
     const clipSpeed = this.clips[want]?.userData.speed;
     if (a.base) a.base.timeScale = clipSpeed && this.speed > 0.2 ? THREE.MathUtils.clamp(this.speed / clipSpeed, 0.6, 1.6) : 1;
     this.sync();
@@ -332,8 +465,10 @@ export class Npc {
     if (this.phone) this.phone.visible = want === 'npc_phone';
     else if (want === 'npc_phone') this.attachPhone();
     if (this.lookTime > 0) this.lookTime -= dt;
-    this.lookAt.setTarget(this.lookTime > 0 ? this.lookTarget : null);
-    this.lookAt.update(dt, this.facing, this.headPos());
+    if (!this.dead) {
+      this.lookAt.setTarget(this.lookTime > 0 ? this.lookTarget : null);
+      this.lookAt.update(dt, this.facing, this.headPos());
+    }
     if (this.lod.tier !== 'far') updateCorrectives(this.character);
   }
 
@@ -359,6 +494,7 @@ export class Npc {
 
   /** Capsule body for door pushing / physics (contract §3). */
   body() {
+    if (this.dead || this.seat) return null;
     return { id: `npc:${this.id}`, x: this.pos.x, y: this.pos.y, z: this.pos.z, vx: this.velocity.x, vz: this.velocity.z, radius: 0.3, height: this.height, mass: 70, npc: this.id };
   }
 }

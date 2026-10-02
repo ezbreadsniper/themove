@@ -13,6 +13,28 @@ import { makeLineOfSight } from './perception.js';
 import { REACTION_MATRIX, STIMULUS_DEEDS, driveGain, selectReaction } from './reactions.js';
 import { STIMULI, distToSegmentXZ } from './stimuli.js';
 import { GROUPS } from './brain.js';
+import { PRESETS_BY_ID } from '../character/presets/index.js';
+import { fallbackInteractables } from '../world/interaction/fallback.js';
+import { seatSpec } from '../game/seat.js';
+import { hitTestNpcs, hitClip, deathClip, PART_MULTIPLIER } from './combat.js';
+import { ROUTES_BY_LOCATION } from './routes.js';
+
+// Workstream H's apartment-life activities (src/npc/activities/index.js), when present.
+const ACTIVITY_MODULES = import.meta.glob('./activities/index.js');
+async function loadActivities() {
+  const load = Object.values(ACTIVITY_MODULES)[0];
+  if (!load) return null;
+  try {
+    const m = await load();
+    return m.ACTIVITIES && typeof m.pickActivity === 'function' ? m : null;
+  } catch (err) {
+    console.warn(`NPC activities unavailable: ${err.message}`);
+    return null;
+  }
+}
+
+/** Seats the loft cast prefers, in order (contracts §5: the main characters chill in the loft). */
+export const LOFT_SEATS = ['loft.sofa.a2', 'loft.sofa.a4', 'loft.sofa.b2', 'loft.shellChair', 'loft.sofa.b4', 'loft.sofa.a1', 'loft.sofa.a3', 'loft.sofa.a5', 'loft.sofa.b1', 'loft.sofa.b3'];
 
 // Social clips join the shared registry when workstream A's clips.js offers registerSamplers;
 // NPCs bake them directly either way (see defaultClipsFor).
@@ -57,7 +79,7 @@ export const FALLBACK_SPAWNS = [
 /** LOD tiers: think / step rates (Hz) by distance to the player (m). Beyond `hide` NPCs are culled. */
 export const LOD = { near: { dist: 20, think: 10, step: 60 }, mid: { dist: 45, think: 4, step: 20 }, far: { dist: Infinity, think: 1, step: 6 }, hide: 90 };
 
-const REACT_COOLDOWN = { weaponDrawn: 8, aimedAt: 3, crouchSneak: 25, playerNear: 40, sprint: 12, bump: 1.2, door: 10, panic: 6, weaponHolstered: 6 };
+const REACT_COOLDOWN = { weaponDrawn: 8, aimedAt: 3, crouchSneak: 25, playerNear: 40, sprint: 12, bump: 1.2, door: 10, panic: 6, weaponHolstered: 6, panicSeen: 6, scream: 4, hitSeen: 1.5, gunshot: 0.6, gunshotNear: 0.4 };
 const v3 = (p) => (Array.isArray(p) ? { x: p[0], y: p[1] ?? 0, z: p[2] } : p ? { x: p.x, y: p.y ?? 0, z: p.z } : null);
 
 /**
@@ -70,7 +92,7 @@ const v3 = (p) => (Array.isArray(p) ? { x: p[0], y: p[1] ?? 0, z: p[2] } : p ? {
  *   (a DialogueDirector to start on talk), build: false (headless NPCs for tests).
  */
 export class NpcManager {
-  constructor({ world = null, scene = null, player = null, clipsFor = defaultClipsFor, events = null, relationships = null, barks = null, dialogue = null, build = true, lod = LOD } = {}) {
+  constructor({ world = null, scene = null, player = null, clipsFor = defaultClipsFor, events = null, relationships = null, barks = null, dialogue = null, build = true, lod = LOD, activities = undefined, routes = undefined } = {}) {
     this.world = world;
     this.scene = scene;
     this.player = player;
@@ -95,6 +117,11 @@ export class NpcManager {
     this.raycast = collision?.raycast ? collision.raycast.bind(collision) : null;
     this.unsub = this.listen();
     this.pairTimer = 0;
+    this.routes = routes ?? ROUTES_BY_LOCATION[world?.location?.id] ?? [];
+    this.claims = new Map();
+    // Activities: injected (tests), or H's registry loaded when it exists; null → built-in idles.
+    this.activities = activities ?? null;
+    if (activities === undefined) this.activitiesReady = loadActivities().then((m) => { if (m && !this.activities) this.activities = m; return this.activities; });
   }
 
   // --- spawning -----------------------------------------------------------------------------
@@ -146,6 +173,153 @@ export class NpcManager {
     this.byId.set(id, npc);
     if (npc.holder) this.group.add(npc.holder);
     return npc;
+  }
+
+  /**
+   * Spawns the loft cast (contracts §5): [{ presetId, def?, slot?, id?, name? }]. `def` (a saved
+   * definition) wins over the preset; `slot` is a seat interactable id, a seat item, or omitted (next
+   * free loft seat). These are the main characters, as guests: friends of the player and each other.
+   */
+  spawnCast(list = []) {
+    const seats = this.seatItems();
+    const out = [];
+    for (const entry of list) {
+      const def = entry.def ?? PRESETS_BY_ID[entry.presetId];
+      if (!def) {
+        console.warn(`spawnCast: no definition for ${entry.presetId}`);
+        continue;
+      }
+      let seat = typeof entry.slot === 'object' && entry.slot ? entry.slot : seats.find((s) => s.id === entry.slot);
+      if (!seat) seat = LOFT_SEATS.map((id) => seats.find((s) => s.id === id)).find((s) => s && !this.claims.has(s.id)) ?? null;
+      if (!seat) seat = seats.find((s) => !this.claims.has(s.id)) ?? null;
+      const id = entry.id ?? entry.presetId ?? def.id;
+      const spec = seat ? seatSpec(seat, this.collision) : null;
+      const pos = spec ? [spec.root.x, spec.root.y, spec.root.z] : entry.pos ?? [12.4, 0.1, 5];
+      const npc = this.spawn({ id, name: entry.name ?? def.name ?? id, archetype: entry.archetype ?? 'friend', definition: def, pos, yaw: spec?.yaw ?? entry.yaw ?? 0, traits: entry.traits });
+      if (spec) {
+        this.claims.set(spec.id, npc.id);
+        npc.sitAt(spec);
+      }
+      out.push(npc);
+    }
+    // The cast are friends: each grieves for / avenges the others.
+    for (const a of out) for (const b of out) if (a !== b) a.friends.add(b.id);
+    return out;
+  }
+
+  /** Seat interactables of the world (declared, else the location fallbacks). */
+  seatItems() {
+    if (!this.world) return [];
+    try {
+      return fallbackInteractables(this.world).filter((i) => i.kind === 'seat');
+    } catch {
+      return (this.world.data?.interactables ?? []).filter((i) => i.kind === 'seat');
+    }
+  }
+
+  /** Slot / seat claims shared with activities (one NPC per slot). */
+  claim(key, npc) {
+    const holder = this.claims.get(key);
+    if (holder && holder !== npc.id) return false;
+    this.claims.set(key, npc.id);
+    return true;
+  }
+
+  releaseSeat(key, npc) {
+    if (key && this.claims.get(key) === npc?.id) this.claims.delete(key);
+  }
+
+  /** Context handed to activities (contracts §7). */
+  activityContext(npc) {
+    return {
+      manager: this, world: this.world, npc, time: this.time, events: this.events, audio: this.ctx?.audio ?? globalThis.window?.game?.audio ?? null,
+      claim: (key) => this.claim(key, npc), release: (key) => this.releaseSeat(key, npc), seats: () => this.seatItems(),
+    };
+  }
+
+  // --- combat -------------------------------------------------------------------------------
+
+  /** Ray vs NPC hit volumes (contract §6): { npc, point, normal, distance, part, side } | null. */
+  hitTest(origin, dir, maxDist = 100) {
+    return hitTestNpcs(this.npcs, origin, dir, maxDist);
+  }
+
+  /**
+   * Applies a hit (contract §6): { amount = 1, point, dir, part = 'torso', side, source = 'player' }.
+   * Five pistol hits kill; the head counts double. Returns { health, killed }.
+   */
+  damage(target, { amount = 1, point = null, dir = null, part = 'torso', side = null, source = 'player' } = {}) {
+    const npc = typeof target === 'string' ? this.get(target) : target;
+    if (!npc || npc.dead) return { health: npc?.health ?? 0, killed: false };
+    const p = v3(point) ?? { x: npc.pos.x, y: npc.pos.y + 1.2, z: npc.pos.z };
+    const d = v3(dir) ?? (() => {
+      const from = this.playerPos() ?? { x: npc.pos.x, z: npc.pos.z - 1 };
+      const l = Math.hypot(npc.pos.x - from.x, npc.pos.z - from.z) || 1;
+      return { x: (npc.pos.x - from.x) / l, y: 0, z: (npc.pos.z - from.z) / l };
+    })();
+    if (!side && part !== 'head' && part !== 'torso') {
+      // Which side of the body the point is on (character space +X = left).
+      const lx = (p.x - npc.pos.x) * Math.cos(npc.facing) - (p.z - npc.pos.z) * Math.sin(npc.facing);
+      side = lx >= 0 ? 'Left' : 'Right';
+    }
+    npc.health -= amount * (PART_MULTIPLIER[part] ?? 1);
+    const killed = npc.health <= 0;
+    this.events.emit('npc:hit', { npc: npc.id, ref: npc, point: p, dir: d, part, side, health: Math.max(0, npc.health), source });
+    if (source === 'player') this.relationships.deed(npc.id, killed ? 'murdered' : 'wounded');
+    if (killed) this.kill(npc, { point: p, dir: d, part });
+    else this.hitReact(npc, { point: p, dir: d, part, side, source });
+    return { health: Math.max(0, npc.health), killed };
+  }
+
+  hitReact(npc, { dir, part, side, source }) {
+    if (npc.inDialogue) this.interruptDialogue(npc, 'hit');
+    const wasSeated = !!npc.seat;
+    if (wasSeated) npc.leaveSeat({ quick: true });
+    npc.releaseGesture();
+    npc.oneShot(wasSeated ? 'stumble' : hitClip(npc, { part, dir, side }));
+    npc.wounded({ part, side });
+    const from = source === 'player' ? this.playerPos() : null;
+    npc.threat = { type: 'gunshotNear', pos: from ?? { x: npc.pos.x - (dir?.x ?? 0) * 5, y: 0, z: npc.pos.z - (dir?.z ?? 0) * 5 }, time: npc.clock };
+    npc.drives.fear = Math.min(1, npc.drives.fear + 0.9 * (1.2 - npc.traits.bravery * 0.5));
+    npc.drives.alarm = 1;
+    npc.drives.anger = Math.min(1, npc.drives.anger + npc.traits.aggression * 0.8);
+    const fight = npc.temperament === 'tough' && npc.health > 2;
+    npc.intent = { id: fight ? 'combat' : 'flee', weight: 1, hold: 10 };
+    npc.bark('hurt', { part }, { force: true });
+    npc.lod.think = Infinity;
+    this.emitPanic(npc);
+    // Witnesses: the hit is seen (sight) and the scream heard (sound).
+    this.broadcast({ type: 'hitSeen', pos: { ...npc.pos }, source: npc.id, data: { victim: npc.id } }, { except: npc });
+    this.broadcast({ type: 'scream', pos: { ...npc.pos }, source: npc.id }, { except: npc });
+  }
+
+  kill(npc, { point, dir, part }) {
+    if (npc.inDialogue) this.interruptDialogue(npc, 'death');
+    if (npc.partner) {
+      npc.partner.partner = null;
+      npc.partner = null;
+    }
+    // Killed seated (or while already getting up): the body ends on the floor in front of the seat.
+    const seatId = npc.seat?.id;
+    if (npc.seat) npc.leaveSeat({ quick: true });
+    if (npc.transition) {
+      Object.assign(npc.pos, npc.transition.to);
+      npc.transition = null;
+    }
+    if (seatId && this.claims.get(seatId) === npc.id) this.claims.delete(seatId);
+    // Leave whatever the brain was doing (activities release their seats / props); no state after.
+    npc.brain.states[npc.brain.current]?.exit?.(npc, {});
+    npc.brain.current = 'dead';
+    const clip = deathClip(npc, { part, dir }, npc.rng);
+    npc.die(clip);
+    this.events.emit('npc:death', { npc: npc.id, ref: npc, point, dir, pos: { ...npc.pos }, clip });
+    this.broadcast({ type: 'death', pos: { ...npc.pos }, source: npc.id, data: { victim: npc.id } }, { except: npc });
+  }
+
+  emitPanic(npc) {
+    if (this.time - (npc.panicEmittedAt ?? -Infinity) < 5) return;
+    npc.panicEmittedAt = this.time;
+    this.events.emit('npc:panic', { npc: npc.id, pos: { ...npc.pos } });
   }
 
   get(id) {
@@ -229,6 +403,7 @@ export class NpcManager {
 
   /** Sense → react pipeline for one NPC. Returns the reaction (or null when not sensed / cooling down). */
   stimulate(npc, stim, { visibility = null, force = false } = {}) {
+    if (npc.dead) return null;
     const intensity = force ? stim.scale ?? 1 : npc.perception.sense(npc.pos, npc.facing, stim, { visibility });
     if (intensity <= 0) return null;
     const cd = REACT_COOLDOWN[stim.type] ?? 0;
@@ -246,7 +421,9 @@ export class NpcManager {
       this.relationships.deed(npc.id, deed, { scale: Math.max(0.35, intensity) });
       if (stim.type === 'bump') npc.memory.vars.bumps = (npc.memory.vars.bumps ?? 0) + 1;
     }
-    const r = selectReaction({ type: stim.type, intensity, traits: npc.traits, temperament: npc.temperament, rank: npc.rank(), distance, repeats: npc.memory.vars.bumps ?? 0, state: npc.brain.state });
+    const victim = stim.data?.victim ? this.get(stim.data.victim) : null;
+    const friend = !!victim && (npc.friends.has(victim.id) || (victim.personality.faction === npc.personality.faction && npc.personality.faction !== 'civilians'));
+    const r = selectReaction({ type: stim.type, intensity, traits: npc.traits, temperament: npc.temperament, rank: npc.rank(), distance, repeats: npc.memory.vars.bumps ?? 0, state: npc.brain.state, friend });
     if (!r || r.id === 'ignore') return r;
     for (const [k, v] of Object.entries(r.drives ?? {})) {
       const gain = v > 0 ? driveGain(k, npc.traits) * Math.max(0.4, intensity) : 1;
@@ -258,6 +435,9 @@ export class NpcManager {
     if (r.state && (!npc.intent || npc.intent.weight < 0.3 || groupOf(r.state) >= groupOf(npc.intent.id))) npc.intent = { id: r.state, weight: 1, hold: threat >= 0.5 ? 8 : 4 };
     if (threat >= 0.3) npc.threat = { type: stim.type, pos: { ...stim.pos }, time: npc.clock };
     if (npc.inDialogue && threat >= 0.4) this.interruptDialogue(npc, stim.type);
+    // Seated people jump up at anything dangerous.
+    if (npc.seat && threat >= 0.3 && r.id !== 'stare' && r.id !== 'glance') npc.leaveSeat({ quick: true });
+    if (r.state === 'flee' || r.state === 'cower' || r.panic) this.emitPanic(npc);
     const sameState = r.state && r.state === npc.brain.state;
     if (r.anim && !npc.inDialogue && !sameState) npc.oneShot(r.anim);
     if (r.look) npc.look({ x: stim.pos.x, y: (stim.pos.y ?? 0) + 1.5, z: stim.pos.z }, r.look);
@@ -278,6 +458,7 @@ export class NpcManager {
   }
 
   requestTalk(npc) {
+    if (!npc || npc.dead) return false;
     const tree = npc.personality.dialogue;
     if (npc.brain.state && GROUPS[npc.brain.states[npc.brain.state].group] >= GROUPS.threat) return false;
     if (!tree || npc.rank() === 'hostile') {
@@ -344,6 +525,7 @@ export class NpcManager {
     }
     let best = null;
     for (const n of this.npcs) {
+      if (n.dead) continue;
       const dx = n.pos.x - pos.x;
       const dz = n.pos.z - pos.z;
       const d = Math.hypot(dx, dz);
@@ -399,7 +581,7 @@ export class NpcManager {
       this.pairSocial();
     }
 
-    const others = this.npcs.map((n) => n.pos);
+    const others = this.npcs.filter((n) => !n.dead && !n.seat).map((n) => n.pos);
     this.npcs.forEach((npc, i) => {
       const d = view ? Math.hypot(npc.pos.x - pos.x, npc.pos.z - pos.z) : 0;
       const tier = d < this.lodTable.near.dist ? 'near' : d < this.lodTable.mid.dist ? 'mid' : 'far';
@@ -413,7 +595,13 @@ export class NpcManager {
       const env = { time: this.time, player: view ? { ...view, dist: d, visible: npc.perception.visibility > 0.15 } : null, neighbours: [...others.filter((o) => o !== npc.pos), ...(pos ? [pos] : [])] };
       // Senses at ≥ 5 Hz near, else with the think rate.
       const senseRate = tier === 'near' ? 1 / 8 : 1 / L.think;
+      if (npc.dead) {
+        npc.lod.sense = 0;
+        npc.lod.think = 0;
+        npc.lod.thinkDt = 0;
+      }
       if (npc.lod.sense >= senseRate - 1e-9) {
+        this.senseCrowd(npc);
         this.sensePlayer(npc, view, d, npc.lod.sense);
         npc.decay(npc.lod.sense, env);
         npc.lod.sense = 0;
@@ -431,6 +619,16 @@ export class NpcManager {
         npc.lod.anim = 0;
       }
     });
+  }
+
+  /** Panic by sight: someone visibly running or cowering nearby is itself a stimulus. */
+  senseCrowd(npc) {
+    for (const o of this.npcs) {
+      if (o === npc || o.dead || !['flee', 'cower'].includes(o.brain.state)) continue;
+      if (Math.hypot(o.pos.x - npc.pos.x, o.pos.z - npc.pos.z) > STIMULI.panicSeen.radius) continue;
+      this.stimulate(npc, { type: 'panicSeen', pos: { ...o.pos }, source: o.id });
+      break;
+    }
   }
 
   /** Continuous player-driven stimuli (visibility, weapon, aim, sneaking, proximity, bumps). */
@@ -460,7 +658,7 @@ export class NpcManager {
   /** Pairs nearby sociable idle NPCs into conversations; breaks pairs that drift or get busy. */
   pairSocial() {
     // NPCs holding a scenario point (leaning, behind a counter) stay put; free ones pair up.
-    const ambient = (n) => !n.home.scenario && !n.inDialogue && ['idle', 'social', null, undefined].includes(n.brain.state) && n.drives.fear < 0.2 && n.drives.alarm < 0.3;
+    const ambient = (n) => !n.dead && !n.home.scenario && !n.inDialogue && ['idle', 'social', null, undefined].includes(n.brain.state) && n.drives.fear < 0.2 && n.drives.alarm < 0.3;
     for (const n of this.npcs) {
       if (n.partner && (!ambient(n) || !ambient(n.partner) || Math.hypot(n.pos.x - n.partner.pos.x, n.pos.z - n.partner.pos.z) > 4)) {
         n.partner.partner = null;
@@ -481,7 +679,7 @@ export class NpcManager {
 
   /** NPCs as interactables (contract §2 shape, kind 'npc') for C's interaction prompts. */
   interactables() {
-    return this.npcs.map((n) => ({
+    return this.npcs.filter((n) => !n.dead).map((n) => ({
       id: `npc:${n.id}`, kind: 'npc', pos: [n.pos.x, n.pos.y + 1.0, n.pos.z], yaw: n.facing, radius: 1.8,
       prompt: n.personality.dialogue ? `Talk to ${n.name}` : 'Greet', data: { npc: n, npcId: n.id, tree: n.personality.dialogue },
     }));
@@ -489,7 +687,7 @@ export class NpcManager {
 
   /** Capsule bodies for World.update(dt, { bodies }) (doors, physics props). */
   bodies() {
-    return this.npcs.map((n) => n.body());
+    return this.npcs.map((n) => n.body()).filter(Boolean);
   }
 
   nearest(pos, maxDist = Infinity, filter = () => true) {
@@ -503,7 +701,7 @@ export class NpcManager {
 
   /** Active barks for an overlay: [{ npc, text, emotion, head }]. */
   speeches() {
-    return this.npcs.filter((n) => n.speech && n.holder?.visible !== false).map((n) => ({ npc: n, text: n.speech.text, emotion: n.speech.emotion, head: n.headPos() }));
+    return this.npcs.filter((n) => !n.dead && n.speech && n.holder?.visible !== false).map((n) => ({ npc: n, text: n.speech.text, emotion: n.speech.emotion, head: n.headPos() }));
   }
 
   dispose() {

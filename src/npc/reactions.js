@@ -38,6 +38,9 @@ export const REACTIONS = {
   confront: { drives: { anger: 0.65, alarm: 0.5 }, bark: 'confront', look: 6, state: 'confront' },
   fight: { drives: { anger: 1, alarm: 0.8 }, bark: 'fight', look: 6, state: 'combat' },
   calm: { drives: { fear: -0.35, anger: -0.2, alarm: -0.2, surrender: -1 }, bark: 'relief' },
+  duck: { drives: { fear: 0.95, alarm: 0.8 }, anim: 'npc_duck', bark: 'scream', panic: true, state: 'cower' },
+  grief: { drives: { fear: 0.55, alarm: 0.8 }, bark: 'grief', look: 8, panic: true, state: 'cower' },
+  avenge: { drives: { anger: 1, alarm: 0.9 }, bark: 'avenge', look: 8, state: 'combat' },
 };
 
 const hostile = (c) => rankIndex(c.rank) <= 1;
@@ -48,7 +51,7 @@ const close = (c, m) => c.distance < m;
 export const REACTION_MATRIX = {
   gunshot: {
     coward: (c) => (close(c, 10) ? 'cower' : 'flee'),
-    normal: (c) => (close(c, 4) ? 'cower' : 'flee'),
+    normal: (c) => (close(c, 6) ? 'duck' : 'flee'),
     hothead: 'flee',
     tough: (c) => (hostile(c) ? 'fight' : c.intensity > 0.6 ? 'flee' : 'wary'),
   },
@@ -69,6 +72,21 @@ export const REACTION_MATRIX = {
   melee: { coward: 'flee', normal: (c) => (close(c, 5) ? 'flee' : 'startle'), hothead: 'confront', tough: (c) => (close(c, 6) ? 'confront' : 'stare') },
   assault: { coward: 'cower', normal: 'flee', hothead: 'fight', tough: 'fight' },
   panic: { coward: 'flee', normal: (c) => (c.intensity > 0.45 ? 'flee' : 'startle'), hothead: 'startle', tough: 'stare' },
+  panicSeen: { coward: 'flee', normal: (c) => (c.intensity > 0.35 ? 'flee' : 'startle'), hothead: 'startle', tough: 'stare' },
+  scream: { coward: 'flee', normal: (c) => (c.intensity > 0.4 ? 'flee' : 'startle'), hothead: 'startle', tough: 'stare' },
+  // Someone shot / killed in view. `friend`: the victim is one of theirs.
+  hitSeen: {
+    coward: (c) => (c.friend && close(c, 10) ? 'grief' : close(c, 7) ? 'duck' : 'flee'),
+    normal: (c) => (close(c, 5) ? 'duck' : 'flee'),
+    hothead: (c) => (c.friend ? 'avenge' : 'flee'),
+    tough: (c) => (c.friend || hostile(c) ? 'avenge' : 'confront'),
+  },
+  death: {
+    coward: (c) => (c.friend && close(c, 12) ? 'grief' : close(c, 6) ? 'cower' : 'flee'),
+    normal: (c) => (c.friend && close(c, 8) ? 'grief' : 'flee'),
+    hothead: (c) => (c.friend ? 'avenge' : 'flee'),
+    tough: (c) => (c.friend ? 'avenge' : hostile(c) ? 'confront' : 'flee'),
+  },
   bump: {
     coward: 'complain',
     normal: 'complain',
@@ -83,7 +101,7 @@ export const REACTION_MATRIX = {
 };
 
 /** Deed recorded against the player when an NPC senses a stimulus (null = none). */
-export const STIMULUS_DEEDS = { gunshot: 'gunfireNearby', gunshotNear: 'shotAt', aimedAt: 'aimedAt', weaponDrawn: 'weaponShown', bump: 'bumped', assault: 'assaulted', crouchSneak: 'stared' };
+export const STIMULUS_DEEDS = { gunshot: 'gunfireNearby', gunshotNear: 'shotAt', aimedAt: 'aimedAt', weaponDrawn: 'weaponShown', bump: 'bumped', assault: 'assaulted', crouchSneak: 'stared', hitSeen: 'witnessedShooting', death: 'witnessedKilling' };
 
 /** Drive gains by trait: fear is damped by bravery, anger fed by aggression, social by sociability. */
 export function driveGain(drive, traits) {

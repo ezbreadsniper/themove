@@ -54,6 +54,9 @@ class Accum {
   }
 }
 
+/** Solid tags that are furniture (physics may treat their tops / sides as prop-supporting statics). */
+export const FURNITURE_TAGS = new Set(['sofa', 'table', 'console', 'counter', 'fridge', 'cube', 'cart', 'bed', 'nightstand', 'dresser', 'vanity', 'toilet', 'shower', 'rack', 'bench', 'shelf', 'radiator', 'mirror', 'case', 'speaker', 'chair', 'stool', 'lamp']);
+
 const tmpV = new THREE.Vector3();
 const tmpN = new THREE.Vector3();
 const tmpNM = new THREE.Matrix3();
@@ -75,6 +78,7 @@ export class Kit {
     this.layers = new Map();
     this.emitLayer = -1;
     this.interactables = [];
+    this.surfaces = [];
   }
 
   get m() {
@@ -126,6 +130,13 @@ export class Kit {
 
   toWorld(p) {
     return tmpV.set(p[0], p[1], p[2]).applyMatrix4(this.m).toArray();
+  }
+
+  /** World position even inside a dynamic (whose frame stack is pivot-local). */
+  toWorldAbs(p) {
+    tmpV.set(p[0], p[1], p[2]).applyMatrix4(this.m);
+    if (this.dynamic) tmpV.applyMatrix4(this.dynamic.pivotMatrix);
+    return tmpV.toArray();
   }
 
   /** Appends frame-local triangles. verts: [{p:[x,y,z], n:[x,y,z], uv?:[u,v]}], tris: index triples. */
@@ -367,7 +378,9 @@ export class Kit {
     const target = this.dynamic ? this.dynamic.solids : this.solids;
     const p = this.dynamic ? poly.map((q) => [...q]) : this.polyToWorld(poly);
     const off = this.dynamic ? 0 : this.m.elements[13];
-    target.push({ poly: p, y0: y0 + off, y1: y1 + off, tag });
+    const s = { poly: p, y0: y0 + off, y1: y1 + off, tag };
+    if (FURNITURE_TAGS.has(tag)) s.furniture = true;
+    target.push(s);
     return this;
   }
 
@@ -417,17 +430,20 @@ export class Kit {
    * of its own). `fill` scales the light's crude same-zone bounce; `on: false` starts it off.
    */
   light({ name, pos, color = '#ffd8a0', intensity = 1, range = 6, dir = null, cone = null, dynamic = false, zone = null, switchable = false, flicker = null, layer = null, shadow = false, fill = 1, on = true }) {
-    const p = this.toWorld(pos);
+    const p = this.toWorldAbs(pos);
+    const follow = this.dynamic ? { dynamic: this.dynamic.name, offset: this.toWorld(pos) } : null;
     let d = null;
     if (dir) {
-      tmpN.set(dir[0], dir[1], dir[2]).applyMatrix3(tmpNM.getNormalMatrix(this.m)).normalize();
+      const full = this.dynamic ? this.dynamic.pivotMatrix.clone().multiply(this.m) : this.m;
+      tmpN.set(dir[0], dir[1], dir[2]).applyMatrix3(tmpNM.getNormalMatrix(full)).normalize();
       d = tmpN.toArray();
     }
     if (this.lights.some((l) => l.name === name)) throw new Error(`duplicate light ${name}`);
+    if (this.dynamic?.data.physical) this.dynamic.data.physical.light ??= name;
     const layerName = layer ?? (switchable || flicker || shadow ? name : null);
     const layerIndex = layerName ? this.layerIndex(layerName, color) : -1;
     if (layerName) this.layers.get(layerName).lights.push(name);
-    this.lights.push({ name, pos: p, color, intensity, range, dir: d, cone, dynamic, zone, switchable: !!switchable, flicker, layer: layerIndex, layerName, shadow, fill, on });
+    this.lights.push({ name, pos: p, color, intensity, range, dir: d, cone, dynamic, zone, switchable: !!switchable, flicker, layer: layerIndex, layerName, shadow, fill, on, follow });
     return this;
   }
 
@@ -457,38 +473,101 @@ export class Kit {
    */
   interactable({ id, kind, pos, yaw = 0, radius = 1.2, prompt = 'Use', data = {} }) {
     if (this.interactables.some((i) => i.id === id)) throw new Error(`duplicate interactable ${id}`);
-    const out = { id, kind, pos: this.toWorld(pos), yaw: yaw + this.frameYaw(), radius, prompt, data: { ...data } };
-    if (data.exit) out.data.exit = this.toWorld(data.exit);
+    const out = { id, kind, pos: this.toWorldAbs(pos), yaw: yaw + this.frameYaw(), radius, prompt, data: { ...data } };
+    if (data.exit) out.data.exit = this.toWorldAbs(data.exit);
+    if (this.dynamic) out.data.prop ??= this.dynamic.name;
     this.interactables.push(out);
     return this;
   }
 
+  /** Yaw of the current frame (including a dynamic's pivot). */
   frameYaw() {
-    return Math.atan2(this.m.elements[8], this.m.elements[0]);
+    const e = this.m.elements;
+    const own = Math.atan2(e[8], e[0]);
+    if (!this.dynamic) return own;
+    const p = this.dynamic.pivotMatrix.elements;
+    return own + Math.atan2(p[8], p[0]);
   }
 
   /**
-   * Loose prop simulated by the physics owner (contracts §3): geometry built in fn (local to `pos`,
-   * y = 0 its base) becomes a dynamic with data.physical = { shape: 'box' | 'cylinder',
-   * size: [w, h, d] | radius + height, mass }. A matching local solid is generated from the shape.
+   * Loose, simulated prop (contracts §3/§8): `kit.physical(name, buildFn, opts)` builds buildFn's
+   * geometry as its own dynamic node (pivot at opts.pos / opts.yaw in the current frame, y = 0 its
+   * resting base) with data.physical = { shape: 'box' | 'cylinder' | 'sphere' | 'hull', mass,
+   * material, breakable, anchored: 'wall' | 'ceiling' | null, anchor (world point it hangs from),
+   * light (name of the light it carries), bounds { min, max } (pivot-local), size | radius + height,
+   * offset (bounds centre) }. Unspecified sizes are fitted to the built geometry, and a matching
+   * local collision solid is generated. Legacy form: physical(name, pos, spec, fn, yaw).
    */
-  physical(name, pos, spec, fn, yaw = 0) {
-    const physical = { shape: 'box', mass: 2, ...spec };
+  physical(name, a, b, c, d) {
+    let fn;
+    let opts;
+    if (typeof a === 'function') {
+      fn = a;
+      opts = { ...(b ?? {}) };
+    } else {
+      fn = c;
+      opts = { ...b, pos: a, yaw: d ?? 0 };
+    }
+    const { pos = [0, 0, 0], yaw = 0, anchor = null, ...spec } = opts;
+    const physical = { shape: 'box', mass: 1, material: 'plastic', breakable: false, anchored: null, ...spec };
     this.beginDynamic(name, pos, yaw, { physical });
     fn(this);
+    const bb = this.dynamicBounds(name);
+    physical.bounds = bb;
+    const size = [0, 1, 2].map((i) => bb.max[i] - bb.min[i]);
+    const cx = (bb.min[0] + bb.max[0]) / 2;
+    const cz = (bb.min[2] + bb.max[2]) / 2;
+    physical.offset ??= [cx, (bb.min[1] + bb.max[1]) / 2, cz];
     if (physical.shape === 'cylinder') {
-      const r = physical.radius;
-      this.solid(Array.from({ length: 8 }, (_, i) => [Math.cos((i / 8) * Math.PI * 2) * r, -Math.sin((i / 8) * Math.PI * 2) * r]), 0, physical.height, 'prop');
+      physical.radius ??= Math.max(size[0], size[2]) / 2;
+      physical.height ??= size[1];
+    } else if (physical.shape === 'sphere') {
+      physical.radius ??= Math.max(...size) / 2;
     } else {
-      const [w, h, d] = physical.size;
-      this.solid([[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]], 0, h, 'prop');
+      physical.size ??= size;
+    }
+    const y0 = bb.min[1];
+    const y1 = bb.max[1];
+    if (physical.shape === 'cylinder' || physical.shape === 'sphere') {
+      const r = physical.radius;
+      this.solid(Array.from({ length: 8 }, (_, i) => [cx + Math.cos((i / 8) * Math.PI * 2) * r, cz - Math.sin((i / 8) * Math.PI * 2) * r]), y0, y1, 'prop');
+    } else {
+      const [w, , dd] = physical.size;
+      this.solid([[cx - w / 2, cz - dd / 2], [cx + w / 2, cz - dd / 2], [cx + w / 2, cz + dd / 2], [cx - w / 2, cz + dd / 2]], y0, y1, 'prop');
     }
     this.endDynamic();
+    if (anchor) physical.anchor = this.toWorld(anchor);
+    return this;
+  }
+
+  /** Pivot-local AABB of everything built so far into dynamic `name`. */
+  dynamicBounds(name) {
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    for (const a of this.buckets.get(`dyn:${name}`)?.values() ?? []) {
+      for (let i = 0; i < a.pos.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          min[k] = Math.min(min[k], a.pos[i + k]);
+          max[k] = Math.max(max[k], a.pos[i + k]);
+        }
+      }
+    }
+    if (min[0] === Infinity) return { min: [0, 0, 0], max: [0, 0, 0] };
+    return { min, max };
+  }
+
+  /**
+   * Support surface for loose props (contracts §8): a horizontal XZ polygon at height y (frame-local)
+   * that physics can rest things on (shelves, table tops, counters, console top, cart shelves).
+   */
+  surface(name, poly, y, data = {}) {
+    if (this.dynamic) throw new Error('surfaces cannot live on dynamic objects');
+    this.surfaces.push({ name, poly: this.polyToWorld(poly), y: this.yToWorld(y), ...data });
     return this;
   }
 
   marker(name, pos, data = {}) {
-    const p = this.toWorld(pos);
+    const p = this.toWorldAbs(pos);
     const yaw = data.yaw !== undefined ? data.yaw + this.frameYaw() : undefined;
     this.markers.set(name, { name, pos: p, ...data, yaw });
     return this;
@@ -567,7 +646,7 @@ export class Kit {
       root, buckets, dynamics,
       solids: this.solids, walkables: this.walkables, occluders: this.occluders,
       lights: this.lights, layers: [...this.layers.values()], markers: Object.fromEntries(this.markers),
-      interactables: this.interactables,
+      interactables: this.interactables, surfaces: this.surfaces,
       stats: { triangles, drawCalls },
     };
   }

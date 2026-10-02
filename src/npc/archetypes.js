@@ -46,6 +46,18 @@ export const ARCHETYPES = {
     dialogue: 'thug',
     voice: 'thug',
   },
+  /** The main characters hanging out in the loft (spawnCast): friends of the player, of each other. */
+  friend: {
+    label: 'Friend',
+    faction: 'loft',
+    traits: { bravery: 0.5, aggression: 0.3, sociability: 0.85, curiosity: 0.5, wander: 0 },
+    disposition: 45,
+    perception: { fov: 150, sightRange: 22, hearing: 1 },
+    idles: ['npc_idle_weight', 'npc_idle_pockets', 'npc_idle_armsCrossed'],
+    talk: ['npc_talk_gesture_1', 'npc_talk_gesture_2', 'npc_talk_gesture_4'],
+    dialogue: null,
+    voice: 'friend',
+  },
   pedestrian: {
     label: 'Passer-by',
     faction: 'civilians',
@@ -65,6 +77,7 @@ export const FACTIONS = {
   shopkeepers: { label: 'Shopkeepers', allies: ['residents', 'civilians'], enemies: [] },
   civilians: { label: 'Civilians', allies: ['residents', 'shopkeepers'], enemies: [] },
   crew: { label: 'Corner crew', allies: [], enemies: ['residents'] },
+  loft: { label: 'The loft crew', allies: ['residents'], enemies: [] },
 };
 
 const TRAITS = ['bravery', 'aggression', 'sociability', 'curiosity', 'wander'];

@@ -124,6 +124,8 @@ export const MATERIALS = {
   paper: { color: '#e8e4da' },
   bottleGreen: { color: '#24442c' },
   bottleBrown: { color: '#4a2a14' },
+  glassLager: { color: '#c9d3a4' },
+  oliveDrab: { color: '#4b5233' },
   candleJar: { color: '#c9b48c' },
   wire: { color: '#151515', cast: false },
   glass: { kind: 'glass', color: '#9fb4bf', opacity: 0.22 },

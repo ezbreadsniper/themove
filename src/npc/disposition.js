@@ -35,6 +35,10 @@ export const DEEDS = {
   assaulted: { standing: -30, heat: -40, faction: 0.5 },
   threatened: { standing: -15, heat: -25, faction: 0.3, repeat: 0.6, window: 30 },
   defused: { standing: 3, heat: 15 },
+  wounded: { standing: -45, heat: -60, faction: 0.6 },
+  murdered: { standing: -100, heat: -80, faction: 1 },
+  witnessedShooting: { standing: -20, heat: -40, faction: 0.2, repeat: 0.5, window: 30 },
+  witnessedKilling: { standing: -40, heat: -60, faction: 0.3, repeat: 0.5, window: 60 },
   apologised: { standing: 2, heat: 10, repeat: 0.3, window: 60 },
 };
 

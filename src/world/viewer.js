@@ -57,7 +57,7 @@ export class WorldViewer {
     this.lookAt(SHOTS['street (spawn)'].target);
     this.keys = new Set();
     this.drag = null;
-    this.settings = { shot: 'street (spawn)', speed: 4, colliders: false, walkables: false, interactables: false, fog: true, bake: 1, sun: 1, night: 0, shadows: true, character: true };
+    this.settings = { shot: 'street (spawn)', speed: 4, colliders: false, walkables: false, interactables: false, fog: true, bake: 1, sun: 1, night: 1, shadows: true, character: true };
     this.debug = new THREE.Group();
     this.bindInput();
   }
@@ -127,7 +127,7 @@ export class WorldViewer {
     this.cam.pos.set(...s.pos);
     this.lookAt(s.target);
     if (this.world) {
-      this.settings.night = s.night ?? 0;
+      this.settings.night = s.night ?? 1;
       this.world.setTimeOfDay(this.settings.night);
       for (const l of this.world.lightsByName.values()) this.world.setLight(l.name, l.def.on !== false);
       for (const n of s.off ?? []) this.world.setLight(n, false);

@@ -3,7 +3,7 @@ import { MaterialLibrary } from './kit/materials.js';
 import { CollisionWorld } from './physics/collision.js';
 import { LightBaker } from './lighting/bake.js';
 import { LightRig } from './lighting/rig.js';
-import { DUSK, NIGHT, bakeSky, blendPresets, createSkyDome, paintSkyDome, createSun, CharacterProbe } from './lighting/dusk.js';
+import { DUSK, NIGHT, bakeSky, blendPresets, createSkyDome, paintSkyDome, createSun, aimSun, CharacterProbe } from './lighting/dusk.js';
 import { DoorSystem } from './doors.js';
 import { buildFoundry, FOUNDRY } from './locations/foundry/index.js';
 
@@ -26,7 +26,7 @@ export class World {
     this.data = build(this.lib);
     this.buildMs = performance.now() - t0;
     this.root = this.data.root;
-    this.baker = new LightBaker({ occluders: this.data.occluders, lights: this.data.lights, layers: this.data.layers, sky: bakeSky(DUSK), zones: location.zones, rays, bounce: 0.1 });
+    this.baker = new LightBaker({ occluders: this.data.occluders, lights: this.data.lights, layers: this.data.layers, sky: bakeSky(NIGHT), zones: location.zones, rays, bounce: 0.1 });
     const t1 = performance.now();
     const meshes = [];
     this.root.traverse((o) => o.isMesh && meshes.push(o));
@@ -35,17 +35,17 @@ export class World {
     this.collision = new CollisionWorld({ solids: this.data.solids, walkables: this.data.walkables });
     this.doors = new DoorSystem(this.data.dynamics, this.collision);
     this.rig = new LightRig({ lights: this.data.lights, layers: this.data.layers, uniforms: this.lib.uniforms, points, spots, shadowSize });
-    this.sky = createSkyDome(DUSK);
-    const { sun, target } = createSun(location.bounds, DUSK);
+    this.sky = createSkyDome(NIGHT);
+    const { sun, target } = createSun(location.bounds, NIGHT);
     this.sun = sun;
     this.sunTarget = target;
     this.probe = new CharacterProbe(this.baker, () => ({ layerScale: this.rig.layerScale, skyScale: this.lib.uniforms.uSkyScale.value, direct: 0.55 }));
     this.group = new THREE.Group();
     this.group.name = `location:${location.id}`;
     this.group.add(this.root, this.sky, this.sun, this.sunTarget, this.probe.light, this.rig.group);
-    this.fog = new THREE.Fog(DUSK.fog.color, DUSK.fog.near, DUSK.fog.far);
+    this.fog = new THREE.Fog(NIGHT.fog.color, NIGHT.fog.near, NIGHT.fog.far);
     this.timeOfDay = 0;
-    this.setTimeOfDay(0);
+    this.setTimeOfDay(1);
   }
 
   get markers() {
@@ -65,7 +65,7 @@ export class World {
     return this.rig.setLight(name, on);
   }
 
-  /** 0 = blue-hour dusk, 1 = night. Blends sky dome, fog, sun and the baked sky contribution. */
+  /** 0 = blue-hour dusk, 1 = night (default). Blends sky dome, fog, sun/moon and the baked sky contribution. */
   setTimeOfDay(k) {
     this.timeOfDay = Math.max(0, Math.min(1, k));
     const p = blendPresets(DUSK, NIGHT, this.timeOfDay);
@@ -74,6 +74,7 @@ export class World {
     this.fog.near = p.fog.near;
     this.fog.far = p.fog.far;
     this.sun.color.set(p.sunColor);
+    aimSun(this.sun, p.sunDir);
     this.sun.intensity = p.sunIntensity;
     this.sunBase = p.sunIntensity;
     this.lib.uniforms.uSkyScale.value = p.skyScale;

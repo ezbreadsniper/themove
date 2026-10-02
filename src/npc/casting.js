@@ -53,6 +53,8 @@ export const WARDROBES = {
   },
 };
 
+WARDROBES.friend = WARDROBES.resident;
+
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const jitter = (rng, v, amt, lo, hi) => Math.max(lo, Math.min(hi, v + (rng.next() * 2 - 1) * amt));
 
