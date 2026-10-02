@@ -14,7 +14,7 @@ const CSS = `
 .dlg-bar{position:absolute;left:0;right:0;height:0;background:#000;transition:height .45s ease}
 .dlg-bar.top{top:0}.dlg-bar.bottom{bottom:0}
 .dlg-root.on .dlg-bar{height:10.5vh}
-.dlg-sub{position:absolute;left:50%;bottom:12.5vh;transform:translateX(-50%);max-width:min(760px,86vw);text-align:center;font-size:17px;line-height:1.35;padding:6px 12px;background:#0009;opacity:0;transition:opacity .15s}
+.dlg-sub{position:absolute;left:50%;bottom:12.5vh;transform:translateX(-50%);max-width:min(760px,86vw);text-align:center;font-size:17px;line-height:1.35;padding:6px 12px;background:#0009;opacity:0}
 .dlg-sub.show{opacity:1}
 .dlg-name{font-weight:bold;margin-right:.6em;letter-spacing:.04em}
 .dlg-choices{position:absolute;left:50%;bottom:12.5vh;transform:translateX(-50%);min-width:min(560px,90vw);max-width:min(760px,92vw);background:#05051ccc;border:1px solid #3a3a7a;padding:6px 0;pointer-events:auto;display:none}

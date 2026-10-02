@@ -266,6 +266,16 @@ describe('dialogue camera', () => {
     }
   });
 
+  test('a bystander standing in the two-shot pushes the camera to another framing', () => {
+    const a = new THREE.Vector3(0, 1.6, 0);
+    const b = new THREE.Vector3(0, 1.6, 1.5);
+    const two = frameShot('two', { a, b, side: 1 });
+    const mid = two.pos.clone().lerp(two.target, 0.4);
+    const s = frameClearShot('two', { a, b, side: 1 }, null, [{ x: mid.x, z: mid.z }]);
+    expect(s.kind).not.toBe('two');
+    expect(sideOf(s.pos, a, b)).toBe(1);
+  });
+
   test('shot choice follows hints, opening and emotion', () => {
     expect(pickShot({ kind: 'line', speaker: 'npc', emotion: 'neutral', shot: 'auto' }, 0)).toEqual({ kind: 'two', speaker: 'b' });
     expect(pickShot({ kind: 'line', speaker: 'npc', emotion: 'angry', shot: 'auto' }, 3)).toEqual({ kind: 'close', speaker: 'b' });

@@ -95,24 +95,34 @@ export function frameShot(kind, { a, b, speaker = 'b', side = 1 }) {
  * camera; a blocked camera moves in to the hit point (never across the line, which runs through
  * the target side of the scene).
  */
-export function clearShot(shot, raycast) {
-  if (!raycast) return shot;
+export function clearShot(shot, raycast, bystanders = []) {
   const d = shot.pos.clone().sub(shot.target);
   const len = d.length();
   d.divideScalar(len);
-  const hit = raycast(shot.target.toArray(), d.toArray(), len);
+  const hit = raycast ? raycast(shot.target.toArray(), d.toArray(), len) : len;
   shot.clear = Math.min(1, hit / len);
   if (hit < len) shot.pos = shot.target.clone().addScaledVector(d, Math.max(0.6, hit - 0.2));
+  // Someone standing in the shot (not one of the two speakers) counts as a blocked shot.
+  for (const p of bystanders) {
+    const t = Math.max(0, Math.min(1, ((p.x - shot.target.x) * d.x + (p.z - shot.target.z) * d.z) / len));
+    if (t * len < 0.5) continue;
+    const cx = shot.target.x + d.x * len * t;
+    const cz = shot.target.z + d.z * len * t;
+    if (Math.hypot(p.x - cx, p.z - cz) < 0.5) shot.clear = Math.min(shot.clear, 0.5);
+  }
   return shot;
 }
 
-/** frameShot + wall handling: a shot that loses over 30% of its distance falls back to a clearer one. */
-export function frameClearShot(kind, opts, raycast) {
-  const first = clearShot(frameShot(kind, opts), raycast);
-  if (!raycast || first.clear >= 0.7) return first;
+/**
+ * frameShot + obstruction handling: a shot that loses over 30% of its distance to a wall, or has a
+ * bystander ({x, z}) in it, falls back to a clearer one on the same side.
+ */
+export function frameClearShot(kind, opts, raycast, bystanders = []) {
+  const first = clearShot(frameShot(kind, opts), raycast, bystanders);
+  if (first.clear >= 0.7) return first;
   let best = first;
   for (const alt of SHOT_FALLBACKS[kind] ?? []) {
-    const s = clearShot(frameShot(alt, opts), raycast);
+    const s = clearShot(frameShot(alt, opts), raycast, bystanders);
     if (s.clear >= 0.7) return s;
     if (s.clear > best.clear) best = s;
   }
@@ -178,7 +188,7 @@ export class DialogueCamera {
 
   /** Current shot's camera pose (with drift), on the chosen side. */
   shotPose() {
-    const f = frameClearShot(this.shot?.kind ?? 'two', { a: this.a, b: this.b, speaker: this.shot?.speaker ?? 'b', side: this.side }, this.raycast);
+    const f = frameClearShot(this.shot?.kind ?? 'two', { a: this.a, b: this.b, speaker: this.shot?.speaker ?? 'b', side: this.side }, this.raycast, this.bystanders?.() ?? []);
     const t = this.time;
     const h = this.handheld;
     const drift = new THREE.Vector3(Math.sin(t * 0.7) * 0.012 + Math.sin(t * 1.9) * 0.004, Math.sin(t * 0.53 + 1) * 0.009, Math.sin(t * 0.61 + 2) * 0.01).multiplyScalar(h);

@@ -103,6 +103,8 @@ export class DialogueDirector {
     this.logged = 0;
     const head = this.playerHead() ?? new THREE.Vector3(npc.pos.x, npc.pos.y + 1.6, npc.pos.z - 1.5);
     this.cam?.begin(head, new THREE.Vector3(npc.headPos().x, npc.headPos().y, npc.headPos().z));
+    // Other NPCs are bystanders the camera keeps out of its shots.
+    if (this.cam) this.cam.bystanders = () => (npc.manager?.npcs ?? []).filter((n) => n !== npc && n.holder?.visible !== false).map((n) => n.pos);
     this.hud?.setLetterbox(true);
     this.events.emit('dialogue:start', { npc: npc.id, tree: tree.id });
     this.present(this.runner.start());
