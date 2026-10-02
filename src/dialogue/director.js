@@ -48,8 +48,11 @@ export class DialogueDirector {
     this.seed = seed;
     const raycast = collision?.raycast ? collision.raycast.bind(collision) : null;
     this.cam = camera ? new DialogueCamera(camera, { raycast }) : null;
+    // hud: a DialogueHud, a container element, false/null (headless) or anything else (a game HUD
+    // object) → our own overlay on document.body.
+    const isElement = typeof HTMLElement !== 'undefined' && hud instanceof HTMLElement;
     if (hud instanceof DialogueHud || hud === false || hud === null) this.hud = hud || null;
-    else if (typeof document !== 'undefined') this.hud = new DialogueHud(hud ?? document.body);
+    else if (typeof document !== 'undefined') this.hud = new DialogueHud(isElement ? hud : document.body);
     else this.hud = null;
     this.npc = null;
     this.runner = null;
@@ -69,7 +72,7 @@ export class DialogueDirector {
 
   playerHead() {
     const p = this.player;
-    const src = p?.pos ?? p?.root?.position ?? p?.holder?.position ?? p?.position ?? null;
+    const src = p?.pos ?? p?.root?.position ?? p?.holder?.position ?? p?.position ?? this.npc?.manager?.playerPos?.() ?? null;
     return src ? new THREE.Vector3(src.x, (src.y ?? 0) + 1.6, src.z) : null;
   }
 
@@ -103,6 +106,8 @@ export class DialogueDirector {
     this.logged = 0;
     const head = this.playerHead() ?? new THREE.Vector3(npc.pos.x, npc.pos.y + 1.6, npc.pos.z - 1.5);
     this.cam?.begin(head, new THREE.Vector3(npc.headPos().x, npc.headPos().y, npc.headPos().z));
+    // Other NPCs are bystanders the camera keeps out of its shots.
+    if (this.cam) this.cam.bystanders = () => (npc.manager?.npcs ?? []).filter((n) => n !== npc && n.holder?.visible !== false).map((n) => n.pos);
     this.hud?.setLetterbox(true);
     this.events.emit('dialogue:start', { npc: npc.id, tree: tree.id });
     this.present(this.runner.start());

@@ -249,10 +249,18 @@ function step(dt) {
   stage.render();
 }
 
-let last = performance.now();
+// The first RAF timestamp can precede the time the (slow) setup finished, so time starts on the
+// first frame and every step is clamped to (0, 50 ms].
+let last = null;
 function loop(now) {
-  if (!window.npcDemo.scripted) step(Math.min(0.05, (now - last) / 1000));
+  const dt = last === null ? 1 / 60 : Math.min(0.05, (now - last) / 1000);
   last = now;
+  try {
+    if (!window.npcDemo.scripted && dt > 0) step(dt);
+  } catch (err) {
+    console.error(err);
+    hud.textContent = `step failed: ${err.message}`;
+  }
   requestAnimationFrame(loop);
 }
 

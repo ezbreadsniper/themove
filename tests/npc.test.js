@@ -6,6 +6,9 @@ import { NpcManager, FALLBACK_SPAWNS } from '../src/npc/manager.js';
 import { EventBus, connectBus } from '../src/npc/events.js';
 import { REACTION_MATRIX, REACTIONS, selectReaction, temperament } from '../src/npc/reactions.js';
 import { makePersonality, ARCHETYPES } from '../src/npc/archetypes.js';
+import { castNpc, WARDROBES } from '../src/npc/casting.js';
+import { normalizeDefinition } from '../src/character/definition.js';
+import { MAIN_PRESETS } from '../src/character/presets/index.js';
 import { fleeTarget, avoidWalls, arrive } from '../src/npc/steering.js';
 
 const rect = (x0, z0, x1, z1) => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
@@ -307,10 +310,40 @@ describe('spawning and plumbing', () => {
     expect(m2.spawnFromMarkers({})).toHaveLength(FALLBACK_SPAWNS.length);
   });
 
-  test('personalities are deterministic and archetype presets exist', () => {
+  test('personalities are deterministic per id', () => {
     expect(makePersonality('resident', { id: 'q' })).toEqual(makePersonality('resident', { id: 'q' }));
     expect(makePersonality('resident', { id: 'q' }).traits).not.toEqual(makePersonality('resident', { id: 'r' }).traits);
-    for (const a of Object.values(ARCHETYPES)) expect(a.presets.length).toBeGreaterThan(0);
+    for (const a of Object.keys(ARCHETYPES)) expect(WARDROBES[a]).toBeDefined();
+  });
+
+  test('casting never uses a main character and yields valid, varied definitions', () => {
+    const mains = new Set(MAIN_PRESETS.map((p) => p.id));
+    const seen = new Set();
+    for (const archetype of Object.keys(ARCHETYPES)) {
+      for (let i = 0; i < 12; i++) {
+        const def = castNpc({ id: `${archetype}${i}`, archetype });
+        expect(mains.has(def.id)).toBe(false);
+        expect(normalizeDefinition(def).errors).toEqual([]);
+        seen.add(`${def.skin.tone}/${def.hair.style}/${def.top?.color}`);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(30);
+    expect(castNpc({ id: 'x', look: 'sheet-07-puffer-balaclava' }).id).toBe('sheet-07-puffer-balaclava');
+    // A main character requested as a look is refused (procedural variant instead).
+    expect(castNpc({ id: 'x', look: MAIN_PRESETS[0].id }).id).toBe('npc-x');
+    for (const s of FALLBACK_SPAWNS) expect(mains.has(s.look)).toBe(false);
+    expect(castNpc({ id: 'same', archetype: 'thug' })).toEqual(castNpc({ id: 'same', archetype: 'thug' }));
+  });
+
+  test('a cast NPC builds, bakes its clips and animates off the A-pose', () => {
+    const m = new NpcManager({});
+    const npc = m.spawn({ id: 'built', archetype: 'resident', pos: [0, 0, 0] });
+    expect(npc.clips.npc_idle_weight).toBeDefined();
+    const arm = npc.character.userData.rig.bones.find((b) => b.name.endsWith('LeftArm'));
+    for (let i = 0; i < 20; i++) m.update(1 / 30);
+    expect(npc.brain.state).not.toBeNull();
+    // Idles hold the arms down by the sides: far from the rest A-pose.
+    expect(2 * Math.acos(Math.min(1, Math.abs(arm.quaternion.w)))).toBeGreaterThan(0.2);
   });
 
   test('connectBus adapts on/emit buses and EventTargets', () => {

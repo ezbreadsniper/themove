@@ -359,6 +359,6 @@ export class Npc {
 
   /** Capsule body for door pushing / physics (contract §3). */
   body() {
-    return { x: this.pos.x, y: this.pos.y, z: this.pos.z, vx: this.velocity.x, vz: this.velocity.z, radius: 0.3, height: this.height, mass: 70, npc: this.id };
+    return { id: `npc:${this.id}`, x: this.pos.x, y: this.pos.y, z: this.pos.z, vx: this.velocity.x, vz: this.velocity.z, radius: 0.3, height: this.height, mass: 70, npc: this.id };
   }
 }

@@ -16,7 +16,7 @@ import * as THREE from 'three';
  */
 export const SHOT_KINDS = ['two', 'ots', 'close', 'medium', 'profile'];
 /** When a shot is blocked by a wall, try these instead (all on the same side of the line). */
-export const SHOT_FALLBACKS = { ots: ['profile', 'close', 'two'], medium: ['profile', 'close', 'two'], close: ['profile', 'two'], profile: ['close', 'two'], two: ['profile'] };
+export const SHOT_FALLBACKS = { ots: ['profile', 'close', 'two'], medium: ['profile', 'close', 'two'], close: ['profile', 'two'], profile: ['close', 'two'], two: ['ots', 'profile', 'medium'] };
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Line of action between two heads: { mid, dir (a→b, XZ unit), normal (dir rotated +90° about Y), dist }. */
@@ -40,7 +40,7 @@ export function sideOf(p, a, b) {
  * Camera placement for a shot. speaker: 'a' | 'b' (who the shot is about). Returns
  * { pos, target, fov, kind, speaker }. The pos always lies on `side` of the line of action.
  */
-export function frameShot(kind, { a, b, speaker = 'b', side = 1 }) {
+export function frameShot(kind, { a, b, speaker = 'b', side = 1, aspect = 16 / 9, orbit = 0, scale = 1 }) {
   const { mid, dir, normal, dist } = lineOfAction(a, b);
   const s = side >= 0 ? 1 : -1;
   const subj = speaker === 'a' ? a : b;
@@ -53,10 +53,12 @@ export function frameShot(kind, { a, b, speaker = 'b', side = 1 }) {
   let fov;
   switch (kind) {
     case 'two': {
-      const back = Math.max(2.4, dist * 1.15 + 1.4);
-      pos = mid.clone().addScaledVector(n, back).addScaledVector(UP, 0.02);
-      target = mid.clone().addScaledVector(UP, -0.12);
+      // Far enough that both heads sit inside the middle ~60% of the frame width.
       fov = 40;
+      const halfH = Math.atan(Math.tan(THREE.MathUtils.degToRad(fov / 2)) * aspect);
+      const back = Math.max(2.2, (dist / 2 + 0.5) / Math.tan(halfH) / 0.62);
+      pos = mid.clone().addScaledVector(n, back).addScaledVector(UP, 0.02);
+      target = mid.clone().addScaledVector(UP, -0.22);
       break;
     }
     case 'ots': {
@@ -87,37 +89,130 @@ export function frameShot(kind, { a, b, speaker = 'b', side = 1 }) {
       break;
     }
   }
-  return { pos, target, fov, kind, speaker };
+  if (orbit || scale !== 1) {
+    // Variant: swing the camera around the framed point and / or move it in or out.
+    const off = pos.clone().sub(target).applyAxisAngle(UP, orbit).multiplyScalar(scale);
+    pos = target.clone().add(off);
+  }
+  return { pos, target, fov, kind, speaker, orbit, scale };
 }
 
 /**
  * Pulls a shot in front of walls: `raycast(o, d, max)` (CollisionWorld) from the target toward the
- * camera; a blocked camera moves in to the hit point (never across the line, which runs through
- * the target side of the scene).
+ * camera; a blocked camera moves in to the hit point. Sets `shot.clear` (unblocked fraction).
  */
 export function clearShot(shot, raycast) {
-  if (!raycast) return shot;
   const d = shot.pos.clone().sub(shot.target);
   const len = d.length();
   d.divideScalar(len);
-  const hit = raycast(shot.target.toArray(), d.toArray(), len);
+  const hit = raycast ? raycast(shot.target.toArray(), d.toArray(), len) : len;
   shot.clear = Math.min(1, hit / len);
   if (hit < len) shot.pos = shot.target.clone().addScaledVector(d, Math.max(0.6, hit - 0.2));
   return shot;
 }
 
-/** frameShot + wall handling: a shot that loses over 30% of its distance falls back to a clearer one. */
-export function frameClearShot(kind, opts, raycast) {
-  const first = clearShot(frameShot(kind, opts), raycast);
-  if (!raycast || first.clear >= 0.7) return first;
-  let best = first;
-  for (const alt of SHOT_FALLBACKS[kind] ?? []) {
-    const s = clearShot(frameShot(alt, opts), raycast);
-    if (s.clear >= 0.7) return s;
-    if (s.clear > best.clear) best = s;
+const _cam = new THREE.PerspectiveCamera();
+
+/** Points a shot must show: the subject's head, plus the other head and both chests for a two-shot. */
+function subjects(kind, a, b, speaker) {
+  const subj = speaker === 'a' ? a : b;
+  const pts = [{ p: subj, who: speaker, weight: 2 }];
+  if (kind === 'two') {
+    pts.push({ p: speaker === 'a' ? b : a, who: speaker === 'a' ? 'b' : 'a', weight: 2 });
+    for (const h of [a, b]) pts.push({ p: h.clone().addScaledVector(UP, -0.45), who: 'chest', weight: 0.5 });
   }
+  return pts;
+}
+
+/**
+ * Framing quality of a shot (higher is better, 0 = clean): required subjects inside the frame with a
+ * margin, an unobstructed line of sight to each head (walls via raycast), and bystanders kept out of
+ * the frame, especially in front of a speaker. Returns { score, issues }.
+ */
+export function scoreShot(shot, { a, b, aspect = 16 / 9, raycast = null, bystanders = [] }) {
+  _cam.fov = shot.fov;
+  _cam.aspect = aspect;
+  _cam.near = 0.05;
+  _cam.far = 100;
+  _cam.position.copy(shot.pos);
+  _cam.lookAt(shot.target);
+  _cam.updateMatrixWorld(true);
+  _cam.updateProjectionMatrix();
+  let score = 0;
+  const issues = [];
+  const subj = subjects(shot.kind, a, b, shot.speaker);
+  let far = 0;
+  for (const { p, who, weight } of subj) {
+    const ndc = p.clone().project(_cam);
+    far = Math.max(far, shot.pos.distanceTo(p));
+    const out = Math.max(0, Math.abs(ndc.x) - 0.82, Math.abs(ndc.y) - 0.82);
+    if (ndc.z > 1 || out > 0) {
+      score -= weight * (1 + out * 2);
+      issues.push(`${who} out of frame`);
+    }
+    if (raycast && who !== 'chest') {
+      const d = p.clone().sub(shot.pos);
+      const len = d.length();
+      if (raycast(shot.pos.toArray(), d.divideScalar(len).toArray(), len) < len - 0.15) {
+        score -= weight * 1.5;
+        issues.push(`${who} behind a wall`);
+      }
+    }
+  }
+  for (const by of bystanders) {
+    let worst = 0;
+    for (const y of [1.0, 1.5]) {
+      const q = new THREE.Vector3(by.x, (by.y ?? 0) + y, by.z);
+      if (q.clone().applyMatrix4(_cam.matrixWorldInverse).z > -0.1) continue;
+      const depth = shot.pos.distanceTo(q);
+      const ndc = q.project(_cam);
+      if (Math.abs(ndc.x) > 1.05 || Math.abs(ndc.y) > 1.05) continue;
+      // In front of a speaker on screen: blocks them. Elsewhere nearer than the speakers: clutter.
+      let blocks = false;
+      for (const { p, who } of subj) {
+        if (who === 'chest' || depth > shot.pos.distanceTo(p) + 0.2) continue;
+        const sp = p.clone().project(_cam);
+        if (Math.abs(sp.x - ndc.x) < 0.22 * (1 + 2 / Math.max(0.5, depth))) blocks = true;
+      }
+      worst = Math.max(worst, blocks ? 2.5 : depth < far ? 0.6 : 0.15);
+    }
+    if (worst) {
+      score -= worst;
+      issues.push(worst >= 2.5 ? 'bystander blocks a speaker' : 'bystander in frame');
+    }
+  }
+  return { score, issues };
+}
+
+const ORBITS = [0, 0.2, -0.2, 0.42, -0.42];
+const SCALES = [1, 0.85, 1.2];
+
+/**
+ * Picks the best-framed variant of a shot: the requested kind first, swung around the framed point
+ * (orbit) and moved in / out (scale), then the fallback kinds; every candidate stays on the chosen
+ * side of the line. The plain shot wins when it is clean. Returns the shot plus score / issues.
+ */
+export function composeShot(kind, opts, { raycast = null, bystanders = [] } = {}) {
+  const ctx = { a: opts.a, b: opts.b, aspect: opts.aspect ?? 16 / 9, raycast, bystanders };
+  const side = opts.side >= 0 ? 1 : -1;
+  let best = null;
+  [kind, ...(SHOT_FALLBACKS[kind] ?? [])].forEach((k, ki) => {
+    for (const orbit of ORBITS) {
+      for (const scale of SCALES) {
+        const shot = clearShot(frameShot(k, { ...opts, orbit, scale }), raycast);
+        if (sideOf(shot.pos, opts.a, opts.b) !== side) continue;
+        const { score, issues } = scoreShot(shot, ctx);
+        // Preferences: the asked-for kind, the canonical angle and distance, no wall pull-in.
+        const total = score - ki * 0.45 - Math.abs(orbit) * 0.5 - Math.abs(scale - 1) * 0.6 - (1 - shot.clear) * 1.5;
+        if (!best || total > best.total) best = { ...shot, score, issues, total };
+      }
+    }
+  });
   return best;
 }
+
+/** Older name for composeShot (raycast, bystanders as positional arguments). */
+export const frameClearShot = (kind, opts, raycast, bystanders = []) => composeShot(kind, opts, { raycast, bystanders });
 
 const smooth = (t) => t * t * (3 - 2 * t);
 
@@ -160,12 +255,16 @@ export class DialogueCamera {
     return { pos: this.camera.position.clone(), quat: this.camera.quaternion.clone(), fov: this.camera.fov };
   }
 
-  /** Hard cut (or no-op when already on that shot). */
+  /**
+   * Hard cut (or no-op when already on that shot). The framing (kind, orbit, distance) is composed
+   * once here, against walls and bystanders, and then held while the heads are tracked.
+   */
   cut(kind, speaker = 'b') {
-    if (this.shot && this.shot.kind === kind && this.shot.speaker === speaker) return false;
-    this.shot = { kind, speaker };
+    if (this.shot && this.shot.request === `${kind}/${speaker}`) return false;
+    const c = composeShot(kind, { a: this.a, b: this.b, speaker, side: this.side, aspect: this.camera.aspect }, { raycast: this.raycast, bystanders: this.bystanders?.() ?? [] });
+    this.shot = { kind: c.kind, speaker, orbit: c.orbit, scale: c.scale, request: `${kind}/${speaker}`, issues: c.issues };
     this.shotTime = 0;
-    this.cuts.push({ kind, speaker, side: this.side });
+    this.cuts.push({ kind: c.kind, requested: kind, speaker, side: this.side, issues: c.issues });
     return true;
   }
 
@@ -178,7 +277,8 @@ export class DialogueCamera {
 
   /** Current shot's camera pose (with drift), on the chosen side. */
   shotPose() {
-    const f = frameClearShot(this.shot?.kind ?? 'two', { a: this.a, b: this.b, speaker: this.shot?.speaker ?? 'b', side: this.side }, this.raycast);
+    const sh = this.shot ?? { kind: 'two', speaker: 'b', orbit: 0, scale: 1 };
+    const f = clearShot(frameShot(sh.kind, { a: this.a, b: this.b, speaker: sh.speaker, side: this.side, aspect: this.camera.aspect, orbit: sh.orbit, scale: sh.scale }), this.raycast);
     const t = this.time;
     const h = this.handheld;
     const drift = new THREE.Vector3(Math.sin(t * 0.7) * 0.012 + Math.sin(t * 1.9) * 0.004, Math.sin(t * 0.53 + 1) * 0.009, Math.sin(t * 0.61 + 2) * 0.01).multiplyScalar(h);

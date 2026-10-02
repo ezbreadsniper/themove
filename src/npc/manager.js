@@ -2,11 +2,10 @@ import * as THREE from 'three';
 import * as clipRegistry from '../anim/clips.js';
 import { bakeSocialClips, registerSocialClips } from '../anim/social-clips.js';
 import { buildCharacter } from '../character/build.js';
-import { PRESETS_BY_ID } from '../character/presets/index.js';
-import { hashString } from '../core/rng.js';
+import { castNpc, isMainCharacter } from './casting.js';
 import { BarkSystem } from '../dialogue/barks.js';
 import BARK_RULES from '../dialogue/data/barks.json';
-import { ARCHETYPES, makePersonality } from './archetypes.js';
+import { makePersonality } from './archetypes.js';
 import { Relationships } from './disposition.js';
 import { connectBus } from './events.js';
 import { Npc } from './npc.js';
@@ -17,7 +16,13 @@ import { GROUPS } from './brain.js';
 
 // Social clips join the shared registry when workstream A's clips.js offers registerSamplers;
 // NPCs bake them directly either way (see defaultClipsFor).
-registerSocialClips(clipRegistry.registerSamplers);
+// Only names not registered yet (a hot reload or a second import must not throw).
+if (typeof clipRegistry.registerSamplers === 'function') {
+  registerSocialClips((map) => {
+    const fresh = Object.fromEntries(Object.entries(map).filter(([n]) => !(clipRegistry.getSampler?.(n) ?? clipRegistry.CLIP_NAMES.includes(n))));
+    if (Object.keys(fresh).length) clipRegistry.registerSamplers(fresh);
+  });
+}
 
 /** Shared clips an NPC needs (social clips are added on top). Missing names are skipped. */
 export const NPC_BASE_CLIPS = ['idle', 'walk', 'run', 'sprint', 'lookAround', 'wave', 'shrug', 'talk', 'point', 'angry', 'confused', 'laugh', 'hitReact', 'stepInPlace', 'crouchIdle', 'smoke', 'melee_jab'];
@@ -40,13 +45,13 @@ export function defaultClipsFor(character) {
  * sidewalk, building face at z = 0, street door at x ≈ 4.6). Placeholder until D places markers.
  */
 export const FALLBACK_SPAWNS = [
-  { id: 'dana', name: 'Dana', archetype: 'resident', preset: 'sheet-06-floral-cutoffs', pos: [8.4, 0, -0.5], yaw: Math.PI, scenario: 'lean' },
-  { id: 'marcus', name: 'Marcus', archetype: 'resident', preset: 'sheet-03-red-rugby', pos: [11.2, 0, -1.7], yaw: -Math.PI / 2, traits: { sociability: 0.9, wander: 0 } },
-  { id: 'jo', name: 'Jo', archetype: 'resident', preset: 'sheet-05-curly-denim', pos: [10.2, 0, -1.7], yaw: Math.PI / 2, traits: { sociability: 0.85, wander: 0 } },
-  { id: 'priya', name: 'Priya', archetype: 'clerk', preset: 'sheet-01-black-tee', pos: [3.2, 0, -1.2], yaw: Math.PI * 0.85, scenario: 'counter' },
-  { id: 'vince', name: 'Vince', archetype: 'thug', preset: 'sheet-07-puffer-balaclava', pos: [15.6, 0, -0.5], yaw: Math.PI, scenario: 'lean' },
-  { id: 'rook', name: 'Rook', archetype: 'thug', preset: 'sheet-04-camo-cargo', pos: [16.6, 0, -1.6], yaw: Math.PI * 1.2 },
-  { id: 'walker', name: 'Passer-by', archetype: 'pedestrian', preset: 'trial-default', pos: [1.5, 0, -2.2], yaw: Math.PI / 2 },
+  { id: 'dana', name: 'Dana', archetype: 'resident', look: 'sheet-06-floral-cutoffs', pos: [8.4, 0, -0.5], yaw: Math.PI, scenario: 'lean' },
+  { id: 'marcus', name: 'Marcus', archetype: 'resident', feminine: false, pos: [11.2, 0, -1.7], yaw: -Math.PI / 2, traits: { sociability: 0.9, wander: 0 } },
+  { id: 'jo', name: 'Jo', archetype: 'resident', feminine: true, pos: [10.2, 0, -1.7], yaw: Math.PI / 2, traits: { sociability: 0.85, wander: 0 } },
+  { id: 'priya', name: 'Priya', archetype: 'clerk', feminine: true, pos: [3.2, 0, -1.2], yaw: Math.PI * 0.85, scenario: 'counter' },
+  { id: 'vince', name: 'Vince', archetype: 'thug', look: 'sheet-07-puffer-balaclava', pos: [15.6, 0, -0.5], yaw: Math.PI, scenario: 'lean' },
+  { id: 'rook', name: 'Rook', archetype: 'thug', feminine: false, pos: [16.6, 0, -1.6], yaw: Math.PI * 1.2 },
+  { id: 'walker', name: 'Passer-by', archetype: 'pedestrian', pos: [1.5, 0, -2.2], yaw: Math.PI / 2 },
 ];
 
 /** LOD tiers: think / step rates (Hz) by distance to the player (m). Beyond `hide` NPCs are culled. */
@@ -99,7 +104,7 @@ export class NpcManager {
     const defs = Object.values(markers).filter((m) => m?.name?.startsWith('npc_')).map((m) => ({
       id: m.name.slice(4),
       archetype: m.role ?? m.archetype ?? 'resident',
-      preset: m.preset,
+      look: m.look ?? m.preset,
       name: m.label ?? null,
       pos: m.pos,
       yaw: m.yaw ?? 0,
@@ -109,7 +114,11 @@ export class NpcManager {
     return (defs.length ? defs : FALLBACK_SPAWNS).map((d) => this.spawn(d));
   }
 
-  /** Spawns one NPC: { id, archetype, preset, name, pos, yaw, scenario, traits, dialogue, character? }. */
+  /**
+   * Spawns one NPC: { id, archetype, name, pos, yaw, scenario, traits, dialogue } plus its look: `look`
+   * (an NPC_PRESETS id), `definition` (a full character definition), `feminine` (variant hint) or
+   * `character` (a built group). Default: a procedural variant of the archetype (casting.js).
+   */
   spawn(def) {
     const id = def.id ?? `npc${this.npcs.length}`;
     const personality = makePersonality(def.archetype ?? 'pedestrian', { id, traits: def.traits, name: def.name, dialogue: def.dialogue, faction: def.faction });
@@ -125,9 +134,9 @@ export class NpcManager {
     let character = def.character ?? null;
     let clips = def.clips ?? {};
     if (!character && this.build) {
-      const presets = ARCHETYPES[personality.archetype].presets;
-      const presetId = def.preset ?? presets[hashString(id) % presets.length];
-      character = buildCharacter({ ...(PRESETS_BY_ID[presetId] ?? PRESETS_BY_ID['trial-default']) });
+      const look = def.look ?? def.preset ?? null;
+      if (look && isMainCharacter(look)) console.warn(`NPC ${id}: ${look} is a main character; casting a variant instead`);
+      character = buildCharacter(def.definition ?? castNpc({ id, archetype: personality.archetype, look: look && !isMainCharacter(look) ? look : null, feminine: def.feminine ?? null }));
     }
     if (character && !def.clips) clips = this.clipsFor(character, def);
     const npc = new Npc({ id, personality, pos, yaw: def.yaw ?? 0, scenario: def.scenario ?? null, character, clips, manager: this, collision: this.collision, los: this.los, raycast: this.raycast });
@@ -354,12 +363,18 @@ export class NpcManager {
    * camera, events }. Player flags in ctx override what the bus reported.
    */
   update(dt, ctx = {}) {
+    // A non-positive or broken frame time (first RAF frame, tab switch) must not wind the clocks back.
+    if (!(dt > 0) || !Number.isFinite(dt)) return;
+    dt = Math.min(dt, 0.25);
     this.ctx = ctx;
     this.time += dt;
     this.relationships.update(dt);
     this.barks.update(dt);
     const ps = this.playerState;
     const cp = ctx.player ?? {};
+    // A player object that carries its controller (world-play.js) gives exact weapon / aim / stance.
+    const pc = cp.controller ?? this.player?.controller ?? null;
+    const flags = pc?.flags ?? {};
     if (ps.aimUntil !== Infinity && this.time > ps.aimUntil) ps.aiming = false;
     if (ps.sprintUntil !== Infinity && this.time > ps.sprintUntil) ps.sprint = false;
     const pos = this.playerPos(ctx);
@@ -368,11 +383,11 @@ export class NpcManager {
       ps.velocity = { x: (pos.x - ps.lastPos.x) / dt, z: (pos.z - ps.lastPos.z) / dt };
     }
     ps.lastPos = pos;
-    const weapon = cp.weapon !== undefined ? cp.weapon : ps.weapon;
-    const aiming = cp.aiming ?? ps.aiming;
+    const weapon = cp.weapon !== undefined ? cp.weapon : pc ? pc.weapon ?? null : ps.weapon;
+    const aiming = cp.aiming ?? flags.aim ?? ps.aiming;
     const view = pos && {
       pos, facing, head: { x: pos.x, y: pos.y + 1.6, z: pos.z }, weapon, aiming: !!(weapon && aiming),
-      sprint: cp.sprint ?? ps.sprint, crouch: cp.crouch ?? ps.crouch, speed: Math.hypot(ps.velocity.x, ps.velocity.z),
+      sprint: cp.sprint ?? (pc ? pc.state?.locomotion === 'sprint' : ps.sprint), crouch: cp.crouch ?? flags.crouch ?? ps.crouch, speed: Math.hypot(ps.velocity.x, ps.velocity.z),
     };
     if (view) view.aimingAt = view.aiming ? this.aimedNpc(pos, facing)?.id ?? null : null;
     this.view = view;
@@ -468,7 +483,7 @@ export class NpcManager {
   interactables() {
     return this.npcs.map((n) => ({
       id: `npc:${n.id}`, kind: 'npc', pos: [n.pos.x, n.pos.y + 1.0, n.pos.z], yaw: n.facing, radius: 1.8,
-      prompt: n.personality.dialogue ? `Talk to ${n.name}` : 'Greet', data: { npc: n.id, tree: n.personality.dialogue },
+      prompt: n.personality.dialogue ? `Talk to ${n.name}` : 'Greet', data: { npc: n, npcId: n.id, tree: n.personality.dialogue },
     }));
   }
 
