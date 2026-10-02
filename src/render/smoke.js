@@ -20,7 +20,7 @@ import { handGripOffset, handRestFrame } from '../anim/arm-ik.js';
  * layers) fire every event crossed since the previous call, wrap-around included.
  */
 
-const SMOKE_POOL = 160;
+const SMOKE_POOL = 256;
 const GLOW_POOL = 24;
 const SMOKE_COLOR = new THREE.Color('#c9ccd2');
 const NOSE_COLOR = new THREE.Color('#b9bcc2');
@@ -215,7 +215,9 @@ export class SmokeEmitter {
   sync(clip, time, weight = 1) {
     if (!clip) return;
     const key = clip.uuid;
-    const last = this.lastTimes.get(key);
+    // A clip seen for the first time just after it started fires its events from 0 (cigShow at 0).
+    const seen = this.lastTimes.get(key);
+    const last = seen === undefined && time <= 0.1 ? -1e-6 : seen;
     this.lastTimes.set(key, time);
     if (/^smoke/.test(clip.name.replace(/@.*/, '')) && weight > 0.3) this.smokingSeen = true;
     if (last === undefined || weight < 0.3) return;
@@ -466,14 +468,14 @@ export class SmokeEmitter {
     const headQ = this.head.getWorldQuaternion(tmpQ);
     if (this.exhaleTimer > 0) {
       const u = 1 - this.exhaleTimer / this.exhaleDuration;
-      const dir = new THREE.Vector3(0, -0.22, 1).normalize().applyQuaternion(headQ);
-      const rate = 42 * (1 - u) ** 0.6 + 5;
+      const dir = new THREE.Vector3(0.22, 0.12, 1).normalize().applyQuaternion(headQ);
+      const rate = 85 * (1 - u) ** 0.6 + 8;
       this.exhaleClock -= dt;
       while (this.exhaleClock <= 0) {
         this.exhaleClock += 1 / rate;
         const spread = new THREE.Vector3(this.rng.range(-1, 1), this.rng.range(-1, 1), this.rng.range(-1, 1)).multiplyScalar(0.16);
         const speed = (1.65 - u * 0.9) * this.rng.range(0.85, 1.15);
-        this.spawn(this.smokeP, mouth.clone().addScaledVector(dir, 0.01 * this.k), { vel: dir.clone().add(spread).normalize().multiplyScalar(speed), life: this.rng.range(1.7, 2.4), size: 0.02 * this.k, grow: 0.11 * this.k, alpha: 0.24 - u * 0.08, drag: 2.2, lift: 0.1, swirl: 0.8, fadeIn: 0.12 });
+        this.spawn(this.smokeP, mouth.clone().addScaledVector(dir, 0.015 * this.k), { vel: dir.clone().add(spread).normalize().multiplyScalar(speed), life: this.rng.range(1.2, 1.7), size: 0.02 * this.k, grow: 0.095 * this.k, alpha: 0.2 - u * 0.06, drag: 1.9, lift: 0.28, swirl: 0.8, fadeIn: 0.2 });
       }
       this.exhaleTimer -= dt;
       if (this.exhaleTimer <= 0) this.trailTimer = 1.1;

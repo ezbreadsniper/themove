@@ -14,7 +14,7 @@ const stop = await ensureServer();
 const { browser, page, errors } = await openPage('/evidence.html', { width: 1400, height: 800 });
 const rows = [];
 for (const camYaw of yaws.split(',').map(Number)) {
-  const frames = times.map((time) => ({ chars: [def], clip, time, simulate: true, camYaw, framing, backdrop: 'sheet' }));
+  const frames = times.map((time) => ({ chars: [def], clip, time, simulate: true, camYaw, framing, backdrop: process.env.BACKDROP ?? 'dusk' }));
   const size = framing === 'full' ? { width: 220, height: 420 } : { width: 240, height: 300 };
   rows.push(await page.evaluate(([f, o]) => window.evidence.strip(f, o), [frames, { ...size, labels: times.map((t) => `${clip} ${t}s ${camYaw}°`) }]));
 }

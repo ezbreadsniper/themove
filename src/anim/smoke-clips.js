@@ -215,8 +215,8 @@ export function makeSmokeSamplers(bases) {
         const s = {
           ...end, u, dir: t < 1.5 ? 1 : -1, breath: 0,
           chest: puffs * 0.6 + envelope(t, 1.5, 1.9, 2.5, 3.0) * 0.4,
-          nod: u * 5 + envelope(t, 0.7, 1.0, 1.85, 2.2) * 7 - exhale * 9,
-          turn: -u * 4 + exhale * 12, tilt: -u * 2, jaw: u * 2.5 + bump(t, 2.6, 3.2) * 3,
+          nod: u * 5 + envelope(t, 0.7, 1.0, 1.85, 2.2) * 7 - exhale * 14,
+          turn: -u * 4 + exhale * 22, tilt: -u * 2, jaw: u * 2.5 + bump(t, 2.6, 3.2) * 3,
         };
         const p = smokerBody(L, { ...s, leftElbow: 0 });
         cigHand(L, p, { u: s.u, dir: s.dir, light: envelope(t, 0.35, 0.9, 1.95, 2.4) });
