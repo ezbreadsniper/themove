@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { buildCharacter } from '../src/character/build.js';
 import { PRESETS } from '../src/character/presets/index.js';
 import { JOINTS } from '../src/rig/skeleton.js';
-import { SOCIAL_SAMPLERS, SOCIAL_CLIP_NAMES, bakeSocialClip, registerSocialClips } from '../src/anim/social-clips.js';
+import { SOCIAL_SAMPLERS, SOCIAL_CLIP_NAMES, DEATH_CLIPS, bakeSocialClip, registerSocialClips } from '../src/anim/social-clips.js';
 import { worldPose } from '../src/anim/fk.js';
 
 const layouts = [PRESETS[0], PRESETS[5]].map((p) => buildCharacter(p).userData.layout);
@@ -51,8 +51,13 @@ describe('social clips', () => {
           expect(angle, `${bone} @${t.toFixed(2)}`).toBeLessThan(/Leg$|ForeArm$/.test(bone) ? 165 : 150);
           expect(Math.abs(q.length() - 1)).toBeLessThan(1e-4);
         }
-        expect(pose.hips.length()).toBeLessThan(0.6 * k);
+        expect(pose.hips.length()).toBeLessThan((/death|dead/.test(name) ? 1.5 : 0.6) * k);
         const fk = worldPose(layout, pose);
+        if (/death|dead/.test(name)) {
+          // Falling / lying bodies: nothing below the floor, nothing above a standing head.
+          for (const [j] of JOINTS) expect(fk.pos[j].y, `${j} @${t.toFixed(2)}`).toBeGreaterThan((name.includes('dead') ? -0.03 : -0.07) * k);
+          continue;
+        }
         // Hands stay inside a body-sized box (no IK flips through the torso or off into space).
         for (const side of ['Left', 'Right']) {
           const h = fk.pos[`${side}Hand`];
@@ -61,8 +66,29 @@ describe('social clips', () => {
           expect(Math.hypot(h.x, h.z)).toBeLessThan(0.85 * k);
         }
         // Feet stay planted near the floor (except flee run / lean foot on the wall).
-        if (!/flee_run|lean_wall/.test(name)) for (const side of ['Left', 'Right']) expect(fk.pos[`${side}Foot`].y).toBeLessThan(layout.world[`${side}Foot`].y + 0.09 * k);
+        if (!/flee_run|lean_wall|hit_|duck/.test(name)) for (const side of ['Left', 'Right']) expect(fk.pos[`${side}Foot`].y).toBeLessThan(layout.world[`${side}Foot`].y + 0.09 * k);
       }
+    }
+  });
+
+  test.each(Object.entries(DEATH_CLIPS))('%s falls into %s, which rests on the floor', (death, dead) => {
+    for (const layout of layouts) {
+      const k = layout.measures.height / 1.78;
+      const d = SOCIAL_SAMPLERS[death];
+      const end = d.sample(layout, d.duration, d.duration);
+      const hold = SOCIAL_SAMPLERS[dead].sample(layout, 0, 1);
+      // The fall ends exactly in the held pose (no pop when the Animator switches to the hold).
+      for (const [j] of JOINTS) expect((end.bones[j] ?? new THREE.Quaternion()).angleTo(hold.bones[j] ?? new THREE.Quaternion())).toBeLessThan(1e-4);
+      expect(end.hips.distanceTo(hold.hips)).toBeLessThan(1e-4);
+      const fk = worldPose(layout, hold);
+      const ys = JOINTS.map(([j]) => fk.pos[j].y);
+      // Lying: the trunk is near the floor, nothing floats or sinks.
+      for (const j of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head']) expect(fk.pos[j].y, j).toBeLessThan(0.3 * k);
+      expect(Math.min(...ys)).toBeGreaterThan(-0.03 * k);
+      expect(Math.max(...ys)).toBeLessThan(0.62 * k);
+      // Mid-fall the body is somewhere between standing and lying (it actually falls).
+      const mid = worldPose(layout, d.sample(layout, d.duration * 0.55, d.duration)).pos.Head.y;
+      expect(mid).toBeLessThan(layout.world.Head.y - 0.1 * k);
     }
   });
 });

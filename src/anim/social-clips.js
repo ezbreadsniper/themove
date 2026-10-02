@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { JOINTS } from '../rig/skeleton.js';
-import { Pose, curlFingers, relaxHands } from './pose.js';
+import { Pose, createPose, curlFingers, relaxHands } from './pose.js';
 import { FPS, TAU, SIDES, ease, window01, base, plantLegs, armDirs } from './clip-kit.js';
 import { gripWith } from './arm-ik.js';
 import { worldPose } from './fk.js';
@@ -462,6 +462,272 @@ TALK.forEach((g, i) => {
     },
   };
 });
+
+// --- Combat: hit reactions, wound clutching, duck, deaths and resting dead poses ---------------------
+
+/** Linear pose blend (bones slerp, hips lerp). */
+function mix(a, b, t) {
+  const p = createPose();
+  for (const name of new Set([...Object.keys(a.bones), ...Object.keys(b.bones)])) {
+    p.bones[name] = (a.bones[name] ?? new THREE.Quaternion()).clone().slerp(b.bones[name] ?? new THREE.Quaternion(), t);
+  }
+  p.hips.copy(a.hips).lerp(b.hips, t);
+  return p;
+}
+
+/** Hips height of a body lying down (pelvis half-thickness), by how it lies. */
+const LIE = { back: 0.11, front: 0.12, side: 0.2 };
+
+/**
+ * Resting dead pose. kind: 'back' (fell backwards, face up), 'front' (face down), 'side' (crumpled,
+ * curled on the right side). The root stays at the feet's spot on the ground; the body lies along
+ * −Z (back), +Z (front) or −X (side). Every joint ends between the floor and ~0.45 m.
+ */
+function deadPose(L, kind) {
+  const k = kOf(L);
+  const Hy = L.world.Hips.y;
+  const p = createPose();
+  if (kind === 'back') {
+    Pose.rootPitch(p, -90);
+    Pose.spineFlex(p, 'Spine1', -2);
+    Pose.headTurn(p, 35);
+    Pose.headNod(p, 4);
+    Pose.hipFlex(p, 'Left', 14);
+    Pose.kneeFlex(p, 'Left', 26);
+    Pose.hipAbduct(p, 'Left', 8);
+    Pose.hipAbduct(p, 'Right', 5);
+    Pose.ankleFlex(p, 'Left', -12);
+    Pose.ankleFlex(p, 'Right', -20);
+    const dirs = armDirs(L);
+    Pose.armAbduct(p, 'Left', 38);
+    Pose.armAbduct(p, 'Right', 12);
+    Pose.elbowFlex(p, 'Left', dirs.Left, 35);
+    Pose.elbowFlex(p, 'Right', dirs.Right, 10);
+    p.hips.set(0, LIE.back * k - Hy, -Hy * 0.95);
+  } else if (kind === 'front') {
+    Pose.rootPitch(p, 90);
+    Pose.headTurn(p, -70);
+    Pose.headNod(p, -6);
+    Pose.hipFlex(p, 'Right', -4);
+    Pose.hipAbduct(p, 'Right', 16);
+    Pose.kneeFlex(p, 'Right', 45);
+    Pose.ankleFlex(p, 'Left', 55);
+    Pose.ankleFlex(p, 'Right', 40);
+    const dirs = armDirs(L);
+    // Face down: the left arm flung up beside the head, the right along the side, both on the floor.
+    Pose.armAbduct(p, 'Left', 95);
+    Pose.armFlex(p, 'Left', -6);
+    Pose.elbowFlex(p, 'Left', dirs.Left, 10);
+    Pose.armAbduct(p, 'Right', 8);
+    Pose.armFlex(p, 'Right', -4);
+    Pose.elbowFlex(p, 'Right', dirs.Right, 6);
+    p.hips.set(0, LIE.front * k - Hy, Hy * 0.95);
+  } else {
+    Pose.rootRoll(p, 84);
+    Pose.spineFlex(p, 'Spine', 16);
+    Pose.spineFlex(p, 'Spine1', 12);
+    Pose.headNod(p, -14);
+    Pose.headTilt(p, -12);
+    for (const [i, side] of SIDES.entries()) {
+      Pose.hipFlex(p, side, 55 + i * 18);
+      Pose.kneeFlex(p, side, 75 + i * 12);
+      Pose.ankleFlex(p, side, 20);
+    }
+    const dirs = armDirs(L);
+    // On the right side: the lower (right) arm reaches forward along the floor, the upper (left) arm
+    // drops across the chest onto the floor in front.
+    Pose.armAbduct(p, 'Right', -30);
+    Pose.armFlex(p, 'Right', 85);
+    Pose.elbowFlex(p, 'Right', dirs.Right, 20);
+    Pose.armAbduct(p, 'Left', -45);
+    Pose.armFlex(p, 'Left', 75);
+    Pose.elbowFlex(p, 'Left', dirs.Left, 25);
+    p.hips.set(0.25 * k, LIE.side * k - Hy, 0.08 * k);
+  }
+  SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 38, thumb: 18 }));
+  return p;
+}
+
+/**
+ * A fall into a dead pose: the knees go, then the body pivots over the feet (hips on a circle around
+ * them) with a gravity ease-in, bounces once on impact and settles exactly into deadPose(kind).
+ */
+function deathSampler(kind, { duration, buckleEnd, impact }) {
+  return {
+    duration,
+    loop: false,
+    events: [{ name: 'bodyfall', time: impact }],
+    meta: () => ({ dead: kind }),
+    sample: (L, t) => {
+      const k = kOf(L);
+      const Hy = L.world.Hips.y;
+      const final = deadPose(L, kind);
+      if (t >= duration - 1e-6) return final;
+      const buckle = ease(window01(t, 0, buckleEnd));
+      const fall = window01(t, buckleEnd * 0.6, impact) ** 2;
+      const settle = ease(window01(t, impact, duration * 0.92));
+      const bounce = Math.sin(Math.PI * window01(t, impact, impact + 0.22)) * 0.035 * k * (1 - settle);
+      // Upright, knees giving way.
+      const up = base(L, { armDown: 20 - buckle * 25, elbow: 20 + buckle * 25 });
+      Pose.spineFlex(up, 'Spine1', kind === 'back' ? -buckle * 10 : buckle * 18);
+      Pose.headNod(up, kind === 'back' ? -buckle * 18 : buckle * 12);
+      if (kind === 'side') plantLegs(L, up, { hips: V(0, -0.42 * k * buckle, -0.06 * k * buckle) });
+      else plantLegs(L, up, { hips: V(0, -0.12 * k * buckle, (kind === 'back' ? -0.06 : 0.04) * k * buckle) });
+      if (t <= buckleEnd * 0.6) return up;
+      // The topple: pose blends toward the dead pose as the body rotates; hips follow the pivot.
+      const p = mix(up, final, Math.min(1, fall * 0.92 + settle * 0.08));
+      const ang = fall * (Math.PI / 2);
+      const start = Hy + up.hips.y;
+      const lie = final.hips.y + Hy;
+      const y = Math.max(lie, start * Math.cos(ang)) + bounce;
+      if (kind === 'side') p.hips.set(final.hips.x * fall, y - Hy, up.hips.z + (final.hips.z - up.hips.z) * fall);
+      else p.hips.set(0, y - Hy, final.hips.z * Math.sin(ang));
+      return keepAboveFloor(L, settle > 0 ? mix(p, final, settle) : p);
+    },
+  };
+}
+
+/** Lifts a pose so no joint dips under the floor (mid-fall blends would otherwise sink a foot). */
+function keepAboveFloor(L, p) {
+  const fk = worldPose(L, p);
+  let min = Infinity;
+  for (const [j] of JOINTS) min = Math.min(min, fk.pos[j].y);
+  const floor = 0.01 * kOf(L);
+  if (min < floor) p.hips.y += floor - min;
+  return p;
+}
+
+/** Hold of a dead pose (a loop with no motion, so the Animator can rest on it). */
+const deadHold = (kind) => ({ duration: 1, loop: true, meta: () => ({ dead: kind }), sample: (L) => deadPose(L, kind) });
+
+/**
+ * Hit reaction: a sharp impulse in the first ~0.1 s that decays, applied to the body part, with a
+ * recovery step. `dir` is where the hit pushes (+1 back / −1 forward for torso; side for arms/legs).
+ */
+function hitSampler(part, side = null) {
+  return {
+    duration: part === 'leg' ? 1.0 : 0.75,
+    loop: false,
+    events: [{ name: 'hit', time: 0 }],
+    sample: (L, t, dur) => {
+      const k = kOf(L);
+      const h = t < 0.07 ? t / 0.07 : 1 - ease(window01(t, 0.07, dur * 0.95));
+      const step = Math.sin(Math.PI * window01(t, 0.05, 0.4));
+      const s = side === 'Left' ? 1 : -1;
+      const p = base(L, { armDown: 20 - h * 10, elbow: 14 + h * 35 });
+      let hips = V(0, -0.02 * k * h, 0);
+      const ankles = {};
+      if (part === 'head') {
+        Pose.headNod(p, -h * 30);
+        Pose.headTurn(p, h * 12);
+        Pose.spineFlex(p, 'Spine2', -h * 10);
+        SIDES.forEach((sd) => Pose.armAbduct(p, sd, h * 18));
+        hips = V(0, -0.03 * k * h, -0.07 * k * h);
+        ankles.Right = L.world.RightFoot.clone().add(V(0, step * 0.05 * k, -0.18 * k * ease(window01(t, 0.05, 0.4))));
+      } else if (part === 'torso' || part === 'back') {
+        const f = part === 'torso' ? 1 : -1;
+        Pose.spineFlex(p, 'Spine', f * h * 22);
+        Pose.spineFlex(p, 'Spine1', f * h * 14);
+        Pose.headNod(p, f * h * 12 - (f < 0 ? h * 10 : 0));
+        SIDES.forEach((sd) => Pose.armFlex(p, sd, f * h * 30));
+        hips = V(0, -0.05 * k * h, -f * 0.08 * k * h);
+        const foot = f > 0 ? 'Right' : 'Left';
+        ankles[foot] = L.world[`${foot}Foot`].clone().add(V(0, step * 0.05 * k, -f * 0.22 * k * ease(window01(t, 0.05, 0.4))));
+      } else if (part === 'arm') {
+        Pose.spineTwist(p, 'Spine1', -s * h * 22);
+        Pose.spineTwist(p, 'Spine2', -s * h * 12);
+        Pose.armFlex(p, side, -h * 45);
+        Pose.armAbduct(p, side, h * 25);
+        Pose.shoulderShrug(p, side, h * 12);
+        Pose.headTurn(p, s * h * 25);
+      } else if (part === 'leg') {
+        Pose.spineSide(p, 'Spine1', s * h * 10);
+        Pose.spineFlex(p, 'Spine', h * 14);
+        Pose.headNod(p, -h * 10);
+        Pose.armAbduct(p, side === 'Left' ? 'Right' : 'Left', h * 30);
+        hips = V(s * 0.04 * k * h, -0.16 * k * h, 0);
+        ankles[side] = L.world[`${side}Foot`].clone().add(V(0, 0.03 * k * step, -0.06 * k * step));
+      }
+      plantLegs(L, p, { hips, ankles });
+      SIDES.forEach((sd) => curlFingers(p, L, sd, { fingers: 30 + h * 30, thumb: 15 }));
+      Pose.jawOpen(p, h * 10);
+      return p;
+    },
+  };
+}
+
+/** Pained hold: one hand pressing the wound, hunched; loops (upper body over any locomotion). */
+function clutchSampler(where) {
+  return {
+    duration: 2.4,
+    loop: true,
+    sample: (L, t, dur) => {
+      const u = t / dur;
+      const k = kOf(L);
+      const pant = cyc(u, 4) * 0.5 + 0.5;
+      const p = base(L, { skip: SIDES });
+      Pose.spineFlex(p, 'Spine', 10 + pant * 3);
+      Pose.spineFlex(p, 'Spine1', 8);
+      Pose.headNod(p, -8 + pant * 3);
+      plantLegs(L, p, { hips: V(0, -0.05 * k, -0.02 * k) });
+      const fk = worldPose(L, p);
+      const rest = base(L);
+      for (const sd of SIDES) for (const b of ['Arm', 'ForeArm', 'Hand']) p.bones[`${sd}${b}`] = (rest.bones[`${sd}${b}`] ?? new THREE.Quaternion()).clone();
+      if (where === 'torso') {
+        const belly = fk.pos.Spine.clone().add(V(0.02 * k, 0.04 * k, 0.12 * k));
+        hand(L, p, 'Left', belly.clone().add(V(0.04 * k, 0, 0)), V(-1, -0.2, 0.1), V(0, 0, -1), V(0.8, -0.6, -0.2));
+        hand(L, p, 'Right', belly.clone().add(V(-0.05 * k, 0.05 * k, 0.02 * k)), V(1, -0.1, 0.1), V(0, 0, -1), V(-0.8, -0.6, -0.2));
+      } else if (where === 'leg') {
+        Pose.spineFlex(p, 'Spine', 14);
+        const thigh = V(-0.1 * k, L.measures.kneeY + 0.12 * k, 0.08 * k);
+        hand(L, p, 'Right', thigh, V(0.3, -1, 0.2), V(0.3, 0, -1), V(-0.6, 0.2, -1));
+      } else {
+        // where = 'Left' / 'Right': the other hand grips the wounded upper arm.
+        const hurt = where;
+        const other = hurt === 'Left' ? 'Right' : 'Left';
+        const arm = fk.pos[`${hurt}Arm`].clone().lerp(fk.pos[`${hurt}ForeArm`], 0.45).add(V(-S[hurt] * 0.03 * k, 0, 0.05 * k));
+        hand(L, p, other, arm, V(S[hurt], -0.3, -0.2), V(S[hurt] * 0.3, 0, -1), V(-S[hurt] * 0.5, -1, -0.2));
+        Pose.shoulderShrug(p, hurt, 6);
+      }
+      SIDES.forEach((sd) => curlFingers(p, L, sd, { fingers: 45, thumb: 25 }));
+      Pose.jawOpen(p, 2 + pant * 4);
+      return p;
+    },
+  };
+}
+
+Object.assign(SOCIAL_SAMPLERS, {
+  npc_hit_head: hitSampler('head'),
+  npc_hit_torso_front: hitSampler('torso'),
+  npc_hit_torso_back: hitSampler('back'),
+  npc_hit_arm_left: hitSampler('arm', 'Left'),
+  npc_hit_arm_right: hitSampler('arm', 'Right'),
+  npc_hit_leg_left: hitSampler('leg', 'Left'),
+  npc_hit_leg_right: hitSampler('leg', 'Right'),
+  npc_clutch_torso: clutchSampler('torso'),
+  npc_clutch_arm_left: clutchSampler('Left'),
+  npc_clutch_arm_right: clutchSampler('Right'),
+  npc_clutch_leg: clutchSampler('leg'),
+  /** Duck at a gunshot: drop into the cower crouch with the hands going over the head. */
+  npc_duck: {
+    duration: 0.55,
+    loop: false,
+    meta: () => ({ then: 'npc_fear_cower' }),
+    sample: (L, t, dur) => {
+      const d = ease(window01(t / dur, 0, 0.9));
+      return mix(SOCIAL_SAMPLERS.npc_idle_weight.sample(L, 0, 6), SOCIAL_SAMPLERS.npc_fear_cower.sample(L, 0, 2), d);
+    },
+  },
+  npc_death_back: deathSampler('back', { duration: 1.6, buckleEnd: 0.35, impact: 1.0 }),
+  npc_death_forward: deathSampler('front', { duration: 1.7, buckleEnd: 0.4, impact: 1.1 }),
+  npc_death_crumple: deathSampler('side', { duration: 2.0, buckleEnd: 0.7, impact: 1.45 }),
+  npc_dead_pose_back: deadHold('back'),
+  npc_dead_pose_front: deadHold('front'),
+  npc_dead_pose_side: deadHold('side'),
+});
+
+/** Death clip → the dead pose it ends in. */
+export const DEATH_CLIPS = { npc_death_back: 'npc_dead_pose_back', npc_death_forward: 'npc_dead_pose_front', npc_death_crumple: 'npc_dead_pose_side' };
 
 /** Clip names provided by this module. */
 export const SOCIAL_CLIP_NAMES = Object.keys(SOCIAL_SAMPLERS);
