@@ -92,3 +92,61 @@ Older graphical style (PS2-era: low poly, nearest-filtered pixel textures, verte
 modern systems (responsiveness, physics, blending, IK). Code is generated, deterministic, no binary
 source assets. Match surrounding code style and comment density. Licences for any external asset
 go in `docs/animation/animation_sources.md`.
+
+## 5. Pass 3 direction (user, latest — overrides earlier notes)
+
+- **Playable world population:** no NPCs outside. The five main characters (`MAIN_PRESETS`, sheet-01..05)
+  sit inside the loft as NPCs, chilling on the sofa/seats and listening to music (head nods, relaxed
+  talk). sheet-04 (camo cargo) holds an unbranded clear lager bottle with a lime wedge and takes sips.
+  The player is `trial-default` (or `?id=`). `?npcs=street` may still spawn the street test cast.
+- **Weapons:** the pistol is the only usable gun in the playable game for now (rifle/SMG code stays
+  in the repo, just not attached or selectable in `world-play.js`).
+- **Movement:** WASD runs by default; Alt (or CapsLock toggle) walks; Shift sprints outdoors.
+- **Time of day:** night. Darker exterior (moonlight + sodium streetlights), interior lamps on.
+- **Music:** an original procedural minimal Detroit-techno track (in the spirit of Robert Hood's
+  minimal techno, NOT a copy of any real track), 128 BPM, heavy sub bass, playing from the loft's
+  speakers with physically-motivated propagation.
+
+## 6. Combat (G ↔ B) and audio (F)
+
+- **Hitscan (G, `src/combat/**`):** on fire, G raycasts from the muzzle along the aim against
+  `world.collision.raycastHit` and NPC hit volumes. B provides
+  `npcs.hitTest(origin, dir, maxDist) → { npc, point, normal, distance, part: 'head'|'torso'|'arm'|'leg' } | null`
+  (G falls back to body capsules). On a hit G calls `npcs.damage(npc, { amount, point, dir, part, source: 'player' })`.
+- **Health (B):** each NPC dies after **5 pistol hits** (head counts double). B implements hit
+  reactions (directional flinch/stagger by part, clutch wound), death (directional fall clips into
+  a collapsed pose that rests on the floor — no T-pose, no floating), and everyone else's reaction
+  to gunfire and deaths (startle, duck, cower, hands up, flee to exits, scream barks; seated NPCs
+  jump up). B emits `npc:hit { npc, point, dir, part }`, `npc:death { npc, point, dir }`,
+  `npc:panic { npc }` on `game.events`. Dead NPCs stay as bodies.
+- **Blood & impacts (G, `src/fx/**`):** blood mist burst at the hit point, splatter decals projected
+  onto walls/floor/furniture behind the hit (raycast along `dir`), drips, a pool that spreads under
+  a dead body, bullet impact decals + dust on world surfaces. Retro pixel textures, deterministic
+  per seed, budgeted (oldest decals recycle). Decals sit on surfaces with polygon offset, never float.
+- **Audio (F, `src/audio/**`):** `installAudio(game)` (default export or named) wires itself to
+  `game.events`/`game.world`/camera: music source(s) at the loft speakers, gunshot sounds
+  (indoor/outdoor reverb), impacts, NPC screams optional. Propagation: inverse-distance attenuation,
+  air absorption (HF loss with distance), wall/floor occlusion with frequency-dependent transmission
+  (bass travels through walls, highs don't), door openness opens the path, room reverb per zone.
+  Exposes `game.audio = { music: { bpm, beatPhase(), playing, toggle() }, play(name, pos) }`.
+  G calls it from `world-play.js` via optional dynamic import. The audio context starts on first
+  user gesture (browser autoplay rules).
+
+## 7. Apartment life: activities & chill animations (H ↔ B)
+
+- **H owns** `src/anim/chill-clips.js` (registered through `registerSamplers`) and
+  `src/npc/activities/**` (activity / smart-object registry). B owns the rest of `src/npc/**`.
+- **Activity** = `{ id, tags, slots(world) → [{ pos, yaw, seat?, prop? }], enter(npc, slot, ctx),
+  update(npc, dt, ctx) → 'continue'|'done', exit(npc, ctx), interruptible: true }`, exported from
+  `src/npc/activities/index.js` as `ACTIVITIES` + `pickActivity(npc, ctx)`. B's brain, while calm,
+  runs activities through this registry (idle/scenario state); any threat stimulus (gunfire,
+  weapon aimed, death) interrupts immediately and B's reactions take over.
+- Activities in the loft: sit and listen (head-nod to `game.audio.music.beatPhase()`, foot tap,
+  shoulder bounce, eyes closed vibe), sit and drink (sip, rest bottle on knee), sit and talk in
+  pairs (gestures, laugh, lean in), dance/two-step by the speakers, lean on the kitchen counter,
+  grab a drink from the fridge, look out the big window, scroll phone, play video games with a
+  controller facing the TV, smoke by the window (reuse A's smoke clips), stretch/yawn, lean on the
+  mezzanine railing, sit on the stair, flip a record / pick music at the console. NPCs rotate
+  between activities over minutes so the room feels alive; at most one NPC per slot.
+- Held props (`src/npc/activities/props.js`): bottle (unbranded clear lager + lime), phone,
+  controller, cup; attached to hand bones with a grip offset.
