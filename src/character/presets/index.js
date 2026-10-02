@@ -16,3 +16,5 @@ export const NPC_PRESETS = [sheet06, sheet07];
 export const PRESETS = [...MAIN_PRESETS, ...NPC_PRESETS, trial];
 export const PRESETS_BY_ID = Object.fromEntries(PRESETS.map((p) => [p.id, p]));
 export const PRESET_META = meta;
+/** Roster role from meta.json: 'main' (playable), 'npc' (appears as an ordinary NPC) or 'test'. */
+export const roleOf = (id) => meta[id]?.role ?? 'npc';
