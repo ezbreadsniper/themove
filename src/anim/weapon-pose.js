@@ -3,6 +3,7 @@ import { WEAPONS } from '../weapons/specs.js';
 import { socket, weaponHandFrame, mountTransform } from '../weapons/model.js';
 import { worldPose } from './fk.js';
 import { gripAt, handRotation } from './arm-ik.js';
+import { curlFingers, RELAXED_HAND } from './pose.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const FWD = new THREE.Vector3(0, 0, 1);
@@ -153,6 +154,22 @@ export function handTarget(spec, wx, marks, side, name) {
   throw new Error(`Unknown hand target ${name}`);
 }
 
+/** Finger / thumb curl (degrees) for a hand at each target: wrapped on grips, holding a magazine, pinching. */
+const CURL = {
+  free: RELAXED_HAND,
+  grip: { fingers: 100, thumb: 40 },
+  support: { fingers: 85, thumb: 25 },
+  supportLong: { fingers: 55, thumb: 30 },
+  pouch: { fingers: 75, thumb: 45 },
+  magWell: { fingers: 75, thumb: 45 },
+  slide: { fingers: 60, thumb: 50 },
+  bolt: { fingers: 70, thumb: 30 },
+};
+
+function curlFor(spec, name) {
+  return CURL[name === 'support' && spec.kind !== 'pistol' ? 'supportLong' : name];
+}
+
 const ELBOW = { Right: new THREE.Vector3(-0.8, -1, -0.35), Left: new THREE.Vector3(0.8, -1, -0.2) };
 
 /**
@@ -177,6 +194,9 @@ export function holdWeapon(layout, pose, type, wx, hands = { Right: ['grip', 'gr
   const out = { Right: 0, Left: 0, reachable: true };
   for (const side of ['Right', 'Left']) {
     const [from, to, t] = hands[side];
+    const ca = curlFor(spec, from);
+    const cb = curlFor(spec, to);
+    curlFingers(pose, layout, side, { fingers: ca.fingers + (cb.fingers - ca.fingers) * t, thumb: ca.thumb + (cb.thumb - ca.thumb) * t });
     if (from === 'free' && (to === 'free' || t <= 0)) continue;
     if (to === 'free' && t >= 1) continue;
     const bones = [`${side}Arm`, `${side}ForeArm`, `${side}Hand`];

@@ -28,8 +28,19 @@ export const CORE_JOINTS = [
   ['RightToeBase', 'RightFoot'],
 ];
 
-/** Full game rig: the UniMate core plus a jaw for talking (extra joints always come after the core). */
-export const JOINTS = [...CORE_JOINTS, ['Jaw', 'Head']];
+/**
+ * Hand joints (per side): a two-segment thumb (Mixamo names) and a two-segment four-finger block. The
+ * PS2 mitten hand has no separate fingers, so the block stands in for Mixamo's Index..Pinky chains.
+ */
+export const HAND_JOINTS = ['Left', 'Right'].flatMap((side) => [
+  [`${side}HandThumb1`, `${side}Hand`],
+  [`${side}HandThumb2`, `${side}HandThumb1`],
+  [`${side}HandFingers1`, `${side}Hand`],
+  [`${side}HandFingers2`, `${side}HandFingers1`],
+]);
+
+/** Full game rig: the UniMate core, a jaw for talking, then the hands (extras always come after the core). */
+export const JOINTS = [...CORE_JOINTS, ['Jaw', 'Head'], ...HAND_JOINTS];
 
 export const JOINT_INDEX = Object.fromEntries(JOINTS.map(([name], i) => [name, i]));
 
@@ -58,6 +69,19 @@ const smoothstep = (a, b, x) => {
   const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
 };
+
+/**
+ * Rest frame of a hand: fingers along the rest arm, palm facing the body side (where the fingers curl),
+ * forward is the thumb side, thumb points along fingers, forward and palm (as the mesh is built).
+ */
+export function handFrame(armDir, s) {
+  const fingers = armDir.clone().setX(armDir.x * s).normalize();
+  const side = fingers.clone().cross(new THREE.Vector3(0, 0, 1)).normalize();
+  const palm = side.clone().multiplyScalar(s);
+  const forward = side.clone().cross(fingers).normalize();
+  const thumb = fingers.clone().multiplyScalar(0.8).addScaledVector(forward, 0.4).addScaledVector(palm, 0.4).normalize();
+  return { fingers, palm, forward, thumb };
+}
 
 /** 0..1 weights for how far past young adulthood (older) or before it (young) an age is. */
 export function ageFactors(age = 28) {
@@ -122,6 +146,15 @@ export function computeJointLayout(input = {}) {
     const kk = hh / 0.254;
     world.Jaw = new THREE.Vector3(0, H - hh + 0.094 * kk, 0.004 * kk);
   }
+  const handLength = H * 0.1 * (1 - fem * 0.08);
+  for (const [side, s] of [['Left', 1], ['Right', -1]]) {
+    const f = handFrame(armDir, s);
+    const wrist = world[`${side}Hand`];
+    world[`${side}HandFingers1`] = wrist.clone().addScaledVector(f.fingers, handLength * 0.55);
+    world[`${side}HandFingers2`] = wrist.clone().addScaledVector(f.fingers, handLength * 0.78);
+    world[`${side}HandThumb1`] = wrist.clone().addScaledVector(f.fingers, handLength * 0.14).addScaledVector(f.forward, 0.028 * k).addScaledVector(f.palm, 0.008 * k);
+    world[`${side}HandThumb2`] = world[`${side}HandThumb1`].clone().addScaledVector(f.thumb, 0.03 * k);
+  }
   const measures = {
     height: H,
     bulk,
@@ -148,7 +181,7 @@ export function computeJointLayout(input = {}) {
     upperArmRadius: 0.058 * k * bulk * (0.88 + mus * 0.26 - older * 0.04) * (1 - fem * 0.16),
     foreArmRadius: 0.05 * k * bulk * (0.92 + mus * 0.16) * (1 - fem * 0.15),
     wristRadius: 0.031 * k * (1 - fem * 0.14),
-    handLength: H * 0.1 * (1 - fem * 0.08),
+    handLength,
     footLength: H * 0.15,
     armDir,
     upperArm,

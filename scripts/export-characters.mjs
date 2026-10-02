@@ -5,6 +5,7 @@
  */
 import { writeFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { ensureServer, openPage } from './lib/browser.mjs';
+import { JOINTS } from '../src/rig/skeleton.js';
 
 const UNIMATE_CORE = ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'].map((n) => `mixamorig:${n}`);
 
@@ -21,7 +22,7 @@ function validateStructure(json) {
   if (JSON.stringify(jointNames.slice(0, 22)) !== JSON.stringify(UNIMATE_CORE)) problems.push(`joint names/order differ: ${jointNames.join(',')}`);
   const sameJoints = (json.skins ?? []).every((s) => JSON.stringify(s.joints) === JSON.stringify(skin.joints));
   if (!sameJoints) problems.push('parts are bound to different joint sets');
-  if (json.nodes.filter((n) => n.name?.startsWith('mixamorig:')).length !== 23) problems.push('joint nodes duplicated or missing');
+  if (json.nodes.filter((n) => n.name?.startsWith('mixamorig:')).length !== JOINTS.length) problems.push('joint nodes duplicated or missing');
   const skinnedNodes = json.nodes.filter((n) => n.skin !== undefined).length;
   const clips = (json.animations ?? []).map((a) => a.name);
   if (clips.length < 8) problems.push(`only ${clips.length} animations`);
@@ -45,7 +46,7 @@ for (const id of ids) {
   const reimport = await page.evaluate(([i, b]) => window.evidence.reimport(i, b), [id, b64]);
   await page.screenshot({ path: `docs/evidence/export-roundtrip-${id}.png` });
   const problems = [...structure.problems];
-  if (reimport.bones.length !== 23) problems.push(`reimported skeleton has ${reimport.bones.length} bones`);
+  if (reimport.bones.length !== JOINTS.length) problems.push(`reimported skeleton has ${reimport.bones.length} bones`);
   if (!reimport.sharedSkeleton) problems.push('reimported meshes do not all bind 22 bones');
   if (!reimport.texturesNearest) problems.push('reimported textures lost nearest filtering');
   if (problems.length) failed = true;
@@ -59,7 +60,7 @@ for (const id of ids) {
   for (const [clip, type] of [['pistol_draw', 'pistol'], ['rifle_equip', 'rifle'], ['smg_equip', 'smg']]) checks[clip] = await page.evaluate(([b, c, t]) => window.evidence.reimportArmed(b, c, t), [b64, clip, type]);
   const problems = Object.entries(checks).filter(([, r]) => !r.ok).map(([c, r]) => `${c}: ${JSON.stringify(r)}`);
   if (problems.length) failed = true;
-  summary.push({ id: 'trial-default-armed', bytes: Buffer.from(b64, 'base64').length, clips: [], jointCount: 23, skinnedNodes: 0, images: 0, armed: checks, problems });
+  summary.push({ id: 'trial-default-armed', bytes: Buffer.from(b64, 'base64').length, clips: [], jointCount: JOINTS.length, skinnedNodes: 0, images: 0, armed: checks, problems });
 }
 writeFileSync('docs/evidence/export-report.json', JSON.stringify(summary, null, 2));
 for (const s of summary) {

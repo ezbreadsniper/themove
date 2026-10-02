@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { handFrame, HAND_JOINTS } from '../rig/skeleton.js';
 
 const DEG = Math.PI / 180;
 const X = new THREE.Vector3(1, 0, 0);
@@ -89,3 +90,30 @@ export function applyPose(bonesByJoint, pose) {
 }
 
 export { DEG, q };
+
+/** Relaxed hand (fingers and thumb curl, degrees) used when a clip says nothing about the fingers. */
+export const RELAXED_HAND = { fingers: 28, thumb: 12 };
+
+/**
+ * Curls a hand: the finger block bends toward the palm at the knuckles (55%) and mid joint (45%), the
+ * thumb toward the palm in two segments. Bones rest at identity, so rest-space axes are local axes.
+ */
+export function curlFingers(pose, layout, side, { fingers = 0, thumb = 0 } = {}) {
+  const f = handFrame(layout.measures.armDir, side === 'Left' ? 1 : -1);
+  const fingerAxis = f.fingers.clone().cross(f.palm).normalize();
+  const thumbAxis = f.thumb.clone().cross(f.palm).normalize();
+  const set = (bone, axis, deg) => { pose.bones[`${side}${bone}`] = new THREE.Quaternion().setFromAxisAngle(axis, deg * DEG); };
+  set('HandFingers1', fingerAxis, fingers * 0.55);
+  set('HandFingers2', fingerAxis, fingers * 0.45);
+  set('HandThumb1', thumbAxis, thumb * 0.5);
+  set('HandThumb2', thumbAxis, thumb * 0.5);
+  return pose;
+}
+
+/** Gives every hand joint the pose doesn't set the relaxed curl. */
+export function relaxHands(pose, layout) {
+  for (const side of ['Left', 'Right']) {
+    if (!HAND_JOINTS.some(([n]) => n.startsWith(side) && pose.bones[n])) curlFingers(pose, layout, side, RELAXED_HAND);
+  }
+  return pose;
+}

@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import * as THREE from 'three';
+import { JOINTS } from '../src/rig/skeleton.js';
 import { buildCharacter } from '../src/character/build.js';
 import { PRESETS } from '../src/character/presets/index.js';
 import { characterHash } from './helpers.js';
@@ -31,7 +32,7 @@ describe.each(PRESETS)('$id', (preset) => {
         const sum = w[i] + w[i + 1] + w[i + 2] + w[i + 3];
         expect(Math.abs(sum - 1), `${m.name} vertex ${i / 4}`).toBeLessThan(1e-4);
       }
-      expect(Math.max(...idx)).toBeLessThan(23);
+      expect(Math.max(...idx)).toBeLessThan(JOINTS.length);
       expect(m.geometry.attributes.position.array.every(Number.isFinite)).toBe(true);
       expect(m.geometry.attributes.normal.array.every(Number.isFinite)).toBe(true);
     }

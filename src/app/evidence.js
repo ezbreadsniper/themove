@@ -6,6 +6,7 @@ import { exportCharacterGLB } from '../export/gltf.js';
 import { bakeClip } from '../anim/clips.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { attachWeapon } from '../weapons/model.js';
+import { JOINTS } from '../rig/skeleton.js';
 
 const TURNAROUND_YAWS = [0, 90, 35, 180];
 
@@ -16,6 +17,7 @@ const ZONES = {
   torso: (m) => ({ y: (m.hipsY + m.shoulderY) / 2, h: 0.85 }),
   hips: (m) => ({ y: m.hipsY - 0.05, h: 0.55 }),
   handL: (m, w) => ({ x: w.LeftHand.x, y: w.LeftHand.y - 0.05, h: 0.4 }),
+  handR: (m, w) => ({ x: w.RightHand.x, y: w.RightHand.y - 0.05, h: 0.4 }),
   feet: () => ({ y: 0.09, h: 0.42, pitch: 18 }),
   ankles: (m) => ({ y: 0.115 * (m.height / 1.78), h: 0.36 * (m.height / 1.78), pitch: 8 }),
   legs: (m) => ({ y: m.kneeY * 0.62, h: m.kneeY * 1.45, pitch: 6 }),
@@ -99,7 +101,14 @@ async function render(opts) {
     ch.parent.worldToLocal(posed);
     const follow = ['hips', 'torso', 'shoulders', 'legs'].includes(opts.zone) ? posed.y - world.Hips.y : 0;
     const fz = ['hips', 'torso', 'shoulders', 'legs'].includes(opts.zone) ? posed.z - world.Hips.z : 0;
-    stage.frame({ target: new THREE.Vector3(placements[0].x + (z.x ?? 0), z.y + follow * (opts.zone === 'legs' ? 0.5 : 1), fz), height: z.h, yaw: camYaw, pitch: opts.pitch ?? z.pitch ?? 3 });
+    let target = new THREE.Vector3(placements[0].x + (z.x ?? 0), z.y + follow * (opts.zone === 'legs' ? 0.5 : 1), fz);
+    // Hand zones follow the posed hand (weapons, gestures), not where the hand rests.
+    const handBone = { handL: 'LeftHand', handR: 'RightHand' }[opts.zone];
+    if (handBone) {
+      ch.updateMatrixWorld(true);
+      target = ch.userData.rig.bones.find((b) => b.name.endsWith(handBone)).getWorldPosition(new THREE.Vector3());
+    }
+    stage.frame({ target, height: handBone ? 0.32 : z.h, yaw: camYaw, pitch: opts.pitch ?? z.pitch ?? 3 });
   } else if (framing === 'full') {
     const tall = clip === 'jump' || clip === 'cheer' ? 1.25 : 1;
     const h = Math.max(2.05 * tall, span / aspect * 1.05);
@@ -181,7 +190,7 @@ async function reimport(id, b64, { width = 900, height = 700 } = {}) {
   const report = {
     skinnedMeshes: skinned.length,
     bones: skinned[0]?.skeleton.bones.map((b) => b.name) ?? [],
-    sharedSkeleton: skinned.every((m) => m.skeleton.bones.length === 23),
+    sharedSkeleton: skinned.every((m) => m.skeleton.bones.length === JOINTS.length),
     animations: gltf.animations.map((a) => a.name),
     texturesNearest: skinned.every((m) => !m.material.map || m.material.map.magFilter === THREE.NearestFilter),
   };

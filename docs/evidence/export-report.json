@@ -1,9 +1,9 @@
 [
   {
     "id": "sheet-01-black-tee",
-    "bytes": 2639900,
+    "bytes": 3379468,
     "problems": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 7,
     "clips": [
       "neutral",
@@ -77,9 +77,9 @@
   },
   {
     "id": "sheet-02-denim-vest",
-    "bytes": 2925540,
+    "bytes": 3667140,
     "problems": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 11,
     "clips": [
       "neutral",
@@ -153,9 +153,9 @@
   },
   {
     "id": "sheet-03-red-rugby",
-    "bytes": 2998800,
+    "bytes": 3739644,
     "problems": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 10,
     "clips": [
       "neutral",
@@ -229,9 +229,9 @@
   },
   {
     "id": "sheet-04-camo-cargo",
-    "bytes": 2817776,
+    "bytes": 3558348,
     "problems": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 9,
     "clips": [
       "neutral",
@@ -305,9 +305,9 @@
   },
   {
     "id": "sheet-05-curly-denim",
-    "bytes": 2957208,
+    "bytes": 3699104,
     "problems": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 12,
     "clips": [
       "neutral",
@@ -381,9 +381,9 @@
   },
   {
     "id": "sheet-06-floral-cutoffs",
-    "bytes": 3047612,
+    "bytes": 3789852,
     "problems": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 11,
     "clips": [
       "neutral",
@@ -457,9 +457,9 @@
   },
   {
     "id": "sheet-07-puffer-balaclava",
-    "bytes": 2786284,
+    "bytes": 3526320,
     "problems": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 8,
     "clips": [
       "neutral",
@@ -533,9 +533,9 @@
   },
   {
     "id": "trial-default",
-    "bytes": 2809088,
+    "bytes": 3548628,
     "problems": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 7,
     "clips": [
       "neutral",
@@ -609,9 +609,9 @@
   },
   {
     "id": "trial-default-armed",
-    "bytes": 7604520,
+    "bytes": 9664904,
     "clips": [],
-    "jointCount": 23,
+    "jointCount": 31,
     "skinnedNodes": 0,
     "images": 0,
     "armed": {

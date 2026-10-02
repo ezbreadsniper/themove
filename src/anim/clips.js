@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { JOINTS } from '../rig/skeleton.js';
-import { createPose, Pose, rotate } from './pose.js';
+import { createPose, Pose, rotate, relaxHands } from './pose.js';
 import { gaitSampler, DIRECTIONS } from './gait.js';
 import { solveLeg3D } from './ik.js';
 import { makeWeaponSamplers } from './weapon-clips.js';
@@ -446,7 +446,7 @@ export function bakeClip(layout, name, { prefix = '' } = {}) {
   for (let f = 0; f <= frames; f++) {
     const t = s.loop && f === frames ? 0 : (f / FPS);
     times[f] = f / FPS;
-    const pose = s.sample(layout, t, s.duration);
+    const pose = relaxHands(s.sample(layout, t, s.duration), layout);
     for (const [path, value] of Object.entries(pose.props ?? {})) (props[path] ??= []).push(value);
     for (const [j] of JOINTS) {
       const qq = pose.bones[j] ?? new THREE.Quaternion();

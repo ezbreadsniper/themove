@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createPose, Pose } from './pose.js';
+import { createPose, Pose, curlFingers } from './pose.js';
 import { SIDES, ease, window01, base, plantLegs, armDirs } from './clip-kit.js';
 import { gripWith } from './arm-ik.js';
 import { worldPose } from './fk.js';
@@ -210,6 +210,7 @@ export function makeExtraSamplers(bases) {
         Pose.headNod(held, -14 * env + bounce * 5);
         SIDES.forEach((side) => Pose.shoulderShrug(held, side, bounce * 5));
         Pose.jawOpen(held, 4 + bounce * 12);
+        curlFingers(held, L, 'Left', { fingers: 8, thumb: 5 });
         plantLegs(L, held, { hips: new THREE.Vector3(0, -0.01 - bounce * 0.008, 0) });
         return held;
       },
@@ -231,6 +232,7 @@ export function makeExtraSamplers(bases) {
         Pose.headTurn(p, Math.sin(t * 8) * 3 * env);
         SIDES.forEach((side) => Pose.shoulderShrug(p, side, env * 4));
         Pose.jawOpen(p, jab * 10);
+        SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 28 + env * 75, thumb: 12 + env * 40 }));
         plantLegs(L, p, { hips: new THREE.Vector3(0, -0.01, 0.02 * env) });
         return p;
       },
@@ -277,6 +279,7 @@ function pushPull(dir) {
         const grip = fk.pos.Spine2.clone().add(new THREE.Vector3(s * 0.2 * kk, -0.02 * kk, (0.42 + (dir > 0 ? 0.04 : -0.03) * effort) * kk));
         gripWith(L, p, side, grip, new THREE.Vector3(-s * 0.25, 0.4, 1).normalize().multiplyScalar(dir > 0 ? 1 : 1), dir > 0 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(-s, 0, 0), new THREE.Vector3(s, -1, -0.5));
       }
+      SIDES.forEach((side) => curlFingers(p, L, side, { fingers: 80, thumb: 35 }));
       const lean = dir * (0.1 + effort * 0.02) * kk;
       const ankles = { Left: L.world.LeftFoot.clone().add(new THREE.Vector3(0, 0, 0.12 * kk * dir)), Right: L.world.RightFoot.clone().add(new THREE.Vector3(0, 0, -0.2 * kk * dir)) };
       plantLegs(L, p, { hips: new THREE.Vector3(0, -0.06 * kk, lean * 0.6), ankles });

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 export const UPPER_BONES = ['Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'Jaw', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand'];
 
 const boneOf = (trackName) => trackName.split('.')[0].replace(/^.*:/, '');
-const isUpper = (track) => UPPER_BONES.includes(boneOf(track.name)) || boneOf(track.name).startsWith('wpn_');
+const isUpper = (track) => UPPER_BONES.includes(boneOf(track.name)) || /^(Left|Right)Hand/.test(boneOf(track.name)) || boneOf(track.name).startsWith('wpn_');
 
 /** Clip restricted to the base (lower) or upper body bones. */
 export function maskClip(clip, part) {

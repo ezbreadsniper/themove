@@ -442,16 +442,22 @@ function buildHand(mb, layout, side) {
   const k = m.height / 1.78;
   const Hd = J[`${side}Hand`];
   const F = J[`${side}ForeArm`];
+  const F1 = J[`${side}HandFingers1`];
+  const F2 = J[`${side}HandFingers2`];
+  const T1 = J[`${side}HandThumb1`];
+  const T2 = J[`${side}HandThumb2`];
   const wrist = layout.world[`${side}Hand`].clone();
   const palmDir = f.x.clone().multiplyScalar(side === 'Left' ? 1 : -1);
   const len = m.handLength;
+  // Palm on the hand bone; the finger block bends at the knuckles (Fingers1) and mid joint (Fingers2).
   const stations = [
     { t: -0.04, w: 0.026, th: 0.017, curl: 0, wt: [[F, 0.5], [Hd, 0.5]] },
     { t: 0.12, w: 0.038, th: 0.018, curl: 0, wt: [[Hd, 1]] },
-    { t: 0.4, w: 0.043, th: 0.016, curl: 0.002, wt: [[Hd, 1]] },
-    { t: 0.55, w: 0.043, th: 0.014, curl: 0.006, wt: [[Hd, 1]] },
-    { t: 0.78, w: 0.039, th: 0.012, curl: 0.016, wt: [[Hd, 1]] },
-    { t: 0.95, w: 0.033, th: 0.01, curl: 0.028, wt: [[Hd, 1]] },
+    { t: 0.4, w: 0.043, th: 0.016, curl: 0, wt: [[Hd, 1]] },
+    { t: 0.55, w: 0.043, th: 0.014, curl: 0, wt: [[Hd, 0.5], [F1, 0.5]] },
+    { t: 0.66, w: 0.041, th: 0.013, curl: 0, wt: [[F1, 1]] },
+    { t: 0.78, w: 0.039, th: 0.012, curl: 0, wt: [[F1, 0.5], [F2, 0.5]] },
+    { t: 0.95, w: 0.033, th: 0.01, curl: 0, wt: [[F2, 1]] },
   ];
   const rings = stations.map((st) => ({
     c: wrist.clone().addScaledVector(f.d, st.t * len).addScaledVector(palmDir, st.curl * k),
@@ -479,7 +485,7 @@ function buildHand(mb, layout, side) {
     z: tf.z,
     r: [0.012, 0.0105, 0.009][i] * k,
     v: t,
-    w: [[Hd, 1]],
+    w: [[[Hd, 0.5], [T1, 0.5]], [[T1, 0.6], [T2, 0.4]], [[T2, 1]]][i],
   }));
   mb.newSmoothingGroup();
   const [hu0, hv0, hu1, hv1] = SKIN_ATLAS.hand;

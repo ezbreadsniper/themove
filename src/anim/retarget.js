@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { CORE_JOINTS, JOINT_INDEX } from '../rig/skeleton.js';
 import { clipFromUnimateMotion } from '../unimate/bridge.js';
 import { worldPose } from './fk.js';
-import { createPose } from './pose.js';
+import { createPose, relaxHands } from './pose.js';
+import { HAND_JOINTS } from '../rig/skeleton.js';
 
 /**
  * Retargeting of external motion (licensed Mixamo / pack / mocap clips, UniMate output) onto the
@@ -163,6 +164,10 @@ export function retargetClip(source, layout, { name, prefix = '', inPlace = true
   const motion = sourceToGlobalMotion(source.root, source.bones, source.clip, { profile: source.profile, metresPerUnit: source.metresPerUnit ?? 1 });
   const clip = clipFromUnimateMotion(motion, layout, { name: name ?? `${source.license.source}_${source.clip.name}`, prefix });
   cleanRetargetedClip(clip, layout, { inPlace });
+  // Finger chains are not retargeted yet: imported clips carry a relaxed hand so nothing stays curled.
+  const hands = relaxHands(createPose(), layout);
+  const times = [0, clip.duration];
+  for (const [joint] of HAND_JOINTS) clip.tracks.push(new THREE.QuaternionKeyframeTrack(`${prefix}${joint}.quaternion`, times, [...hands.bones[joint].toArray(), ...hands.bones[joint].toArray()]));
   clip.userData = { ...clip.userData, loop: source.loop ?? false, provenance: { ...source.license, profile: source.profile, retargetedAt: CANONICAL } };
   return clip;
 }

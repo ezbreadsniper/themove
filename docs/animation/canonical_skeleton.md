@@ -6,14 +6,14 @@ Source of truth: `src/rig/skeleton.js`. All clips, weapons, exports and imports 
 
 | Item | Standard |
 |---|---|
-| Joints | Mixamo / UniMate 22-joint core (`CORE_JOINTS`), plus `Jaw` (talking). Extra joints always come after the core. |
+| Joints | Mixamo / UniMate 22-joint core (`CORE_JOINTS`), then `Jaw` (talking), then 4 hand joints per side (`HAND_JOINTS`): 31 in total. Extra joints always come after the core. |
 | Names | Bare joint names in the runtime (`Hips`, `LeftForeArm` …). Exports and imports use the `mixamorig:` prefix (`RIG_PREFIX`). |
 | Hierarchy | Hips → Spine → Spine1 → Spine2 → Neck → Head → Jaw. Spine2 → {Left,Right}Shoulder → Arm → ForeArm → Hand. Hips → {Left,Right}UpLeg → Leg → Foot → ToeBase. |
 | Rest pose | A-pose, arms 32° down from horizontal (`A_POSE_DEGREES`). **Every bone rests at identity rotation**: a bone's rest offset is the difference of rest world positions. |
 | Axes | Y up, +Z forward (the character faces +Z), the character's left is +X. Units are metres. |
 | Root | `Hips` is the root joint at pelvis height. The character group's origin is between the feet on the ground. |
 | Scale | 1 unit = 1 m. Proportions are per character (`computeJointLayout`), so clips are baked per body. |
-| Hands | Single `Hand` bone (mitten hand, no finger bones). Grip contact point = wrist + 0.42 × hand length along the fingers + 1.3 cm toward the palm (`handGripOffset`). The hand rest frame is fingers along the rest arm, palm facing the body (`handRestFrame`). |
+| Hands | `Hand` plus `HandThumb1/2` (Mixamo names) and `HandFingers1/2`. The PS2 mitten's four-finger block bends at the knuckles and the mid joint; it stands in for Mixamo's Index..Pinky chains. Poses come from `curlFingers` / `relaxHands` (`src/anim/pose.js`). Clips that don't set the fingers are baked with a relaxed hand. Weapon holds set a curl per hand target (grip, support, magazine, slide, bolt). Retargeted clips get a relaxed-hand track; source finger chains are not retargeted yet. Grip contact point = wrist + 0.42 × hand length along the fingers + 1.3 cm toward the palm (`handGripOffset`). The hand rest frame is fingers along the rest arm, palm facing the body (`handRestFrame`). |
 | Feet | `Foot` (ankle) and `ToeBase` (ball). Heel and ball pivots for foot roll are in `legRig` (`src/anim/ik.js`). |
 | Weapon attachment | The weapon is a child of `RightHand`, at the constant offset `handToWeapon(layout, spec)`. Stowed copies hang on the mount bone (`Hips`). The spare magazine is a child of `LeftHand`. Sockets are listed in `src/weapons/specs.js`. |
 | IK | Legs: `solveLeg` (sagittal), `solveLeg3D` (`src/anim/ik.js`). Arms: `solveArm` / `gripAt` / `gripWith` (`src/anim/arm-ik.js`) in world space after any spine pose (FK in `src/anim/fk.js`). The rest elbow pole is −Z (the elbow bends back). |

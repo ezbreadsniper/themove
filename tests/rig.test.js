@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { JOINTS, CORE_JOINTS, computeJointLayout, createSkeleton, RIG_PREFIX } from '../src/rig/skeleton.js';
+import { JOINTS, CORE_JOINTS, HAND_JOINTS, computeJointLayout, createSkeleton, RIG_PREFIX } from '../src/rig/skeleton.js';
 
 /** Copied verbatim from UniMate data_process/feature_extraction/metadata.py (MIXAMO_CORE_JOINTS). */
 const UNIMATE_MIXAMO_CORE = [
@@ -20,7 +20,7 @@ describe('canonical skeleton', () => {
   test('joint list matches UniMate mixamo core exactly and in order', () => {
     expect(CORE_JOINTS.map(([n]) => `${RIG_PREFIX}${n}`)).toEqual(UNIMATE_MIXAMO_CORE);
     expect(JOINTS.slice(0, 22)).toEqual(CORE_JOINTS);
-    expect(JOINTS.slice(22)).toEqual([['Jaw', 'Head']]);
+    expect(JOINTS.slice(22)).toEqual([['Jaw', 'Head'], ...HAND_JOINTS]);
   });
 
   test('bones have identity rest rotations and a single root', () => {
