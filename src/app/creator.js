@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import GUI from 'lil-gui';
+import { WorldViewer } from '../world/viewer.js';
 import { Stage, BACKDROPS } from '../render/stage.js';
 import { RETRO_PRESETS } from '../render/retro-pipeline.js';
 import { buildCharacter, disposeCharacter } from '../character/build.js';
@@ -16,6 +17,8 @@ const container = document.getElementById('view');
 const hud = document.getElementById('hud');
 const errorBox = document.getElementById('errors');
 const stage = new Stage(container, { width: window.innerWidth, height: window.innerHeight, backdrop: 'menu', preserveDrawingBuffer: false });
+stage.renderer.shadowMap.enabled = true;
+const worldViewer = new WorldViewer(stage);
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
 let storage = null;
@@ -26,12 +29,13 @@ try {
 }
 const store = createEditStore(storage, PRESETS_BY_ID);
 const LINEUP = 'all characters (lineup)';
-const urlLineup = new URLSearchParams(window.location.search).get('mode') === 'lineup';
+const urlMode = new URLSearchParams(window.location.search).get('mode');
+const urlLineup = urlMode === 'lineup';
 const startId = store.activeId && store.get(store.activeId) ? store.activeId : PRESETS[0].id;
 
 const state = {
   def: normalizeDefinition(store.get(startId)).value,
-  view: { mode: 'single', clip: 'idle', backdrop: 'menu', pipeline: 'ps2', turntable: false, yaw: 0, zoom: 1, ...store.view, ...(urlLineup ? { mode: 'lineup' } : {}) },
+  view: { mode: 'single', clip: 'idle', backdrop: 'menu', pipeline: 'ps2', turntable: false, yaw: 0, zoom: 1, ...store.view, ...(urlLineup ? { mode: 'lineup' } : {}), ...(urlMode === 'world' ? { mode: 'world' } : {}) },
   open: store.openFolders,
 };
 
@@ -55,6 +59,7 @@ function rebuild() {
       entries.push(entry);
       if (i === 0) showErrors(character.userData.errors);
     });
+    if (state.view.mode === 'world') worldViewer.placeEntries(entries, worldViewer.ensureWorld().markers.spawn.pos);
   } catch (err) {
     errorBox.textContent = `Build failed: ${err.message}`;
     throw err;
@@ -82,7 +87,7 @@ function updateHud() {
   if (!s) return;
   const edited = state.view.mode !== 'lineup' && store.isEdited(state.def.id) ? '  (edited, saved locally)' : '';
   const name = state.view.mode === 'lineup' ? 'Lineup (local edits applied)' : state.def.name;
-  hud.textContent = `${name}${edited}\n${s.triangles} tris  ${s.drawCalls} draws  ${s.textures} tex (${Math.round(s.textureBytes / 1024)} KB)\nclip: ${state.view.clip}   drag = orbit, wheel = zoom`;
+  hud.textContent = `${name}${edited}\n${s.triangles} tris  ${s.drawCalls} draws  ${s.textures} tex (${Math.round(s.textureBytes / 1024)} KB)\nclip: ${state.view.clip}   ${state.view.mode === 'world' ? 'WASD fly  Q/E down/up  Shift fast  drag look  wheel speed  F drop character' : 'drag = orbit, wheel = zoom'}`;
 }
 
 function download(name, data, type) {
@@ -243,7 +248,7 @@ function buildCharactersFolder() {
 
 function buildViewFolder() {
   const view = gui.addFolder('View');
-  view.add(state.view, 'mode', ['single', 'lineup']).onChange(() => { saveView(); buildGui(); rebuild(); });
+  view.add(state.view, 'mode', ['single', 'lineup', 'world']).onChange(() => { saveView(); buildGui(); rebuild(); syncWorld(); });
   view.add(state.view, 'clip', CLIP_NAMES).onChange((name) => { saveView(); entries.forEach((e) => stage.play(e, name)); });
   view.add(state.view, 'backdrop', Object.keys(BACKDROPS)).onChange((b) => { saveView(); stage.setBackdrop(b); });
   view.add(state.view, 'pipeline', Object.keys(RETRO_PRESETS)).onChange((p) => { saveView(); stage.setPreset(p); });
@@ -302,11 +307,23 @@ function buildGui() {
   updateCharacterTitle();
   buildCharactersFolder();
   buildViewFolder();
+  if (state.view.mode === 'world') worldViewer.buildFolder(gui);
   buildDefinitionFolders();
 }
 
+/** Enters or leaves the world location (View → mode → world). */
+function syncWorld() {
+  if (state.view.mode === 'world') worldViewer.enter(entries);
+  else {
+    worldViewer.exit();
+    stage.setBackdrop(state.view.backdrop);
+    stage.camera.fov = 25;
+    stage.camera.updateProjectionMatrix();
+  }
+}
+
 let dragging = null;
-container.addEventListener('pointerdown', (e) => { dragging = { x: e.clientX, yaw: state.view.yaw }; });
+container.addEventListener('pointerdown', (e) => { if (state.view.mode !== 'world') dragging = { x: e.clientX, yaw: state.view.yaw }; });
 window.addEventListener('pointerup', () => {
   if (dragging) saveView();
   dragging = null;
@@ -315,6 +332,7 @@ window.addEventListener('pointermove', (e) => {
   if (dragging) state.view.yaw = dragging.yaw - (e.clientX - dragging.x) * 0.4;
 });
 container.addEventListener('wheel', (e) => {
+  if (state.view.mode === 'world') return;
   state.view.zoom = THREE.MathUtils.clamp(state.view.zoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.2, 2.5);
   saveView();
 }, { passive: true });
@@ -331,17 +349,27 @@ function frameView() {
   stage.frame({ target: new THREE.Vector3(shiftX, targetY, 0), height, yaw: state.view.yaw, pitch: 4 });
 }
 
+let lastFrame = performance.now();
 function loop() {
-  if (state.view.turntable && !dragging) state.view.yaw += 0.3;
-  frameView();
-  stage.update();
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (state.view.mode === 'world') worldViewer.update(dt);
+  else {
+    if (state.view.turntable && !dragging) state.view.yaw += 0.3;
+    frameView();
+  }
+  stage.update(dt);
   stage.render();
   requestAnimationFrame(loop);
 }
 
 stage.setBackdrop(state.view.backdrop);
 stage.setPreset(state.view.pipeline);
+if (state.view.mode === 'world') worldViewer.ensureWorld();
 buildGui();
 rebuild();
+syncWorld();
 loop();
+window.worldViewer = worldViewer;
 window.__ready = true;

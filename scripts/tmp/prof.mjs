@@ -8,7 +8,7 @@ const pos = body.geometry.attributes.position;
 const bins = {};
 for (let i = 0; i < pos.count; i++) {
   const y = Math.round(pos.getY(i) * 100) / 100, x = pos.getX(i), z = pos.getZ(i);
-  if (y < 0.55 || y > 1.0 || x < 0) continue;
+  if (y < 0.55 || y > 1.0 || x < 0 || x > 0.23) continue;
   const b = bins[y] ??= { maxX: -9, minZ: 9, maxZ: -9, n: 0 };
   b.maxX = Math.max(b.maxX, x); b.minZ = Math.min(b.minZ, z); b.maxZ = Math.max(b.maxZ, z); b.n++;
 }

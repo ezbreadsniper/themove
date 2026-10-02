@@ -1,0 +1,16 @@
+import * as THREE from 'three';
+import { readFileSync } from 'node:fs';
+import { computeJointLayout, CORE_JOINTS } from '../../src/rig/skeleton.js';
+import { bakeClip } from '../../src/anim/clips.js';
+import { unimateMotionFromClip, mixamoTPose } from '../../src/unimate/bridge.js';
+import { retargetClip } from '../../src/anim/retarget.js';
+eval(readFileSync('scripts/tmp/ms.txt','utf8').replace('function mixamoSource','globalThis.mixamoSource = function'));
+const layout = computeJointLayout({});
+const src = mixamoSource(layout, 'walk');
+const hips = src.clip.tracks.find((t) => t.name.endsWith('Hips.position'));
+console.log('src hips z before', hips.values[2], hips.values[hips.values.length-1]);
+for (let f = 0; f < hips.times.length; f++) hips.values[f * 3 + 2] += hips.times[f] * 140;
+console.log('src hips z after', hips.values[2], hips.values[hips.values.length-1], hips.constructor.name, hips.values.constructor.name);
+const clip = retargetClip({ ...src, profile: 'mixamo', metresPerUnit: 0.01, license: { source: 'fixture', licence: 'test' } }, layout);
+const out = clip.tracks.find((t) => t.name.endsWith('Hips.position'));
+console.log(clip.userData.rootVelocity, Array.from(out.values).filter((_, i) => i % 3 === 2).map(v => v.toFixed(2)).join(' '));

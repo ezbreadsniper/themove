@@ -1,0 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { buildCharacter } from '../../src/character/build.js';
+import { torsoRings } from '../../src/geo/parts/body.js';
+const trial = JSON.parse(readFileSync('src/character/presets/trial-default.json', 'utf8'));
+const c = buildCharacter({ ...trial, bottom: { type: 'leggings', length: 'full', color: '#18181b', kind: 'jersey' } });
+const b = c.getObjectByName('bottom'); b.geometry.computeBoundingBox();
+console.log('leggings y', b.geometry.boundingBox.min.y.toFixed(3), b.geometry.boundingBox.max.y.toFixed(3));
+console.log(torsoRings(c.userData.layout, { skin: true }).map(r => r.key + ':' + r.y.toFixed(3)).join(' '));
+const body = c.getObjectByName('body').geometry.attributes.position;
+const near = []; for (let i = 0; i < body.count; i++) if (Math.abs(body.getX(i)) < 0.003 && Math.abs(body.getY(i) - 0.863) < 0.01) near.push([body.getY(i).toFixed(3), body.getZ(i).toFixed(3)].join(','));
+console.log('body midline verts near 0.863:', [...new Set(near)].join(' '));
+console.log('top', c.getObjectByName('top') ? 'yes' : 'no');
