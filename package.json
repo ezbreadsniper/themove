@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1 --port 5318",
     "test": "vitest run",
     "evidence": "node scripts/render-evidence.mjs",
+    "world-e2e": "node scripts/world-play-e2e.mjs",
     "export": "node scripts/export-characters.mjs",
     "gauntlet": "npm test && node scripts/export-characters.mjs && node scripts/render-evidence.mjs"
   },
