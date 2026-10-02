@@ -1,5 +1,6 @@
 {
   "sheet-01-black-tee": {
+    "role": "main",
     "identity": "Clean-cut lead in a red/black striped football jersey, raw Japanese denim and dress shoes.",
     "visualGoals": [
       "sharp model jawline",
@@ -26,6 +27,7 @@
     ]
   },
   "sheet-02-denim-vest": {
+    "role": "main",
     "identity": "Tattooed guy in a studded light-wash denim vest over a white tee, cap, glasses, gold chains, cropped black pants, cork sandals.",
     "visualGoals": [
       "patchwork tattoo arm + dense sleeve arm",
@@ -51,6 +53,7 @@
     ]
   },
   "sheet-03-red-rugby": {
+    "role": "main",
     "identity": "Blonde locs, wrap shades, red rugby shirt with white piping, long jorts, white socks, chunky hi-tops.",
     "visualGoals": [
       "locs draping on shoulders/back (rope sim)",
@@ -76,6 +79,7 @@
     ]
   },
   "sheet-04-camo-cargo": {
+    "role": "main",
     "identity": "Bearded, clear glasses, red/white/blue star cap, fitted white tee, woodland camo cargos, checker slip-ons.",
     "visualGoals": [
       "short full beard",
@@ -100,6 +104,7 @@
     ]
   },
   "sheet-05-curly-denim": {
+    "role": "main",
     "identity": "Curly mop, thin clear glasses, ball chain, black tee, light-wash stacked jeans, round-buckle belt, all-black boots.",
     "visualGoals": [
       "curly mop covering ears",
@@ -125,6 +130,7 @@
     ]
   },
   "sheet-06-floral-cutoffs": {
+    "role": "npc",
     "identity": "Woman with long wavy dark hair, round clear glasses, black cropped baby tee, high-rise frayed denim cutoffs, white crew socks and low sneakers, fine-line floral sleeves.",
     "visualGoals": [
       "clearly feminine silhouette (bust, waist, hips, glutes)",
@@ -150,6 +156,7 @@
     ]
   },
   "sheet-07-puffer-balaclava": {
+    "role": "npc",
     "identity": "Guy in a grey knit balaclava, olive quilted puffer vest over a black tee, light-wash baggy jeans gathered into brown hiking boots, forearm tattoos.",
     "visualGoals": [
       "balaclava hides hair with one eye slot",
@@ -174,6 +181,7 @@
     ]
   },
   "trial-default": {
+    "role": "test",
     "identity": "Neutral fictional default used to test the whole pipeline (body, age, clothing, animation, export).",
     "visualGoals": [
       "average proportions",
@@ -182,7 +190,7 @@
     ],
     "heightRange": [
       1.55,
-      2.0
+      2
     ],
     "ageRange": [
       14,

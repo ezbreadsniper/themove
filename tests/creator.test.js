@@ -13,12 +13,12 @@ describe('creator edit persistence', () => {
   test('edits survive switching characters and a reload, revert restores the preset', () => {
     const storage = memoryStorage();
     const id = PRESETS[0].id;
-    let store = createEditStore(storage, PRESETS_BY_ID);
+    let store = createEditStore(storage, PRESETS_BY_ID, { debounceMs: 0 });
     const edited = store.get(id);
     edited.skin.tone = '#123456';
     store.save(edited);
     store.get(PRESETS[1].id);
-    store = createEditStore(storage, PRESETS_BY_ID);
+    store = createEditStore(storage, PRESETS_BY_ID, { debounceMs: 0 });
     expect(store.get(id).skin.tone).toBe('#123456');
     expect(store.isEdited(id)).toBe(true);
     expect(store.revert(id).skin.tone).toBe(PRESETS[0].skin.tone);
@@ -27,7 +27,7 @@ describe('creator edit persistence', () => {
 
   test('revert all clears every character, custom characters are listed', () => {
     const storage = memoryStorage();
-    const store = createEditStore(storage, PRESETS_BY_ID);
+    const store = createEditStore(storage, PRESETS_BY_ID, { debounceMs: 0 });
     store.save({ ...store.get(PRESETS[0].id), name: 'changed' });
     store.save({ ...store.get(PRESETS[1].id), id: 'my-custom' });
     expect(store.customIds()).toEqual(['my-custom']);
@@ -39,12 +39,12 @@ describe('creator edit persistence', () => {
   test('preset improvements show up for characters the user already edited', () => {
     const storage = memoryStorage();
     const v1 = { ...PRESETS[4], accessories: [] };
-    let store = createEditStore(storage, { [v1.id]: v1 });
+    let store = createEditStore(storage, { [v1.id]: v1 }, { debounceMs: 0 });
     const edited = store.get(v1.id);
     edited.skin.tone = '#654321';
     store.save(edited);
     const v2 = { ...PRESETS[4], accessories: [{ type: 'cap', style: 'trucker' }] };
-    store = createEditStore(storage, { [v2.id]: v2 });
+    store = createEditStore(storage, { [v2.id]: v2 }, { debounceMs: 0 });
     const now = store.get(v2.id);
     expect(now.skin.tone).toBe('#654321');
     expect(now.accessories.map((a) => a.type)).toContain('cap');
@@ -54,7 +54,7 @@ describe('creator edit persistence', () => {
     const storage = memoryStorage();
     const preset = PRESETS[4];
     storage.setItem(EDITS_KEY, JSON.stringify({ edits: { [preset.id]: { ...preset, accessories: [], skin: { tone: '#111111' } } } }));
-    const store = createEditStore(storage, PRESETS_BY_ID);
+    const store = createEditStore(storage, PRESETS_BY_ID, { debounceMs: 0 });
     const now = store.get(preset.id);
     expect(now.skin.tone).toBe('#111111');
     expect(now.accessories.map((a) => a.type)).toContain('cap');
@@ -63,7 +63,7 @@ describe('creator edit persistence', () => {
   test('corrupt storage falls back to presets instead of crashing', () => {
     const storage = memoryStorage();
     storage.setItem(EDITS_KEY, '{not json');
-    const store = createEditStore(storage, PRESETS_BY_ID);
+    const store = createEditStore(storage, PRESETS_BY_ID, { debounceMs: 0 });
     expect(store.get(PRESETS[0].id).id).toBe(PRESETS[0].id);
   });
 });
