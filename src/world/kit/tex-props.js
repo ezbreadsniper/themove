@@ -30,14 +30,18 @@ function leafSpray(r, rng, { count, base, colors, len, spread, width = 1.5, droo
 export const PROP_TEXTURES = {
   leatherBlack: {
     size: [32, 32], tile: [0.36, 0.36],
+    // button-tufted leather: a square grid of buttons, the puffs between them catch light, short
+    // pleats run from each button toward its neighbours
     paint(r, rng) {
-      r.fill('#1c1c1f');
+      r.fill('#1f1f23');
+      for (const [x, y] of [[0, 0], [16, 0], [0, 16], [16, 16], [32, 0], [0, 32], [32, 32], [16, 32], [32, 16]]) r.toneEllipse(x, y, 7, 7, 1.55);
       for (const [x, y] of [[8, 8], [24, 24], [24, 8], [8, 24]]) {
-        r.toneEllipse(x, y, 9, 9, 1.35);
-        r.ellipse(x, y, 1.2, 1.2, '#09090a');
+        r.toneEllipse(x, y, 5, 5, 0.72);
+        for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) r.line(x + dx, y + dy, x + dx * 4, y + dy * 4, '#101012', 1, 0.7);
+        r.ellipse(x, y, 1.3, 1.3, '#08080a');
+        r.plot(x - 1, y + 1, '#3a3a40', 0.8);
       }
-      r.line(8, 8, 24, 24, '#121214', 1, 0.6);
-      r.line(24, 8, 8, 24, '#121214', 1, 0.6);
+      for (let i = 0; i < 20; i++) r.plot(rng.next() * 32, rng.next() * 32, '#2c2c31', 0.6);
     },
   },
   woodMaple: {
@@ -52,7 +56,7 @@ export const PROP_TEXTURES = {
     },
   },
   laminateWhite: {
-    size: [32, 32], tile: [1, 1],
+    size: [32, 32], tile: [1, 1], grain: 0.012, blocks: 0.008,
     paint(r, rng) {
       r.fill('#e3e1da');
       for (let i = 0; i < 20; i++) r.plot(rng.next() * 32, rng.next() * 32, '#c9c6bd', 0.6);
@@ -136,35 +140,88 @@ export const PROP_TEXTURES = {
       for (let i = 0; i < 40; i++) r.plot(rng.next() * 32, rng.next() * 16, '#6a5a48', 0.5);
     },
   },
+  /**
+   * Worn Persian rug (portrait, maps 'fit' onto the rug top): madder field with an all-over floral
+   * lattice, lobed navy medallion with pendants, navy corner spandrels, a rosette-and-vine main
+   * border between ivory guard stripes, abrash bands and walked-in wear.
+   */
   rugPersian: {
-    size: [128, 96], tile: [1, 1],
+    size: [128, 168], tile: [1, 1],
     paint(r, rng) {
-      r.fill('#7c1a1f');
-      r.rect(0, 0, 128, 96, '#8e2125');
-      const band = (inset, w, c) => {
-        r.rect(inset, inset, 128 - inset * 2, w, c);
-        r.rect(inset, 96 - inset - w, 128 - inset * 2, w, c);
-        r.rect(inset, inset, w, 96 - inset * 2, c);
-        r.rect(128 - inset - w, inset, w, 96 - inset * 2, c);
+      const W = 128;
+      const H = 168;
+      const ivory = '#e4d4ae';
+      const navy = '#1e2a58';
+      const gold = '#d2a446';
+      const sky = '#6e8fc2';
+      const rose = '#d06a74';
+      r.fill('#8a1e24');
+      for (let y = 0; y < H; y += 9) r.rect(0, y, W, 4 + rng.int(0, 4), '#7c1a20', 0.35);
+      for (let y = 22; y < H - 22; y += 7) {
+        for (let x = 22 + ((y / 7) % 2) * 3.5; x < W - 22; x += 7) {
+          r.plot(x, y, rng.pick([navy, ivory, gold, sky, rose]), 0.9);
+          r.plot(x + 1, y, rng.pick([navy, '#5a1418']), 0.7);
+          r.plot(x, y + 1, rng.pick([gold, navy]), 0.6);
+        }
+      }
+      const cx = W / 2;
+      const cy = H / 2;
+      const lobed = (rx, ry, color) => {
+        const pts = [];
+        for (let i = 0; i < 32; i++) {
+          const a = (i / 32) * Math.PI * 2;
+          const k = 1 + 0.12 * Math.cos(a * 8);
+          pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]);
+        }
+        r.polygon(pts, color);
       };
-      band(2, 9, '#1f2a5a');
-      band(4, 1, '#e7d7b2');
-      band(9, 1, '#e7d7b2');
-      for (let x = 6; x < 122; x += 6) {
-        r.ellipse(x, 7, 1.4, 1.4, '#d8b04a');
-        r.ellipse(x, 89, 1.4, 1.4, '#d8b04a');
+      lobed(30, 40, ivory);
+      lobed(28, 38, navy);
+      lobed(20, 28, '#a52a2c');
+      lobed(13, 18, sky);
+      lobed(8, 11, ivory);
+      r.ellipse(cx, cy, 4, 5, rose);
+      for (const s of [-1, 1]) {
+        r.polygon([[cx - 7, cy + s * 40], [cx + 7, cy + s * 40], [cx, cy + s * 52]], navy);
+        r.ellipse(cx, cy + s * 47, 3, 3, gold);
       }
-      r.polygon([[64, 26], [92, 48], [64, 70], [36, 48]], '#1f2a5a');
-      r.polygon([[64, 32], [84, 48], [64, 64], [44, 48]], '#c7553a');
-      r.ellipse(64, 48, 7, 6, '#e7d7b2');
-      r.ellipse(64, 48, 4, 3, '#1f2a5a');
-      for (let i = 0; i < 70; i++) {
-        const x = 14 + rng.next() * 100;
-        const y = 14 + rng.next() * 68;
-        r.rect(x, y, 2, 2, rng.pick(['#e7d7b2', '#1f2a5a', '#d8b04a', '#5e7fb8', '#c7553a']), 0.9);
+      for (const [sx, sy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+        const x0 = sx ? W - 20 : 20;
+        const y0 = sy ? H - 20 : 20;
+        const dx = sx ? -1 : 1;
+        const dy = sy ? -1 : 1;
+        r.polygon([[x0, y0], [x0 + dx * 26, y0], [x0, y0 + dy * 32]], navy);
+        r.polygon([[x0 + dx * 2, y0 + dy * 2], [x0 + dx * 16, y0 + dy * 2], [x0 + dx * 2, y0 + dy * 20]], sky, 0.7);
       }
-      for (const [x, y] of [[16, 16], [112, 16], [16, 80], [112, 80]]) r.polygon([[x - 6, y], [x, y - 6], [x + 6, y], [x, y + 6]], '#1f2a5a');
-      for (let i = 0; i < 8; i++) r.toneEllipse(rng.next() * 128, rng.next() * 96, 14, 10, 0.86 + rng.next() * 0.2);
+      const band = (inset, w, c) => {
+        r.rect(inset, inset, W - inset * 2, w, c);
+        r.rect(inset, H - inset - w, W - inset * 2, w, c);
+        r.rect(inset, inset, w, H - inset * 2, c);
+        r.rect(W - inset - w, inset, w, H - inset * 2, c);
+      };
+      band(3, 15, navy);
+      band(3, 1, ivory);
+      band(5, 1, '#a52a2c');
+      band(17, 1, ivory);
+      band(19, 1, gold);
+      const rosette = (x, y) => {
+        r.ellipse(x, y, 2.6, 2.6, rose);
+        r.ellipse(x, y, 1.2, 1.2, ivory);
+        for (const [ox, oy] of [[3, 0], [-3, 0], [0, 3], [0, -3]]) r.plot(x + ox, y + oy, gold);
+      };
+      for (let x = 10; x < W - 6; x += 9) {
+        rosette(x, 11);
+        rosette(x, H - 11);
+        r.line(x + 2, 13, x + 7, 9, sky, 1, 0.8);
+        r.line(x + 2, H - 13, x + 7, H - 9, sky, 1, 0.8);
+      }
+      for (let y = 20; y < H - 14; y += 9) {
+        rosette(11, y);
+        rosette(W - 11, y);
+      }
+      for (let i = 0; i < 10; i++) r.toneEllipse(rng.next() * W, rng.next() * H, 16, 11, 0.84 + rng.next() * 0.22);
+      r.toneEllipse(cx + 10, cy + 30, 30, 22, 1.12, 0.6);
+      for (let i = 0; i < 90; i++) r.plot(rng.next() * W, rng.next() * H, '#c9b48e', 0.35);
     },
   },
   terracotta: {

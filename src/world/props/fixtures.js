@@ -44,7 +44,7 @@ export function radiator(kit, x, { w = 1.0, h = 0.62, sections = null, y0 = 0.1 
   const sw = w / n;
   for (let i = 0; i < n; i++) {
     const a = x - w / 2 + i * sw;
-    softBox(kit, 'paintRadiator', [a + 0.004, y0 + 0.06, 0.05], [a + sw - 0.004, y0 + h, 0.2], { r: 0.012, occlude: false });
+    kit.box('paintRadiator', [a + 0.006, y0 + 0.06, 0.05], [a + sw - 0.006, y0 + h, 0.2], { seg: 9, occlude: false });
   }
   kit.box('paintRadiator', [x - w / 2, y0 + 0.1, 0.1], [x + w / 2, y0 + 0.14, 0.15], { seg: 9, occlude: false });
   kit.box('paintRadiator', [x - w / 2, y0 + h - 0.08, 0.1], [x + w / 2, y0 + h - 0.04, 0.15], { seg: 9, occlude: false });

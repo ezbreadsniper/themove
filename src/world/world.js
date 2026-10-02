@@ -7,9 +7,6 @@ import { DUSK, NIGHT, bakeSky, blendPresets, createSkyDome, paintSkyDome, create
 import { DoorSystem } from './doors.js';
 import { buildFoundry, FOUNDRY } from './locations/foundry/index.js';
 
-/** DoorSystem.update takes an array of bodies once C's physical doors land; the legacy one takes one actor. */
-const DOORS_TAKE_BODIES = DoorSystem.acceptsBodies === true || /bodies/.test(String(DoorSystem.prototype.update));
-
 /**
  * A loaded location: meshes, baked lighting, collision, doors, sky/sun, the light rig and the
  * character probe. `attach(scene)` / `detach()` let the creator switch between the character
@@ -117,8 +114,7 @@ export class World {
    * the camera.
    */
   update(dt, { actor, camera, bodies } = {}) {
-    const list = bodies ?? (actor ? [actor] : []);
-    this.doors.update(dt, DOORS_TAKE_BODIES ? list : list[0] ?? null);
+    this.doors.update(dt, bodies ?? (actor ? [actor] : []));
     const focus = actor ?? camera?.position ?? null;
     const zone = focus ? this.baker.zoneAt([focus.x, focus.y + 1, focus.z])?.name ?? 'street' : null;
     this.rig.update(dt, { focus, zone });

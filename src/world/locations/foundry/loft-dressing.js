@@ -25,9 +25,11 @@ const FACE_X = Math.PI / 2;
 const FACE_NEG_X = -Math.PI / 2;
 
 function livingRoom(kit, rng) {
-  kit.at(10.95, F, U.z0 + 0.03, 0, () => sofaSection(kit, 3.92, { armLeft: true, armRight: false, cornerRight: true, id: 'loft.sofa.a', seats: 4 }));
+  kit.at(10.95, F, U.z0 + 0.03, 0, () => {
+    sofaSection(kit, 3.92, { armLeft: true, armRight: false, cornerRight: true, id: 'loft.sofa.a', seats: 4 });
+    throwBlanket(kit, 'knit', { x: 3.0, front: 0.91 });
+  });
   kit.at(U.x1 - 0.03, F, U.z0 + 0.95, FACE_NEG_X, () => sofaSection(kit, 3.05, { armLeft: false, armRight: true, id: 'loft.sofa.b', seats: 3 }));
-  throwBlanket(kit, 'knit', [14.15, F + 0.46, 1.05], 0.5);
   kit.at(12.45, F, 2.95, 0, () => rug(kit, 2.5, 3.3));
   kit.at(12.55, F + 0.012, 2.7, 0, () => coffeeTable(kit));
   kit.at(12.55, F + 0.392, 2.7, 0, () => tableTop(kit, rng.fork('table')));

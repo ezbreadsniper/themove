@@ -86,7 +86,7 @@ function entry(kit, o) {
   kit.box('steelBlack', [o.x0, doorTop, 0.17], [o.x1, doorTop + 0.08, 0.27], { seg: 9, occlude: false });
   kit.panel('glass', [mid, (doorTop + 0.08 + o.y1) / 2, 0.22], [o.x1 - o.x0, o.y1 - doorTop - 0.08], '-z');
   kit.box('concreteRough', [o.x0 - 0.3, -0.02, -0.6], [o.x1 + 0.3, GROUND.floor, T], { seg: 9, walk: true, collide: true, occlude: false });
-  swingDoor(kit, 'door-street', { hx: o.x0, hz: 0.22, width: o.x1 - o.x0, y: GROUND.floor, height: 2.13, mat: 'steelBlack', glassPanel: true });
+  swingDoor(kit, 'door-street', { hx: o.x0, hz: 0.22, width: o.x1 - o.x0, y: GROUND.floor, height: 2.13, mat: 'steelBlack', glassPanel: true, swing: 'neg', kick: true });
   kit.box('steelBlack', [mid - 0.9, 3.3, -1.1], [mid + 0.9, 3.4, 0], { seg: 9 });
   for (const x of [mid - 0.8, mid + 0.8]) kit.tube('steelBlack', [[x, 3.4, -1.05], [x, 4.2, -0.02]], 0.016, { sides: 4 });
   kit.panel('signBuilding', [mid + 1.9, 3.55, -0.15], [2.6, 0.34], '-z');
@@ -119,7 +119,7 @@ function eastFacade(kit, rng, len) {
   }
   doorFrame(kit, { x0: ex.z0, x1: ex.z1, y0: GROUND.floor - 0.02, y1: GROUND.floor + 2.13, z0: 0, z1: T });
   kit.box('concreteRough', [ex.z0 - 0.3, -0.02, -0.6], [ex.z1 + 0.3, GROUND.floor, T], { seg: 9, walk: true, collide: true, occlude: false });
-  swingDoor(kit, 'door-exit', { hx: ex.z0, hz: 0.2, y: GROUND.floor, width: ex.z1 - ex.z0, height: 2.13, mat: 'steelGray' });
+  swingDoor(kit, 'door-exit', { hx: ex.z0, hz: 0.2, y: GROUND.floor, width: ex.z1 - ex.z0, height: 2.13, mat: 'steelGray', swing: 'pos', kick: true });
   wallPack(kit, 'wallpack-exit', (ex.z0 + ex.z1) / 2, 2.6, true);
   kit.panel('ghostSign', [7.5, 6.55, -0.006], [6.0, 1.3], '-z');
   kit.box('electricPanel', [10.3, 1.1, -0.16], [10.75, 1.85, 0], { seg: 9, uv: 'fit' });
@@ -135,11 +135,25 @@ function backFacade(kit, rng, len) {
   kit.panel('graffiti', [8.5, 1.5, -0.006], [3.0, 1.5], '-z');
 }
 
+/**
+ * West wall: the corridor's end window (local x = B.z1 - world z) with a sodium yard light on a
+ * bracket outside, so streetlight falls into the far end of the corridor.
+ */
 function westFacade(kit, rng, len) {
-  wall(kit, len, LAYERS, { y0: -0.3, y1: TOP, seg: 0.7 });
+  const win = { x0: B.z1 - CORRIDOR.z1 + 0.3, x1: B.z1 - CORRIDOR.z0 - 0.3, y0: 1.05, y1: 2.65 };
+  wall(kit, len, LAYERS, { y0: -0.3, y1: TOP, seg: 0.7, openings: [win] });
   parapet(kit, len);
   piersAndBands(kit, len, rng, [0, 7, len]);
   kit.panel('ghostSign', [6.9, 5.6, -0.006], [8, 2.9], '-z');
+  lintel(kit, win);
+  sill(kit, win);
+  steelWindow(kit, { ...win, z: 0.2, colsPerSide: 1, rowsBelow: 3, rowsAbove: 0, heavyCol: true, glass: 'glass' });
+  kit.box('stoneTrim', [win.x0 - 0.02, win.y0 - 0.04, T - 0.02], [win.x1 + 0.02, win.y0 + 0.01, T + 0.06], { seg: 9, occlude: false });
+  const lx = (win.x0 + win.x1) / 2 + 1.6;
+  kit.box('steelBlack', [lx - 0.03, 3.3, -0.6], [lx + 0.03, 3.36, 0], { seg: 9, occlude: false });
+  kit.box('steelGray', [lx - 0.14, 3.18, -0.78], [lx + 0.14, 3.36, -0.5], { seg: 9, occlude: false });
+  kit.glow('yard-light', () => kit.panel('sodium', [lx, 3.178, -0.64], [0.22, 0.2], '-y'));
+  kit.light({ name: 'yard-light', pos: [lx, 3.05, -0.65], color: '#ff9a48', intensity: 9, range: 9, dir: [0, -0.55, 0.85], cone: Math.cos(1.15), dynamic: true, zone: 'street', layer: 'yard-light', fill: 0 });
 }
 
 function downspout(kit, x, z, yaw) {

@@ -224,9 +224,18 @@ export function shellSeat(kit, mat, { w = 0.47, d = 0.42, y0 = 0.45, backTop = 0
   return kit.geometry(mat, geom(pos, nr, uv, idx), null);
 }
 
-/** Hard furniture slab: softBox with a 4–8 mm faceted chamfer. */
+/**
+ * Hard furniture slab: softBox with a faceted chamfer (default 6 mm). Chamfers under 5 mm are below
+ * a pixel at the 448-line render even up close, so those fall back to a plain box (24 vertices
+ * instead of ~200) — keep r ≥ 0.005 only where the bevel should catch light.
+ */
 export function slab(kit, mat, a, b, opts = {}) {
-  return softBox(kit, mat, a, b, { r: 0.006, flat: true, ...opts });
+  const r = opts.r ?? 0.006;
+  if (r < 0.005) {
+    kit.box(mat, a, b, { seg: 9, occlude: opts.occlude, collide: opts.collide, walk: opts.walk, tag: opts.tag });
+    return kit;
+  }
+  return softBox(kit, mat, a, b, { flat: true, ...opts, r });
 }
 
 /**

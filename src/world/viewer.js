@@ -187,8 +187,10 @@ export class WorldViewer {
     const cam = this.stage.camera;
     cam.position.copy(this.cam.pos);
     cam.lookAt(this.cam.pos.clone().add(fwd));
-    const actor = this.entries?.[0]?.holder.position ?? null;
-    this.world.update(dt, { actor: this.settings.character && actor ? actor : this.cam.pos, camera: cam });
+    // the stand-in drives doors / probe / light pooling only while it is near the camera
+    const holder = this.entries?.[0]?.holder.position ?? null;
+    const near = this.settings.character && holder && holder.distanceTo(this.cam.pos) < 12;
+    this.world.update(dt, { actor: near ? holder : this.cam.pos, camera: cam });
   }
 
   applySettings() {

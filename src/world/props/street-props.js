@@ -24,7 +24,7 @@ export function streetlight(kit, name, { height = 8.2, reach = 2.2, flicker = nu
   kit.box('steelGray', [-0.2, hy - 0.08, hz - 0.45], [0.2, hy + 0.1, hz + 0.25], { seg: 9 });
   kit.glow(name, () => {
     kit.panel('sodium', [0, hy - 0.085, hz - 0.1], [0.3, 0.5], '-y');
-    const cone = new THREE.CylinderGeometry(0.2, 2.6, hy - 0.4, 10, 1, true);
+    const cone = new THREE.CylinderGeometry(0.2, 1.9, hy - 0.4, 10, 1, true);
     kit.geometry('beamSodium', cone, new THREE.Matrix4().makeTranslation(0, (hy - 0.4) / 2, hz - 0.1));
   });
   kit.solid(circle(0.24), 0, height, 'pole');

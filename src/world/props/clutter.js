@@ -117,6 +117,6 @@ export function kitchenChair(kit, name, pos, yaw = 0, { id = null } = {}) {
     kit.tube('woodDark', [[0.18, 0.16, -0.17], [0.18, 0.16, 0.19]], 0.008, { sides: 4 });
   }, yaw);
   if (id) {
-    kit.at(pos[0], pos[1], pos[2], yaw, () => kit.interactable({ id, kind: 'seat', pos: [0, S, 0.02], yaw: 0, radius: 0.8, prompt: 'Sit', data: { seatHeight: S, variant: 'chair', exit: [0, 0, 0.6], physical: name } }));
+    kit.at(pos[0], pos[1], pos[2], yaw, () => kit.interactable({ id, kind: 'seat', pos: [0, S, 0.02], yaw: 0, radius: 1.2, prompt: 'Sit', data: { seatHeight: S, variant: 'chair', exit: [0, 0, 0.6], physical: name } }));
   }
 }

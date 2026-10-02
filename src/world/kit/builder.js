@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { decalUV } from './decal-atlas.js';
+import { decalUV, TEXT_DECALS } from './decal-atlas.js';
 
 /**
  * Kit: the world-building context. Primitives are appended into per-(bucket, material) buffers in
@@ -232,7 +232,7 @@ export class Kit {
    */
   decal(name, c, size, facing = '+z', opts = {}) {
     const [u0, v0, u1, v1] = decalUV(name);
-    const uvs = opts.flip ? [[u1, v0], [u0, v0], [u0, v1], [u1, v1]] : [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+    const uvs = opts.flip && !TEXT_DECALS.has(name) ?[[u1, v0], [u0, v0], [u0, v1], [u1, v1]] : [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
     return this.panel(opts.cut ? 'decalsCut' : 'decals', c, size, facing, { ...opts, uvs });
   }
 

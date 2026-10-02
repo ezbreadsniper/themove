@@ -438,6 +438,12 @@ export const DECALS = {
   } },
 };
 
+/** Decals carrying text or a directional symbol: never mirrored (kit.decal ignores `flip`). */
+export const TEXT_DECALS = new Set([
+  'flyerRent', 'flyerCat', 'noticeMeeting', 'noticeSmoking', 'noticeDoor', 'noticeRecycle', 'warnVoltage', 'meterLabel',
+  'stickerBand', 'stickerSkate', 'tagRed', 'aptNumber', 'posterBand', 'posterFlea', 'posterTorn', 'posterAd', 'mailLabel', 'fireExt', 'exitArrow',
+]);
+
 /** UV rectangle [u0, v0, u1, v1] of a named decal. */
 export function decalUV(name) {
   const d = DECALS[name];

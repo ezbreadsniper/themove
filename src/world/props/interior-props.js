@@ -42,8 +42,11 @@ export function sofaSection(kit, length, { depth = 0.92, armLeft = true, armRigh
     const bx1 = last && cornerD ? b - cornerD : b - 0.008;
     softBox(kit, mat, [a + 0.008, 0.31, 0.06], [bx1, FURNITURE.sofaBack, 0.25], { r: 0.045, puff: 0.03, puffAxis: 2, occlude: false });
     if (id) {
-      const cx = (a + b) / 2 - (last ? cornerD / 2 : 0);
-      kit.interactable({ id: `${id}.seat${i + 1}`, kind: 'seat', pos: [cx, SOFA_SEAT, depth * 0.55], yaw: 0, radius: 0.9, prompt: 'Sit', data: { seatHeight: SOFA_SEAT, variant: 'sofa', exit: [cx, 0, depth + 0.42] } });
+      const corner = last && cornerD;
+      const cx = (a + b) / 2 - (corner ? cornerD / 2 : 0);
+      // the corner seat of an L has the return section in front of it: step out diagonally
+      const exit = corner ? [a - 0.3, 0, depth + 0.45] : [cx, 0, depth + 0.42];
+      kit.interactable({ id: `${id}.seat${i + 1}`, kind: 'seat', pos: [cx, SOFA_SEAT, depth * 0.55], yaw: corner ? -0.6 : 0, radius: 1.4, prompt: 'Sit', data: { seatHeight: SOFA_SEAT, variant: 'sofa', exit } });
     }
   }
   if (cornerD) softBox(kit, mat, [x1 - cornerD, 0.31, 0.25], [x1 - 0.008, FURNITURE.sofaBack, depth - 0.02], { r: 0.045, puff: 0.03, puffAxis: 0, occlude: false });
@@ -56,12 +59,16 @@ export function sofaSection(kit, length, { depth = 0.92, armLeft = true, armRigh
   kit.occluder([0, 0, 0], [length, SOFA_SEAT, depth]);
 }
 
-/** Knit throw dropped over a seat edge: a puffed draped slab and a fold hanging over the front. */
-export function throwBlanket(kit, mat, c, yaw = 0) {
-  kit.at(c[0], c[1], c[2], yaw, () => {
-    softBox(kit, mat, [-0.3, 0, -0.32], [0.26, 0.05, 0.28], { r: 0.02, puff: 0.03, dent: [0.05, -0.1, 0.02, 0.2], occlude: false });
-    kit.geometry(mat, new THREE.BoxGeometry(0.42, 0.26, 0.04, 2, 2, 1), new THREE.Matrix4().makeRotationX(0.22).setPosition(-0.04, -0.1, 0.31), { uv: 'box' });
-  });
+/**
+ * Knit throw left on a seat, authored in the sofa section's frame: a rumpled layer lying on the
+ * cushion, a rolled fold over the cushion's front edge and a fall hanging down the front, all
+ * touching (no floating cloth). x = centre along the sofa; front = cushion front (z).
+ */
+export function throwBlanket(kit, mat, { x, front, top = SOFA_SEAT, w = 0.62 } = {}) {
+  softBox(kit, mat, [x - w / 2, top - 0.012, front - 0.5], [x + w / 2 - 0.05, top + 0.035, front - 0.02], { r: 0.018, puff: 0.03, dent: [x + 0.08, front - 0.28, 0.025, 0.18], occlude: false });
+  softBox(kit, mat, [x - w / 2 + 0.06, top + 0.02, front - 0.42], [x - w / 2 + 0.3, top + 0.075, front - 0.18], { r: 0.025, puff: 0.02, occlude: false });
+  softBox(kit, mat, [x - w / 2 + 0.01, top - 0.06, front - 0.05], [x + w / 2 - 0.06, top + 0.03, front + 0.035], { r: 0.035, occlude: false });
+  softBox(kit, mat, [x - w / 2 + 0.03, top - 0.3, front + 0.002], [x + w / 2 - 0.1, top - 0.04, front + 0.032], { r: 0.012, puff: 0.012, puffAxis: 2, occlude: false });
 }
 
 /** Glossy black marble coffee table on a recessed plinth (reference: low square lacquer table). */
@@ -186,7 +193,7 @@ export function floorLamp(kit, name, { id = null } = {}) {
   kit.glow(name, () => kit.geometry('bulbWarm', new THREE.CircleGeometry(0.15, 10).rotateX(Math.PI / 2), m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.004, 0))));
   const dir = new THREE.Vector3(0, -1, 0).applyMatrix4(new THREE.Matrix4().makeRotationX(-0.55)).toArray();
   kit.solid(rect(-0.17, -0.17, 0.17, 0.17), 0, 1.8, 'lamp');
-  kit.light({ name, pos: [0.2, 1.52, 0.2], color: '#ffc883', intensity: 2.6, range: 5, dir, cone: 0.15, dynamic: true, zone: 'unit', switchable: true, shadow: true, fill: 1.4 });
+  kit.light({ name, pos: [0.2, 1.52, 0.2], color: '#ffd09a', intensity: 2.0, range: 5, dir, cone: 0.15, dynamic: true, zone: 'unit', switchable: true, shadow: true, fill: 0.8 });
   if (id) kit.interactable({ id, kind: 'lamp', pos: [0, 1.0, 0], yaw: 0, radius: 1.2, prompt: 'Lamp', data: { lights: [name], on: true } });
 }
 
@@ -205,7 +212,7 @@ export function orbPendant(kit, name, { drop = 2.2, r = 0.32 } = {}) {
   kit.glow(name, () => kit.sphere('bulbWarm', [0, c[1] - 0.02, 0], 0.055, { w: 6, h: 5, scale: [1, 1.25, 1] }));
   for (const yaw of [0, Math.PI / 2]) kit.at(0, 0, 0, yaw, () => kit.decal('chain', [0, -(drop - r) / 2, 0], [0.04, drop - r], '+z', { cut: true }));
   kit.cylinder('steelBlack', [0, -0.04, 0], 0.05, 0.04, { sides: 8 });
-  kit.light({ name, pos: [0, c[1] - 0.05, 0], color: '#ffc27a', intensity: 3.2, range: 7, dynamic: true, zone: 'unit', switchable: true, shadow: true, fill: 1.6 });
+  kit.light({ name, pos: [0, c[1] - 0.05, 0], color: '#ffd49a', intensity: 2.4, range: 7, dynamic: true, zone: 'unit', switchable: true, shadow: true, fill: 0.9 });
 }
 
 /** Ceiling track with cylindrical spot heads aimed along `aim` (local). Origin at the track centre. */
@@ -220,7 +227,7 @@ export function trackLight(kit, name, length, heads, aim = [0, -1, 0.3], { layer
     kit.geometry('steelBlack', new THREE.CylinderGeometry(0.042, 0.042, 0.13, 8).rotateX(Math.PI / 2), m);
     kit.geometry('steelBlack', new THREE.CylinderGeometry(0.047, 0.047, 0.015, 8).rotateX(Math.PI / 2).translate(0, 0, -0.06), m);
     kit.glow(layer, () => kit.geometry('bulbWarm', new THREE.CircleGeometry(0.034, 8).rotateY(Math.PI).translate(0, 0, -0.0655), m));
-    kit.light({ name: `${name}-${i}`, pos: [x + d.x * 0.1, -0.14 + d.y * 0.1, d.z * 0.1], color: '#ffd9a8', intensity: 1.7, range: 6.5, dir: d.toArray(), cone: Math.cos(0.42), zone: 'unit', layer, fill: 0.5 });
+    kit.light({ name: `${name}-${i}`, pos: [x + d.x * 0.1, -0.14 + d.y * 0.1, d.z * 0.1], color: '#ffe2c0', intensity: 0.9, range: 6.0, dir: d.toArray(), cone: Math.cos(0.4), zone: 'unit', layer, fill: 0.25 });
   }
 }
 
@@ -394,7 +401,7 @@ export function bed(kit, { w = 1.55, l = 2.05, id = null } = {}) {
   for (const s of [-1, 1]) kit.at(s * w / 4, 0.48, 0.3, s * 0.06, () => softBox(kit, 'ceramic', [-0.32, 0, -0.18], [0.32, 0.13, 0.18], { r: 0.05, puff: 0.04, occlude: false }));
   softBox(kit, 'sage', [-w / 2 - 0.03, 0.15, -0.08], [w / 2 + 0.03, 1.05, 0.0], { r: 0.035, puff: 0.025, puffAxis: 2 });
   kit.solid(rect(-w / 2 - 0.03, -0.08, w / 2 + 0.03, l + 0.02), 0, 0.6, 'bed');
-  if (id) kit.interactable({ id, kind: 'seat', pos: [0, FURNITURE.bed, l * 0.62], yaw: 0, radius: 1.0, prompt: 'Sit', data: { seatHeight: FURNITURE.bed, variant: 'bed', exit: [0, 0, l + 0.45] } });
+  if (id) kit.interactable({ id, kind: 'seat', pos: [0, FURNITURE.bed, l * 0.62], yaw: 0, radius: 1.3, prompt: 'Sit', data: { seatHeight: FURNITURE.bed, variant: 'bed', exit: [0, 0, l + 0.45] } });
 }
 
 /** Nightstand with a drawer and an open shelf, tapered legs. */
@@ -469,7 +476,7 @@ export function tolixStool(kit, h = 0.76, { id = null } = {}) {
   const ring = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([x, z]) => [x * (t + 0.022), 0.24, z * (t + 0.022)]);
   kit.tube('redPaint', ring, 0.008, { sides: 4 });
   kit.solid(rect(-t - 0.06, -t - 0.06, t + 0.06, t + 0.06), 0, h, 'stool');
-  if (id) kit.interactable({ id, kind: 'seat', pos: [0, h, 0], yaw: 0, radius: 0.8, prompt: 'Sit', data: { seatHeight: h, variant: 'stool', exit: [0, 0, 0.6] } });
+  if (id) kit.interactable({ id, kind: 'seat', pos: [0, h, 0], yaw: 0, radius: 1.2, prompt: 'Sit', data: { seatHeight: h, variant: 'stool', exit: [0, 0, 0.6] } });
 }
 
 /** Eames-style grey shell side chair on a stacking frame (legs + side rails), facing +Z. */
@@ -482,7 +489,7 @@ export function shellChair(kit, { id = null, mat = 'plasticGrey' } = {}) {
   }
   kit.tube('chrome', [[-0.18, FURNITURE.seat - 0.02, 0], [0.18, FURNITURE.seat - 0.02, 0]], 0.006, { sides: 3 });
   kit.solid(rect(-0.24, -0.27, 0.24, 0.24), 0, 0.82, 'chair');
-  if (id) kit.interactable({ id, kind: 'seat', pos: [0, FURNITURE.seat + 0.02, 0.02], yaw: 0, radius: 0.8, prompt: 'Sit', data: { seatHeight: FURNITURE.seat + 0.02, variant: 'chair', exit: [0, 0, 0.62] } });
+  if (id) kit.interactable({ id, kind: 'seat', pos: [0, FURNITURE.seat + 0.02, 0.02], yaw: 0, radius: 1.2, prompt: 'Sit', data: { seatHeight: FURNITURE.seat + 0.02, variant: 'chair', exit: [0, 0, 0.62] } });
 }
 
 /** Framed print: black frame with real depth, white mat, art panel. Back on z = 0, faces +Z. */

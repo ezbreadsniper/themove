@@ -1,4 +1,3 @@
-import { slab } from '../../kit/shapes.js';
 
 /**
  * The buff-brick building across Foundry St. (what the loft window looks at in the reference
@@ -16,16 +15,16 @@ function archWindow(kit, x, y, w, h, lit) {
   if (lit) kit.panel('fakeInterior', [x, y + h / 2, z], [w, h], '+z');
   else kit.panel('glassDark', [x, y + h / 2, z], [w, h], '+z');
   kit.panel('archWindow', [x, y + h / 2, z + 0.03], [w, h], '+z');
-  slab(kit, 'stoneTrim', [x - w / 2 - 0.08, y - 0.12, FACE], [x + w / 2 + 0.08, y, FACE + 0.12], { r: 0.01, occlude: false });
-  slab(kit, 'stoneTrim', [x - 0.09, y + h - 0.04, FACE], [x + 0.09, y + h + 0.16, FACE + 0.06], { r: 0.01, occlude: false });
-  for (const s of [-1, 1]) slab(kit, 'stoneTrim', [x + s * (w / 2 + 0.02) - 0.05, y + h * 0.55, FACE], [x + s * (w / 2 + 0.02) + 0.05, y + h * 0.6, FACE + 0.05], { r: 0.008, occlude: false });
+  kit.box('stoneTrim', [x - w / 2 - 0.08, y - 0.12, FACE], [x + w / 2 + 0.08, y, FACE + 0.12], { seg: 9, occlude: false });
+  kit.box('stoneTrim', [x - 0.09, y + h - 0.04, FACE], [x + 0.09, y + h + 0.16, FACE + 0.06], { seg: 9, occlude: false });
+  for (const s of [-1, 1]) kit.box('stoneTrim', [x + s * (w / 2 + 0.02) - 0.05, y + h * 0.55, FACE], [x + s * (w / 2 + 0.02) + 0.05, y + h * 0.6, FACE + 0.05], { seg: 9, occlude: false });
 }
 
 export function buildingAcross(kit, rng) {
   kit.box('brickTan', [X0, -0.3, -31], [X1, TOP, FACE], { uv: 'world', seg: 2.5, collide: true, faces: { nz: false, ny: false } });
   kit.box('concreteRough', [X0 - 0.05, -0.3, FACE], [X1 + 0.05, 0.7, FACE + 0.08], { uv: 'world', seg: 3, occlude: false });
-  slab(kit, 'stoneTrim', [X0 - 0.15, TOP - 0.1, FACE - 0.05], [X1 + 0.15, TOP + 0.18, FACE + 0.25], { r: 0.02, occlude: false });
-  slab(kit, 'stoneTrim', [X0 - 0.05, 3.55, FACE], [X1 + 0.05, 3.7, FACE + 0.08], { r: 0.01, occlude: false });
+  kit.box('stoneTrim', [X0 - 0.15, TOP - 0.1, FACE - 0.05], [X1 + 0.15, TOP + 0.18, FACE + 0.25], { seg: 9, occlude: false });
+  kit.box('stoneTrim', [X0 - 0.05, 3.55, FACE], [X1 + 0.05, 3.7, FACE + 0.08], { seg: 9, occlude: false });
   for (let x = X0 + 1.6, i = 0; x < X1 - 1; x += 2.7, i++) {
     archWindow(kit, x, 1.15, 1.05, 2.1, rng.chance(0.25));
     archWindow(kit, x, 4.45, 1.05, 2.2, rng.chance(0.35));
