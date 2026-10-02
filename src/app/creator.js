@@ -4,7 +4,7 @@ import { WorldViewer } from '../world/viewer.js';
 import { Stage, BACKDROPS } from '../render/stage.js';
 import { RETRO_PRESETS } from '../render/retro-pipeline.js';
 import { buildCharacter, disposeCharacter } from '../character/build.js';
-import { normalizeDefinition, serializeDefinition, parseDefinition, defaultsFor } from '../character/definition.js';
+import { normalizeDefinition, serializeDefinition, parseDefinition } from '../character/definition.js';
 import { FACE_PRESETS } from '../character/faces.js';
 import { DEFAULT_FACE } from '../geo/parts/head.js';
 import { PRESETS, PRESETS_BY_ID, MAIN_PRESETS, NPC_PRESETS, roleOf } from '../character/presets/index.js';
@@ -14,7 +14,7 @@ import { hashBytes } from '../core/rng.js';
 import { CLIP_NAMES } from '../anim/clips.js';
 import { exportCharacterGLB } from '../export/gltf.js';
 import { createEditStore } from './edits.js';
-import { planControls, labelFor } from './schema-controls.js';
+import { planControls, labelFor, readControl, applyControl } from './schema-controls.js';
 
 const container = document.getElementById('view');
 const hud = document.getElementById('hud');
@@ -160,14 +160,6 @@ function pickFile(onText) {
   input.click();
 }
 
-const getPath = (obj, path) => path.reduce((o, k) => (o == null ? undefined : o[k]), obj);
-
-function setPath(obj, path, value) {
-  let o = obj;
-  for (const k of path.slice(0, -1)) o = o[k];
-  o[path[path.length - 1]] = value;
-}
-
 /** What a control shows when its field is unset: the value the build actually uses. */
 function displayValue(c) {
   const [root, key] = c.path;
@@ -187,10 +179,6 @@ function displayValue(c) {
   if (c.kind === 'enum') return c.values[0];
   if (c.kind === 'string') return '';
   return false;
-}
-
-function accessoryItem(c) {
-  return state.def.accessories.find((a) => a.type === c.accessory);
 }
 
 function folderFor(map, path) {
@@ -382,35 +370,18 @@ function buildDefinitionFolders() {
       continue;
     }
     const parent = folderFor(folders, c.folder);
-    if (c.kind === 'toggle') {
-      const model = { on: getPath(state.def, c.path) != null };
-      const ctrl = parent.add(model, 'on').name(c.label).onChange((on) => {
-        setPath(state.def, c.path, on ? defaultsFor(c.schema) : null);
+    if (c.kind === 'toggle' || c.kind === 'accessory') {
+      const ctrl = parent.add({ on: readControl(state.def, c) }, 'on').name(c.label).onChange((on) => {
+        applyControl(state.def, c, on);
         commit({ refreshGui: true });
       });
       ctrl.domElement.dataset.path = c.path.join('.');
       continue;
     }
-    if (c.kind === 'accessory') {
-      const model = { on: !!accessoryItem(c) };
-      const ctrl = parent.add(model, 'on').name(c.label).onChange((on) => {
-        const others = state.def.accessories.filter((x) => x.type !== c.accessory);
-        state.def.accessories = on ? [...others, { type: c.accessory }] : others;
-        commit({ refreshGui: true });
-      });
-      ctrl.domElement.dataset.path = c.path.join('.');
-      continue;
-    }
-    const field = c.path[c.path.length - 1];
-    const current = c.accessory ? accessoryItem(c)?.[field] : getPath(state.def, c.path);
+    const current = readControl(state.def, c);
     const auto = current === undefined;
     const model = { v: auto ? displayValue(c) : current };
-    const assign = (v) => {
-      if (c.accessory) {
-        const item = accessoryItem(c);
-        if (item) item[field] = v;
-      } else setPath(state.def, c.path, v);
-    };
+    const assign = (v) => applyControl(state.def, c, v);
     const refreshGui = auto || REFRESH_ON.has(c.path.join('.'));
     let ctrl;
     if (c.kind === 'number') ctrl = parent.add(model, 'v', c.min, c.max, c.step);

@@ -29,7 +29,7 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 /** Paths whose null means "slot switched off" (kept as null) rather than "field removed". */
-const NULLABLE_SLOTS = ['top', 'outer', 'bottom', 'dress', 'socks'];
+const NULLABLE_SLOTS = ['top', 'outer', 'bottom', 'legwear', 'dress', 'socks'];
 
 /** Leaf-level changes from base to def: { 'a.b': value }, accessories as add/remove/modify by type. */
 export function diffDefinition(base, def) {

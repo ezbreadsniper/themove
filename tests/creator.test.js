@@ -75,6 +75,7 @@ describe('creator menu coverage', () => {
       outer: {},
       socks: {},
       dress: {},
+      legwear: {},
       bottom: { ...PRESETS[0].bottom, belt: {} },
       accessories: Object.keys(ACCESSORY_SCHEMAS).map((type) => ({ type })),
     }).value;

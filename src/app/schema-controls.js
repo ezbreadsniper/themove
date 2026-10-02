@@ -2,7 +2,7 @@
  * Turns the character schema into a flat list of UI controls so the creator always exposes every
  * field the data format supports. Pure (no DOM) so tests can prove nothing is missing.
  */
-import { SCHEMA, ACCESSORY_SCHEMAS } from '../character/definition.js';
+import { SCHEMA, ACCESSORY_SCHEMAS, defaultsFor } from '../character/definition.js';
 
 const HIDDEN = new Set(['version', 'id']);
 
@@ -75,3 +75,54 @@ export function allLeafPaths(schema = SCHEMA, path = []) {
   }
   return out;
 }
+
+const getPath = (obj, path) => path.reduce((o, k) => (o == null ? undefined : o[k]), obj);
+
+/** The value a control edits in `def` (toggles: worn or not; unset fields: undefined). */
+export function readControl(def, c) {
+  if (c.kind === 'toggle') return getPath(def, c.path) != null;
+  if (c.kind === 'accessory') return (def.accessories ?? []).some((a) => a.type === c.accessory);
+  if (c.accessory) return (def.accessories ?? []).find((a) => a.type === c.accessory)?.[c.path[c.path.length - 1]];
+  return getPath(def, c.path);
+}
+
+/**
+ * Writes a control's new value into `def` in place: exactly what the creator does on change, so
+ * tests can drive every control without a DOM. Toggles switch a slot on (schema defaults) or off.
+ */
+export function applyControl(def, c, value) {
+  if (c.kind === 'accessory') {
+    const others = (def.accessories ?? []).filter((a) => a.type !== c.accessory);
+    def.accessories = value ? [...others, { type: c.accessory }] : others;
+    return def;
+  }
+  if (c.accessory) {
+    const item = (def.accessories ?? []).find((a) => a.type === c.accessory);
+    if (item) item[c.path[c.path.length - 1]] = value;
+    return def;
+  }
+  let o = def;
+  for (const k of c.path.slice(0, -1)) o = o[k];
+  const key = c.path[c.path.length - 1];
+  const prev = o[key];
+  o[key] = c.kind === 'toggle' ? (value ? defaultsFor(c.schema) : null) : value;
+  LINKED[c.path.join('.')]?.(def, value, prev);
+  return def;
+}
+
+/**
+ * Fields whose meaning is carried by another field. The trouser builders take the hem from
+ * `length` and the cloth from `kind`, so picking "shorts" or "pants" as the type also sets those
+ * (otherwise the choice would save but change nothing on the character).
+ */
+const LINKED = {
+  'bottom.type': (def, type, prev) => {
+    const b = def.bottom;
+    if (!b || type === prev) return;
+    const short = ['shorts', 'cutoff'].includes(b.length);
+    if (type === 'shorts' && !short) b.length = 'shorts';
+    if ((type === 'jeans' || type === 'pants') && prev === 'shorts' && short) b.length = 'full';
+    if (type === 'jeans') b.kind = 'denim';
+    if (type === 'pants' && (b.kind ?? 'denim') === 'denim') b.kind = 'twill';
+  },
+};
