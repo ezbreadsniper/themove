@@ -159,7 +159,11 @@ export function bodySurface(rows) {
     const t = b.y === a.y ? 0 : Math.max(0, Math.min(1, (y - a.y) / (b.y - a.y)));
     const l = (k, d) => (a[k] ?? d) + ((b[k] ?? d) - (a[k] ?? d)) * t;
     const ring = { rx: l('rx', 0.1), rzF: l('rzF', 0.1), rzB: l('rzB', 0.1), n: l('n', 2.4) };
-    return { r: ringRadius(ring, theta), cz: l('cz', 0) };
+    // Lobes (bust, glutes) live in the rings' shape functions; the fabric-bridged one is the outer surface.
+    const shapeOf = (r) => r.clothShape ?? r.shape;
+    const sa = shapeOf(a) ? shapeOf(a)(theta) : 1;
+    const sb = shapeOf(b) ? shapeOf(b)(theta) : 1;
+    return { r: ringRadius(ring, theta) * (sa + (sb - sa) * t), cz: l('cz', 0) };
   };
   fn.top = sorted[sorted.length - 1].y;
   fn.bottom = sorted[0].y;

@@ -107,6 +107,18 @@ Evidence: `dresses-front.png`, `womenswear-separates.png`, `dress-motion.png`.
 
 ---
 
+## Pass C3: second-skin leggings and layering fixes
+**Failed:** leggings built with the trouser drafter were loose tubes, and bike shorts showed a pocket bulge.
+
+**Changed:**
+- **New construction** (`src/geo/parts/leggings.js`): leggings are the body's own connected lower skin, pushed 4 mm out along its normals and given trouser UVs. Hem and waist snap to skin rings. There is extra stand-off over socks. `leggingsSurface` is the layering surface that tops clear.
+- **No skin under the shell:** skin triangles under the leggings are dropped (`cover.hideSkin`), so nothing can poke through. This also fixed the midline crease pokes on the woman and heavy bodies.
+- **Layering fix:** `bodySurface` now keeps the ring lobe shapes, and `clearUnder` samples all the way round. Glutes and bust no longer slip past tops at off-axis angles.
+
+**Verified:** 689 tests pass; leggings show 0% poke on the base, woman and heavy bodies; motion sheet `leggings-motion.png`.
+
+---
+
 ## Queue (in order)
 1. **Skirt sit poke** (pre-existing, 4–7% on this machine): add the skirt matrix to `tests/fit.test.js` as the status doc planned, then fix it.
 2. **Elbow/shoulder correctives**, plus a real armpit stitch (the arm is still a tube sunk into the torso).

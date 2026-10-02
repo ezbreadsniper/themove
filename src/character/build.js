@@ -27,6 +27,7 @@ function buildSkirtFor(layout, style, overHemY = null) {
 import { paintJacket, outerFabric } from '../tex/outerwear.js';
 import { paintStyledTop, paintLeggings, paintPrint, PRINTS } from '../tex/womenswear.js';
 import { expandDress } from './dress.js';
+import { buildLeggings, leggingsSurface } from '../geo/parts/leggings.js';
 import { paintHairTexture } from '../tex/hair.js';
 import { FABRICS } from '../tex/fabric.js';
 import { paintSkin } from '../tex/skin.js';
@@ -68,6 +69,8 @@ function material(raster, name, opts = {}) {
 
 /** Everything needed to build any part: resolved definition, rig layout, head shape, per-part RNGs. */
 const HEM_CLEARANCE = 0.02;
+/** Skin under second-skin legwear is dropped this far inside its hem and waistband (edges overlap). */
+const SKIN_HIDE_INSET = 0.012;
 const GREY = '#a7a6a1';
 
 /**
@@ -99,6 +102,20 @@ export function createContext(input) {
 const hasCap = (def) => def.accessories.some((a) => ['cap', 'beanie', 'bucket', 'durag'].includes(a.type));
 const BULKY_UNDER_CAP = ['afro', 'messy', 'twists', 'curlyMop'];
 
+/** Waist and hem heights for leggings by length (full stops at the ankle bone). */
+function leggingsSpan(layout, style) {
+  const m = layout.measures;
+  const k = m.height / 1.78;
+  const hemY = {
+    full: m.ankleY + 0.03 * k,
+    ankle: m.ankleY + 0.06 * k,
+    cropped: m.kneeY - (m.kneeY - m.ankleY) * 0.55,
+    shorts: m.kneeY + 0.04 * k,
+    cutoff: m.kneeY + (layout.world.LeftUpLeg.y - m.kneeY) * 0.55,
+  }[style.length ?? 'full'];
+  return { riseY: m.hipsY + (style.rise ?? 0.07) * k, hemY };
+}
+
 /** Tee-family painter for plain tops; sweaters, button-ups and printed tops use the styled painter. */
 function topRaster(style, rng) {
   return style.type === 'sweater' || style.type === 'buttonUp' || PRINTS.includes(style.pattern) ? paintStyledTop(style, rng) : paintTop(style, rng);
@@ -122,6 +139,7 @@ function bottomUnder(ctx) {
     ctx.skirtSurface ??= buildSkirtFor(layout, def.bottom).surface;
     return { surface: ctx.skirtSurface, gap: LAYER_GAP };
   }
+  if (def.bottom.type === 'leggings') return { surface: leggingsSurface(layout), gap: LAYER_GAP };
   return def.bottom.fit ?? 0.7;
 }
 
@@ -173,12 +191,17 @@ const RECIPES = {
     const leggings = def.bottom.type === 'leggings';
     // Leggings / bike shorts: skin-tight stretch trousers (no stack, cuff or turn-up).
     const style = leggings ? { ...def.bottom, type: 'pants', cut: 'skinny', fit: 0, kind: def.bottom.kind === 'denim' ? 'jersey' : def.bottom.kind, stack: 0, cuff: 0, cinch: false, cargo: false } : def.bottom;
-    const res = skirt ? buildSkirtFor(layout, style, overHem(ctx)) : buildBottom(layout, style, rng.fork('bottomGeo'), { under: ctx.topLayer, shoes: def.shoes, socks: def.socks });
+    const res = skirt ? buildSkirtFor(layout, style, overHem(ctx))
+      : leggings ? buildLeggings(layout, { ...leggingsSpan(layout, style), sockTop: def.socks ? def.socks.height * (layout.measures.height / 1.78) : null })
+        : buildBottom(layout, style, rng.fork('bottomGeo'), { under: ctx.topLayer, shoes: def.shoes, socks: def.socks });
     const legsBelowY = skirt ? layout.world.LeftUpLeg.y - 0.06 * (layout.measures.height / 1.78) : style.length === 'full' ? null : Math.min(layout.world.LeftUpLeg.y - 0.04, res.hemY + 0.12);
     const raster = leggings ? paintLeggings(style, rng.fork('bottomTex')) : paintBottom(style, rng.fork('bottomTex'));
     if (PRINTS.includes(style.pattern)) paintPrint(raster, { x: 0, y: 0, w: raster.width, h: raster.height }, style.pattern, hexToRgb(style.color), hexToRgb(style.accent ?? '#f4f0e6'), rng.fork('bottomPrint'));
     const parts = [{ name: 'bottom', mb: res.mb, raster, opts: { doubleSide: true, fabric: style.kind } }];
     if (def.bottom.belt) parts.push({ name: 'belt', mb: buildBelt(layout, { riseY: res.riseY, ease: res.ease }), raster: paintBelt(def.bottom.belt, rng.fork('beltTex')), opts: { shiny: true } });
+    // Leggings are the skin surface pushed out, so the full connected skin stays underneath (it can
+    // never poke through its own offset); other bottoms hide the skin they cover.
+    if (leggings) return { parts, cover: { legHemY: res.hemY, legCorrectives: true, riseY: res.riseY, hideSkin: [res.hemY + SKIN_HIDE_INSET, res.riseY - SKIN_HIDE_INSET] } };
     return { parts, cover: { legsBelowY, legHemY: res.hemY, legCorrectives: !skirt, torsoFrom: 'pelvisTop', lowerFrom: 'pelvisTop', riseY: res.riseY } };
   },
   socks(ctx) {
@@ -284,6 +307,7 @@ function buildRecipeParts(ctx) {
     if (res.cover?.footLift) cover.footLift = res.cover.footLift;
     if (res.cover?.neckHidden) cover.neckHidden = true;
     if (res.cover?.riseY != null) cover.riseY = res.cover.riseY;
+    if (res.cover?.hideSkin) cover.hideSkin = res.cover.hideSkin;
     if (res.cover?.legHemY != null) cover.legHemY = res.cover.legHemY;
     if (res.cover && 'legCorrectives' in res.cover) cover.legCorrectives = res.cover.legCorrectives;
   }

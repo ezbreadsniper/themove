@@ -8,6 +8,7 @@ import { ringRadius } from '../geo/mesh-builder.js';
  */
 export const LAYER_ORDER = ['skin', 'underwear', 'socks', 'bottom', 'top', 'outer', 'shoes', 'accessories'];
 export const LAYER_GAP = 0.009;
+const CLEAR_SAMPLES = 16;
 
 export function layerIndex(slot) {
   return LAYER_ORDER.indexOf(slot);
@@ -24,6 +25,16 @@ export function clearUnder(rows, under, gap = LAYER_GAP) {
     r.rx = Math.max(r.rx, at(Math.PI / 2), at(-Math.PI / 2));
     r.rzF = Math.max(r.rzF, at(0));
     r.rzB = Math.max(r.rzB, at(Math.PI));
+    // Off-axis lobes (glutes ~150°, bust ~25°): grow the half they sit in until every sample clears.
+    for (const [key, start] of [['rzF', -Math.PI / 2], ['rzB', Math.PI / 2]]) {
+      let need = 1;
+      for (let i = 1; i < CLEAR_SAMPLES; i++) {
+        const th = start + (i / CLEAR_SAMPLES) * Math.PI;
+        const own = ringRadius({ rx: r.rx, rzF: r.rzF, rzB: r.rzB, n: r.n ?? 2.3 }, th) * (r.shape ? r.shape(th) : 1);
+        need = Math.max(need, at(th) / own);
+      }
+      r[key] *= need;
+    }
   }
 }
 

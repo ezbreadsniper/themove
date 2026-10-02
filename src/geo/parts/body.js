@@ -628,5 +628,24 @@ export function buildBody(layout, cover = {}) {
     }
     if (cover.feet !== false) buildFoot(mb, layout, side, cover.footLift ?? 0);
   }
+  if (cover.hideSkin) dropCoveredSkin(mb, cover.hideSkin);
   return mb;
+}
+
+const ARM_JOINTS = new Set(Object.entries(J).filter(([name]) => /Shoulder|Arm|Hand/.test(name)).map(([, i]) => i));
+
+/**
+ * Removes skin triangles lying entirely within [y0, y1] (arms and hands excepted): skin under an opaque
+ * second-skin garment is never seen, and skin that is not there cannot poke through.
+ */
+function dropCoveredSkin(mb, [y0, y1]) {
+  const y = (i) => mb.positions[i * 3 + 1];
+  const onArm = (i) => [0, 1, 2, 3].some((c) => ARM_JOINTS.has(mb.skinIndex[i * 4 + c]) && mb.skinWeight[i * 4 + c] > 0.01);
+  const kept = [];
+  for (let t = 0; t < mb.indices.length; t += 3) {
+    const tri = mb.indices.slice(t, t + 3);
+    if (tri.every((i) => y(i) >= y0 && y(i) <= y1) && !tri.some(onArm)) continue;
+    kept.push(...tri);
+  }
+  mb.indices = kept;
 }
