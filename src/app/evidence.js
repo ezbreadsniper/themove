@@ -129,9 +129,31 @@ function fromBase64(b64) {
   return bytes.buffer;
 }
 
-async function exportGLB(id) {
-  const glb = await exportCharacterGLB(character(id));
+async function exportGLB(id, weapons = null) {
+  const c = character(id);
+  if (weapons) attachWeapon(c, weapons);
+  const glb = await exportCharacterGLB(c);
   return toBase64(glb);
+}
+
+/**
+ * Loads an armed GLB back and plays a weapon clip through three's own mixer: checks the weapon nodes
+ * exist, the clip binds to them, and the drawn / stowed copies swap (scale tracks) at the draw frame.
+ */
+async function reimportArmed(b64, clipName, type) {
+  const gltf = await new GLTFLoader().parseAsync(fromBase64(b64), '');
+  const clip = gltf.animations.find((a) => a.name === clipName);
+  const hand = gltf.scene.getObjectByName(`wpn_${type}_hand`);
+  const stowed = gltf.scene.getObjectByName(`wpn_${type}_stowed`);
+  if (!clip || !hand || !stowed) return { ok: false, clip: !!clip, hand: !!hand, stowed: !!stowed, animations: gltf.animations.length };
+  const mixer = new THREE.AnimationMixer(gltf.scene);
+  mixer.clipAction(clip).play();
+  mixer.setTime(0.05);
+  const before = [hand.scale.x, stowed.scale.x];
+  mixer.setTime(clip.duration * 0.9);
+  const after = [hand.scale.x, stowed.scale.x];
+  const weaponTracks = clip.tracks.filter((t) => t.name.startsWith('wpn_')).length;
+  return { ok: before[0] < 0.01 && before[1] > 0.99 && after[0] > 0.99 && after[1] < 0.01 && weaponTracks > 0, before, after, weaponTracks, animations: gltf.animations.length };
 }
 
 /** Loads a GLB back through GLTFLoader, renders it next to the procedural original, reports structure. */
@@ -258,5 +280,5 @@ function clipDuration(def, name) {
   return bakeClip(character(def).userData.layout, name).duration;
 }
 
-window.evidence = { render, stage, exportGLB, reimport, strip, benchmark, swatches, clipDuration, presets: PRESETS_BY_ID };
+window.evidence = { render, stage, exportGLB, reimportArmed, reimport, strip, benchmark, swatches, clipDuration, presets: PRESETS_BY_ID };
 window.__ready = true;

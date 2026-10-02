@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { worldPose } from './fk.js';
 
 const REST_ELBOW_POLE = new THREE.Vector3(0, 0, -1);
+/** Closest a wrist may come to its shoulder, as a fraction of arm length (~152° elbow flexion). */
+const MIN_REACH = 0.24;
 
 function orthoPole(axis, pole) {
   const p = pole.clone().addScaledVector(axis, -pole.dot(axis));
@@ -44,6 +46,9 @@ export function solveArm(layout, pose, side, wrist, handWorld, elbowPole) {
   const lower = w[`${side}ForeArm`].distanceTo(w[`${side}Hand`]);
   const root = fk.pos[`${side}Arm`];
   const toTarget = wrist.clone().sub(root);
+  // Elbow flexion stops near 152°: a wrist target closer to the shoulder than that is held off.
+  const minReach = (upper + lower) * MIN_REACH;
+  if (toTarget.length() < minReach) toTarget.setLength(minReach);
   const distance = toTarget.length();
   const maxReach = (upper + lower) * 0.9995;
   const d = Math.min(maxReach, Math.max(Math.abs(upper - lower) + 1e-4, distance));

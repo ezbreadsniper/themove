@@ -45,7 +45,9 @@ export function mountTransform(layout, spec) {
   const k = layout.measures.height / 1.78;
   const quaternion = weaponRotation(v3(spec.mount.forward), v3(spec.mount.up));
   const grip = v3(spec.mount.grip).multiplyScalar(k);
-  grip.x = Math.sign(grip.x) * (Math.abs(grip.x) - 0.215 * k + layout.measures.hipHalfWidth + 0.03 * k);
+  // Hip mounts follow the hip width; back mounts follow the chest depth.
+  if (spec.mount.bone === 'Hips') grip.x = Math.sign(grip.x) * (Math.abs(grip.x) - 0.215 * k + layout.measures.hipHalfWidth + 0.03 * k);
+  else grip.z = -(layout.measures.chestDepth * 0.95 + 0.07 * k);
   return { position: grip.sub(socket(spec, 'grip').applyQuaternion(quaternion)), quaternion };
 }
 

@@ -87,6 +87,10 @@ export const STANCES = {
     const high = aim.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(lookRotation(aim)), THREE.MathUtils.degToRad(-50));
     return bySocket(spec, 'grip', b.chest.clone().add(new THREE.Vector3(-0.08 * b.k, -0.06 * b.k, 0.2 * b.k)), lookRotation(high));
   },
+  /** Rifle lifted straight up off the back sling, hand above and behind the shoulder. */
+  longLift: (spec, b) => bySocket(spec, 'grip', b.shoulderR.clone().add(new THREE.Vector3(-0.03 * b.k, 0.3 * b.k, -0.12 * b.k)), lookRotation(new THREE.Vector3(0.45, -0.85, -0.2), new THREE.Vector3(0, 0.2, -1))),
+  /** Rifle coming off the back sling: lifted over the right shoulder, muzzle down and forward. */
+  longOverShoulder: (spec, b) => bySocket(spec, 'grip', b.shoulderR.clone().add(new THREE.Vector3(-0.06 * b.k, 0.16 * b.k, 0.3 * b.k)), lookRotation(new THREE.Vector3(0.35, -0.75, 0.55))),
   longHip: (spec, b, aim) => bySocket(spec, 'grip', b.hips.clone().add(new THREE.Vector3(-0.17 * b.k, 0.1 * b.k, 0.2 * b.k)), lookRotation(aim)),
 };
 
@@ -152,6 +156,17 @@ export function handTarget(spec, wx, marks, side, name) {
 const ELBOW = { Right: new THREE.Vector3(-0.8, -1, -0.35), Left: new THREE.Vector3(0.8, -1, -0.2) };
 
 /**
+ * Elbow direction for a hand target: down and out in front of the body, swinging up and forward as the
+ * hand reaches behind the shoulder (drawing from a back sling), so the arm never flips through the pole.
+ */
+function elbowPole(side, marks, grip) {
+  const shoulder = side === 'Right' ? marks.shoulderR : marks.shoulderL;
+  const u = Math.max(0, Math.min(1, (shoulder.z + 0.12 * marks.k - grip.z) / (0.35 * marks.k)));
+  const behind = u * u * (3 - 2 * u);
+  return ELBOW[side].clone().lerp(new THREE.Vector3(Math.sign(ELBOW[side].x) * 0.5, 0.6, 0.9), behind).normalize();
+}
+
+/**
  * Puts the hands where the clip wants them. hands = { Right: [from, to, t], Left: [from, to, t] } with
  * target names (see handTarget); a hand left at 'free' keeps the body pose's arm. The weapon is
  * parented to the right hand, so the right hand defines where it really is.
@@ -178,7 +193,7 @@ export function holdWeapon(layout, pose, type, wx, hands = { Right: ['grip', 'gr
         grip = grip.clone().lerp(b.grip, u);
         rot = rot.slerp(handRotation(layout, side, b.fingers, b.palm), u);
       }
-      return gripAt(layout, pose, side, grip, rot, ELBOW[side]);
+      return gripAt(layout, pose, side, grip, rot, elbowPole(side, marks, grip));
     };
     let r;
     if (from === 'free' || to === 'free') {

@@ -198,9 +198,16 @@ function longGunClips(T, type) {
   const hip = { stance: 'longHip', R: 'grip', L: 'support', drawn: true, lean: 2, cheek: 0, blade: blade * 0.6 };
   const sway = (st) => [[0, { ...st, aim: [0, 0] }], [1, { aim: [0.4, 0.25] }], [2, { aim: [-0.25, -0.15] }], [3, { aim: [0.15, -0.3] }], [4, { aim: [0, 0] }]];
   const n = (name) => `${type}_${name}`;
+  // A back-slung weapon passes over the shoulder on the way on and off the back (the straight path
+  // would drag the grip through the shoulder joint); a hip-slung one goes straight.
+  const fromBack = WEAPONS[type].mount.bone !== 'Hips';
+  const shoulder = {
+    lift: { stance: 'longLift', R: 'grip', L: 'free', drawn: true, blade: 0 },
+    over: { stance: 'longOverShoulder', R: 'grip', L: 'free', drawn: true, blade: 0 },
+  };
   const magOut = (t0, after = 'free') => [[t0, { ...ready, L: 'support' }], [t0 + 0.2, { L: 'magWell', magDrop: 0 }], [t0 + 0.3, { L: 'magWell', magDrop: 0.3 }], [t0 + 0.5, { L: after, magDrop: 1 }]];
   const magIn = (t0) => [[t0, { L: 'pouch', handMag: true }], [t0 + 0.38, { L: 'magWell', handMag: true }], [t0 + 0.5, { L: 'magWell', handMag: false, magDrop: 0 }]];
-  const boltPull = (t0) => [[t0 + 0.25, { L: 'bolt', slide: 0 }], [t0 + 0.37, { L: 'bolt', slide: 1 }], [t0 + 0.43, { slide: 0 }]];
+  const boltPull = (t0) => [[t0 + 0.32, { L: 'bolt', slide: 0 }], [t0 + 0.44, { L: 'bolt', slide: 1 }], [t0 + 0.5, { slide: 0 }]];
   return {
     [n('idleStowed')]: T(type, [[0, stowed]], { duration: 4, loop: true, body: 'idle' }),
     [n('idle')]: T(type, [[0, ready]], { duration: 4, loop: true, body: 'idle' }),
@@ -208,20 +215,27 @@ function longGunClips(T, type) {
     [n('highReady')]: T(type, [[0, high]], { duration: 4, loop: true }),
     [n('hipFire')]: T(type, sway(hip), { duration: 4, loop: true }),
     [n('aimIdle')]: T(type, sway(aim), { duration: 4, loop: true }),
-    [n('equip')]: T(type, [[0, stowed], [0.3, { R: 'grip' }], [0.32, { drawn: true }], [0.65, { ...ready, L: 'free' }], [0.9, ready]], { events: [{ name: 'draw', time: 0.32 }] }),
-    [n('unequip')]: T(type, [[0, ready], [0.25, { L: 'free' }], [0.6, { stance: 'stowed', R: 'grip', L: 'free', blade: 0 }], [0.62, { drawn: false }], [0.9, stowed]], { events: [{ name: 'holster', time: 0.62 }] }),
-    [n('switch')]: T(type, [[0, ready], [0.2, { L: 'free' }], [0.45, { stance: 'stowed', R: 'grip', L: 'free', blade: 0 }], [0.47, { drawn: false }], [0.8, stowed]], { events: [{ name: 'holster', time: 0.47 }] }),
+    [n('equip')]: T(type, fromBack
+      ? [[0, stowed], [0.3, { R: 'grip' }], [0.32, { drawn: true }], [0.6, { ...shoulder.lift }], [0.85, { ...shoulder.over }], [1.15, { ...ready, L: 'free' }], [1.4, ready]]
+      : [[0, stowed], [0.3, { R: 'grip' }], [0.32, { drawn: true }], [0.65, { ...ready, L: 'free' }], [0.9, ready]], { events: [{ name: 'draw', time: 0.32 }] }),
+    [n('unequip')]: T(type, fromBack
+      ? [[0, ready], [0.25, { L: 'free' }], [0.55, { ...shoulder.over }], [0.8, { ...shoulder.lift }], [1.05, { stance: 'stowed', R: 'grip', L: 'free', blade: 0 }], [1.07, { drawn: false }], [1.35, stowed]]
+      : [[0, ready], [0.25, { L: 'free' }], [0.6, { stance: 'stowed', R: 'grip', L: 'free', blade: 0 }], [0.62, { drawn: false }], [0.9, stowed]], { events: [{ name: 'holster', time: fromBack ? 1.07 : 0.62 }] }),
+    [n('switch')]: T(type, fromBack
+      ? [[0, ready], [0.18, { L: 'free' }], [0.5, { ...shoulder.over }], [0.74, { ...shoulder.lift }], [0.96, { stance: 'stowed', R: 'grip', L: 'free', blade: 0 }], [0.98, { drawn: false }], [1.2, stowed]]
+      : [[0, ready], [0.2, { L: 'free' }], [0.55, { stance: 'stowed', R: 'grip', L: 'free', blade: 0 }], [0.57, { drawn: false }], [0.85, stowed]], { events: [{ name: 'holster', time: fromBack ? 0.98 : 0.57 }] }),
     [n('raise')]: T(type, [[0, ready], [0.4, aim]]),
     [n('lower')]: T(type, [[0, aim], [0.4, ready]]),
     [n('fire')]: T(type, [[0, aim], ...shot(0), [0.25, { kick: 0 }]], { events: [{ name: 'fire', time: 0 }] }),
+    [n('dryFire')]: T(type, [[0, aim], [0.05, { kick: 0.05 }], [0.25, { kick: 0 }], [0.4, {}]], { events: [{ name: 'click', time: 0.04 }] }),
     [n('burst')]: T(type, [[0, aim], ...shot(0), ...shot(0.09, { strength: 1.1 }), ...shot(0.18, { strength: 1.25 }), [0.5, { kick: 0 }]], { events: [0, 0.09, 0.18].map((time) => ({ name: 'fire', time })) }),
     [n('recoil')]: T(type, [[0, aim], ...shot(0), [0.25, { kick: 0 }]], { additive: true, layer: 'additive', events: [{ name: 'fire', time: 0 }] }),
     [n('reload')]: T(type, [[0, aim], ...magOut(0.15, 'pouch'), ...magIn(0.75), [1.55, ready], [1.8, aim]], { events: [{ name: 'magOut', time: 0.45 }, { name: 'magIn', time: 1.25 }] }),
-    [n('reloadEmpty')]: T(type, [[0, aim], ...magOut(0.15, 'pouch'), ...magIn(0.75), ...boltPull(1.25), [1.95, ready], [2.2, aim]], { events: [{ name: 'magOut', time: 0.45 }, { name: 'magIn', time: 1.25 }, { name: 'boltRelease', time: 1.66 }] }),
+    [n('reloadEmpty')]: T(type, [[0, aim], ...magOut(0.15, 'pouch'), ...magIn(0.75), ...boltPull(1.25), [2.02, ready], [2.27, aim]], { events: [{ name: 'magOut', time: 0.45 }, { name: 'magIn', time: 1.25 }, { name: 'boltRelease', time: 1.73 }] }),
     [n('magOut')]: T(type, [[0, ready], ...magOut(0.05), [0.75, { L: 'free', magDrop: 1 }]], { events: [{ name: 'magOut', time: 0.35 }] }),
     [n('magIn')]: T(type, [[0, { ...ready, L: 'pouch', handMag: true, magDrop: 1 }], ...magIn(0.05), [0.85, ready]], { events: [{ name: 'magIn', time: 0.55 }] }),
-    [n('boltPull')]: T(type, [[0, ready], ...boltPull(0), [0.75, ready]], { events: [{ name: 'boltRelease', time: 0.41 }] }),
-    [n('jam')]: T(type, [[0, aim], [0.15, { kick: 0.1 }], [0.4, { ...ready, L: 'magWell' }], [0.52, { L: 'magWell', magDrop: -0.05 }], [0.6, { L: 'magWell', magDrop: 0 }], ...boltPull(0.6), [1.35, ready], [1.6, aim]], { events: [{ name: 'click', time: 0.12 }, { name: 'tap', time: 0.52 }, { name: 'boltRelease', time: 1.01 }] }),
+    [n('boltPull')]: T(type, [[0, ready], ...boltPull(0), [0.82, ready]], { events: [{ name: 'boltRelease', time: 0.48 }] }),
+    [n('jam')]: T(type, [[0, aim], [0.15, { kick: 0.1 }], [0.4, { ...ready, L: 'magWell' }], [0.52, { L: 'magWell', magDrop: -0.05 }], [0.6, { L: 'magWell', magDrop: 0 }], ...boltPull(0.6), [1.42, ready], [1.67, aim]], { events: [{ name: 'click', time: 0.12 }, { name: 'tap', time: 0.52 }, { name: 'boltRelease', time: 1.08 }] }),
     [n('inspect')]: T(type, [[0, ready], [0.45, { stance: 'longInspect', spin: [60, 20], blade: 10 }], [1.2, { spin: [60, 20] }], [1.6, { spin: [-25, 35] }], [2.2, { spin: [-25, 35] }], [2.6, { ...ready, spin: [0, 0] }]]),
     [n('hitReact')]: T(type, [[0, aim], [0.07, { flinch: 1, kick: 0.6 }], [0.6, { flinch: 0, kick: 0 }]], { events: [{ name: 'hit', time: 0 }] }),
     [n('walk')]: T(type, [[0, ready]], { duration: 1, loop: true, body: 'walk' }),

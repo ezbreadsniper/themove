@@ -51,6 +51,16 @@ for (const id of ids) {
   if (problems.length) failed = true;
   summary.push({ id, bytes: buf.length, ...structure, reimportedMeshes: reimport.skinnedMeshes, problems });
 }
+// Armed export: one character with all three weapons, re-imported and played through GLTFLoader.
+{
+  const b64 = await page.evaluate(() => window.evidence.exportGLB('trial-default', ['pistol', 'rifle', 'smg']));
+  writeFileSync('exports/trial-default-armed.glb', Buffer.from(b64, 'base64'));
+  const checks = {};
+  for (const [clip, type] of [['pistol_draw', 'pistol'], ['rifle_equip', 'rifle'], ['smg_equip', 'smg']]) checks[clip] = await page.evaluate(([b, c, t]) => window.evidence.reimportArmed(b, c, t), [b64, clip, type]);
+  const problems = Object.entries(checks).filter(([, r]) => !r.ok).map(([c, r]) => `${c}: ${JSON.stringify(r)}`);
+  if (problems.length) failed = true;
+  summary.push({ id: 'trial-default-armed', bytes: Buffer.from(b64, 'base64').length, clips: [], jointCount: 23, skinnedNodes: 0, images: 0, armed: checks, problems });
+}
 writeFileSync('docs/evidence/export-report.json', JSON.stringify(summary, null, 2));
 for (const s of summary) {
   console.log(`${s.problems.length ? 'FAIL' : 'PASS'} ${s.id}: ${(s.bytes / 1024).toFixed(0)} KB, ${s.jointCount} joints, ${s.skinnedNodes} skinned parts, ${s.clips.length} clips, ${s.images} textures${s.problems.length ? `\n  - ${s.problems.join('\n  - ')}` : ''}`);

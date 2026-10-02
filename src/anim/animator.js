@@ -35,7 +35,8 @@ export const BLEND = { locomotion: 0.25, upper: 0.18, upperOneShot: 0.12, fullOn
  *   additive   recoil (fire) and aim offsets on top
  *   full       full-body one-shots (jump, land, hit, death) that override everything, then hand back
  * Requests made during a locked one-shot are queued (last one wins), so transitions are predictable.
- * play(name, { then }) chooses what follows a one-shot: a clip name, or null to drop the upper layer.
+ * play(name, { then }) chooses what follows a one-shot: a clip name, a list of clips to chain (the
+ * last becomes the resting loop), or null to drop the upper layer.
  */
 export class Animator {
   constructor(character, clips) {
@@ -188,7 +189,8 @@ export class Animator {
     if (queued) return void this.play(queued.name, { then: queued.then });
     const next = this.after !== undefined ? this.after : this.upperIdle;
     this.after = undefined;
-    if (next) this.play(next);
+    if (Array.isArray(next)) this.play(next[0], { then: next.length > 1 ? next.slice(1) : undefined });
+    else if (next) this.play(next);
     else {
       this.upperIdle = null;
       this.release();

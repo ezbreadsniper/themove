@@ -20,7 +20,7 @@ describe('weapon clip library', () => {
   test('pistol, rifle and smg each have the full clip set', () => {
     const required = {
       pistol: ['idleHolstered', 'idle', 'idleTwoHand', 'aimIdle', 'aimHip', 'aimOneHand', 'draw', 'drawNeutral', 'unequip', 'switch', 'raise', 'lower', 'fire', 'burst', 'recoil', 'dryFire', 'reload', 'reloadEmpty', 'magInsert', 'slideRelease', 'inspect', 'hitReact', 'toSprint', 'walk', 'walkAim', 'run', 'sprint', 'crouch', 'crouchAim', 'crouchWalk', 'aimLeft', 'aimRight', 'aimUp', 'aimDown'],
-      rifle: ['idleStowed', 'idle', 'lowReady', 'highReady', 'hipFire', 'aimIdle', 'equip', 'unequip', 'switch', 'raise', 'lower', 'fire', 'burst', 'recoil', 'reload', 'reloadEmpty', 'magOut', 'magIn', 'boltPull', 'jam', 'inspect', 'hitReact', 'walk', 'walkAim', 'run', 'sprint', 'toSprint', 'crouch', 'crouchAim', 'crouchWalk', 'aimLeft', 'aimRight', 'aimUp', 'aimDown'],
+      rifle: ['idleStowed', 'idle', 'lowReady', 'highReady', 'hipFire', 'aimIdle', 'equip', 'unequip', 'switch', 'raise', 'lower', 'fire', 'dryFire', 'burst', 'recoil', 'reload', 'reloadEmpty', 'magOut', 'magIn', 'boltPull', 'jam', 'inspect', 'hitReact', 'walk', 'walkAim', 'run', 'sprint', 'toSprint', 'crouch', 'crouchAim', 'crouchWalk', 'aimLeft', 'aimRight', 'aimUp', 'aimDown'],
     };
     required.smg = required.rifle;
     for (const type of WEAPON_TYPES) {
