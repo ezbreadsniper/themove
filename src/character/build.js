@@ -99,6 +99,13 @@ export function createContext(input) {
   return { def, authored, errors, rng, layout, shape };
 }
 
+/** Shield lens texture; the temple arms map to UV [0, 0.45, 0.1, 0.55] and take the frame colour. */
+function shadesRaster(acc, rng) {
+  const raster = paintShieldLens(acc, rng);
+  if (acc.frame) raster.rect(0, Math.floor(raster.height * 0.45), Math.ceil(raster.width * 0.1), Math.ceil(raster.height * 0.1) + 1, acc.frame);
+  return raster;
+}
+
 const hasCap = (def) => def.accessories.some((a) => ['cap', 'beanie', 'bucket', 'durag'].includes(a.type));
 const BULKY_UNDER_CAP = ['afro', 'messy', 'twists', 'curlyMop'];
 
@@ -248,7 +255,8 @@ const RECIPES = {
     const parts = [];
     for (const acc of def.accessories) {
       const r = rng.fork(`acc-${acc.type}`);
-      if (acc.type === 'cap') parts.push({ name: 'cap', mb: buildCap(shape, { bill: acc.bill, tilt: acc.tilt, style: acc.style }), raster: paintCap(acc, r), opts: { doubleSide: true } });
+      // Stars sit on the front panel; without a separate front colour the panel is the crown colour.
+      if (acc.type === 'cap') parts.push({ name: 'cap', mb: buildCap(shape, { bill: acc.bill, tilt: acc.tilt, style: acc.style }), raster: paintCap(acc.stars && !acc.front ? { ...acc, front: acc.color } : acc, r), opts: { doubleSide: true } });
       if (acc.type === 'glasses') parts.push({ name: 'glasses', mb: buildGlasses(shape, { width: acc.width, height: acc.height, frame: acc.frame }), raster: paintSolid(acc.color, r) });
       if (acc.type === 'balaclava') parts.push({ name: 'balaclava', mb: buildBalaclava(shape, layout), raster: paintKnit({ ...acc, cuff: false }, r), opts: { doubleSide: true } });
       if (acc.type === 'beanie') parts.push({ name: 'beanie', mb: buildBeanie(shape, { cuff: acc.cuff, slouch: acc.slouch }), raster: paintKnit(acc, r) });
@@ -266,7 +274,7 @@ const RECIPES = {
         tex.rect(0, 15, 16, 1, '#e8582a');
         parts.push({ name: 'cigarette', mb: cig.mb, raster: tex });
       }
-      if (acc.type === 'shades') parts.push({ name: 'shades', mb: buildWrapShades(shape), raster: paintShieldLens(acc, r), opts: { doubleSide: true } });
+      if (acc.type === 'shades') parts.push({ name: 'shades', mb: buildWrapShades(shape), raster: shadesRaster(acc, r), opts: { doubleSide: true } });
       if (acc.type === 'chains') {
         const fit = def.top ? def.top.fit : 0;
         const clearance = 0.018 + fit * 0.03 + (def.outer ? 0.006 : 0);
