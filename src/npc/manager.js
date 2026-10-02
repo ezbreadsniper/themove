@@ -354,6 +354,9 @@ export class NpcManager {
    * camera, events }. Player flags in ctx override what the bus reported.
    */
   update(dt, ctx = {}) {
+    // A non-positive or broken frame time (first RAF frame, tab switch) must not wind the clocks back.
+    if (!(dt > 0) || !Number.isFinite(dt)) return;
+    dt = Math.min(dt, 0.25);
     this.ctx = ctx;
     this.time += dt;
     this.relationships.update(dt);
