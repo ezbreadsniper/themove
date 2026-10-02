@@ -64,7 +64,7 @@ function exportableUserData(object, root) {
 
 /** Exports a built character plus its procedural clips as binary glTF with Mixamo joint names. */
 export async function exportCharacterGLB(character, { clips = true, prefix = RIG_PREFIX } = {}) {
-  const animations = clips ? Object.values(bakeAllClips(character.userData.layout)) : [];
+  const animations = clips ? Object.values(bakeAllClips(character.userData.layout, { weapons: character.userData.weapon?.types })) : [];
   const saved = [];
   character.traverse((o) => {
     saved.push([o, o.userData]);

@@ -17,7 +17,9 @@ export const DIRECTIONS = { N: 0, NE: -45, E: -90, SE: -135, S: 180, SW: 135, W:
  */
 export const GAITS = {
   walk: { cycle: 1.0, duty: 0.6, F: 0.25, B: 0.33, lift: 0.07, drop: 0.02, bob: 0.016, strike: 14, heelRise: 26, arm: 22, elbow: 14, lean: 4, width: 1 },
-  run: { cycle: 0.7, duty: 0.37, F: 0.36, B: 0.46, lift: 0.17, drop: 0.08, bob: 0.03, strike: 8, heelRise: 32, arm: 34, elbow: 88, lean: 11, width: 1 },
+  run: { cycle: 0.7, duty: 0.37, F: 0.36, B: 0.46, lift: 0.17, drop: 0.08, bob: 0.03, strike: 8, heelRise: 32, arm: 34, elbow: 88, lean: 11, width: 1, flight: true },
+  sprint: { cycle: 0.62, duty: 0.32, F: 0.44, B: 0.56, lift: 0.22, drop: 0.1, bob: 0.034, strike: 5, heelRise: 38, arm: 46, elbow: 96, lean: 17, width: 1, flight: true },
+  crouchWalk: { cycle: 1.25, duty: 0.66, F: 0.2, B: 0.26, lift: 0.06, drop: 0.3, bob: 0.01, strike: 8, heelRise: 22, arm: 9, elbow: 48, lean: 22, width: 1.15 },
 };
 
 /** Direction-dependent span scale: side steps and backpedals are shorter than forward steps. */
@@ -69,7 +71,7 @@ export function gaitSampler(kind, dirDeg) {
     for (const [i, side] of SIDES.entries()) {
       const st = footState(g, (phase + i * 0.5) % 1, span, dir);
       const rig = rigs[side];
-      const lateral = (side === 'Left' ? 1 : -1) * Math.abs(Math.sin(dir)) * (0.04 * k + g.F * span * Math.abs(Math.sin(dir)) * 0.9);
+      const lateral = (side === 'Left' ? 1 : -1) * (Math.abs(Math.sin(dir)) * (0.04 * k + g.F * span * Math.abs(Math.sin(dir)) * 0.9) + (g.width - 1) * 0.5 * k);
       const { offset, rot } = rolledAnkle(rig, st.pitch);
       targets[side] = rig.ankle.clone()
         .addScaledVector(move, st.along)
@@ -83,14 +85,14 @@ export function gaitSampler(kind, dirDeg) {
     const hipsRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw)
       .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), lean));
     const hipPos = (side, off) => rigs[side].hip.clone().sub(restHips).applyQuaternion(hipsRot).add(restHips).add(off);
-    const bobPhase = kind === 'run' ? Math.cos(phase * TAU * 2) : -Math.cos(phase * TAU * 2);
+    const bobPhase = g.flight ? Math.cos(phase * TAU * 2) : -Math.cos(phase * TAU * 2);
     const offset = new THREE.Vector3(0, -g.drop * k + g.bob * k * bobPhase, 0);
     for (const side of SIDES) {
       const maxReach = (rigs[side].thigh + rigs[side].shin) * 0.985;
       const h = hipPos(side, new THREE.Vector3());
       const horiz = Math.hypot(targets[side].x - h.x, targets[side].z - h.z);
       const allowed = targets[side].y + Math.sqrt(Math.max(0, maxReach ** 2 - horiz ** 2)) - h.y;
-      if (states[side].stance || kind === 'walk') offset.y = Math.min(offset.y, allowed);
+      if (states[side].stance || !g.flight) offset.y = Math.min(offset.y, allowed);
     }
 
     const p = createPose();
@@ -114,8 +116,8 @@ export function gaitSampler(kind, dirDeg) {
       const legPhase = (phase + i * 0.5) % 1;
       const c = Math.cos(legPhase * TAU);
       const swing = (c > 0 ? c * 1.25 : c * 0.65) * g.arm * energy;
-      Pose.elbowFlex(p, s, armDirs[s], g.elbow + Math.max(0, -swing) * (kind === 'run' ? 0.15 : 0.4));
-      Pose.armAbduct(p, s, -21 + (kind === 'run' ? 6 : 0));
+      Pose.elbowFlex(p, s, armDirs[s], g.elbow + Math.max(0, -swing) * (g.flight ? 0.15 : 0.4));
+      Pose.armAbduct(p, s, -21 + (g.flight ? 6 : 0));
       Pose.armFlex(p, s, -swing * (0.35 + 0.65 * Math.abs(fwd)) - g.lean * 0.6);
     }
     rotate(p, 'Spine', new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -yaw * 0.6));

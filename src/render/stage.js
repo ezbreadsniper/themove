@@ -129,7 +129,7 @@ export class Stage {
     const shadow = blobShadow();
     holder.add(shadow);
     this.scene.add(holder);
-    const clips = bakeAllClips(character.userData.layout);
+    const clips = bakeAllClips(character.userData.layout, { weapons: character.userData.weapon?.types });
     const mixer = new THREE.AnimationMixer(character);
     const entry = { holder, character, mixer, clips, action: null, clipName: null, smoke: character.userData.cigaretteTip ? new SmokeEmitter(this.scene, character) : null, lastTime: 0 };
     this.entries.push(entry);

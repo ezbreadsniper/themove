@@ -5,6 +5,7 @@ import { PRESETS_BY_ID } from '../character/presets/index.js';
 import { exportCharacterGLB } from '../export/gltf.js';
 import { bakeClip } from '../anim/clips.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { attachWeapon } from '../weapons/model.js';
 
 const TURNAROUND_YAWS = [0, 90, 35, 180];
 
@@ -74,6 +75,7 @@ async function render(opts) {
   for (const p of placements) {
     const c = character(p.id);
     c.traverse((o) => { if (o.isMesh && hide.includes(o.name)) o.visible = false; });
+    if (opts.weapon) attachWeapon(c, opts.weapon);
     applyView(c, opts.view);
     const entry = stage.add(c, { x: p.x, yaw: THREE.MathUtils.degToRad(p.yaw) });
     stage.play(entry, clip, { time: opts.simulate ? 0 : time });
@@ -253,7 +255,7 @@ function swatches(id, { cell = 160 } = {}) {
 }
 
 function clipDuration(def, name) {
-  return bakeClip(buildCharacter(def).userData.layout, name).duration;
+  return bakeClip(character(def).userData.layout, name).duration;
 }
 
 window.evidence = { render, stage, exportGLB, reimport, strip, benchmark, swatches, clipDuration, presets: PRESETS_BY_ID };

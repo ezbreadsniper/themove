@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { JOINTS } from '../rig/skeleton.js';
-import { createPose, Pose, solveLeg, rotate } from './pose.js';
+import { createPose, Pose, rotate } from './pose.js';
 import { gaitSampler, DIRECTIONS } from './gait.js';
 import { solveLeg3D } from './ik.js';
+import { makeWeaponSamplers } from './weapon-clips.js';
 
 /**
  * Two-bone arm IK (shoulder joint → elbow → wrist) to a world target with an elbow pole, returning
@@ -31,59 +32,7 @@ function armIK(L, side, target, pole, aim) {
   };
 }
 
-const FPS = 30;
-const TAU = Math.PI * 2;
-const SIDES = ['Left', 'Right'];
-const ease = (t) => t * t * (3 - 2 * t);
-const clamp01 = (t) => Math.max(0, Math.min(1, t));
-const window01 = (t, a, b) => clamp01((t - a) / (b - a));
-
-/** Cosine-interpolated cyclic key table (keys evenly spaced over one cycle). */
-function cyc(keys, phase) {
-  const n = keys.length;
-  const x = (((phase % 1) + 1) % 1) * n;
-  const i = Math.floor(x);
-  const t = (1 - Math.cos((x - i) * Math.PI)) / 2;
-  return keys[i] + (keys[(i + 1) % n] - keys[i]) * t;
-}
-
-function armDirs(layout) {
-  const d = layout.measures.armDir;
-  return { Left: d.clone(), Right: d.clone().setX(-d.x) };
-}
-
-/** Relaxed standing base: arms down by the sides with a soft elbow. */
-function base(layout, { armDown = 23, elbow = 12, skip = [] } = {}) {
-  const p = createPose();
-  const dirs = armDirs(layout);
-  for (const side of SIDES.filter((s) => !skip.includes(s))) {
-    Pose.elbowFlex(p, side, dirs[side], elbow);
-    Pose.armAbduct(p, side, -armDown);
-    Pose.armFlex(p, side, 3);
-  }
-  for (const side of SIDES) Pose.hipAbduct(p, side, 3);
-  const posture = layout.measures.posture ?? 0;
-  if (posture > 0) {
-    Pose.spineFlex(p, 'Spine1', posture * 8);
-    Pose.spineFlex(p, 'Spine2', posture * 9);
-    Pose.spineFlex(p, 'Neck', posture * 12);
-    Pose.headNod(p, -posture * 16);
-    for (const side of SIDES) Pose.shoulderShrug(p, side, -posture * 4);
-  }
-  return p;
-}
-
-function plantLegs(layout, pose, { hips, ankles = {}, pitch = {} }) {
-  for (const side of SIDES) {
-    const target = ankles[side] ?? layout.world[`${side}Foot`].clone();
-    const sol = solveLeg(layout, side, hips, target, pitch[side] ?? 0);
-    Pose.kneeFlex(pose, side, sol.knee);
-    Pose.hipFlex(pose, side, sol.thigh);
-    Pose.ankleFlex(pose, side, sol.ankle);
-  }
-  pose.hips.copy(hips);
-}
-
+import { FPS, TAU, SIDES, ease, window01, armDirs, base, plantLegs } from './clip-kit.js';
 
 const SAMPLERS = {
   neutral: { duration: 1, loop: true, sample: (L) => base(L) },
@@ -408,7 +357,26 @@ const SAMPLERS = {
 for (const [name, deg] of Object.entries(DIRECTIONS)) {
   SAMPLERS[`walk_${name}`] = gaitSampler('walk', deg);
   SAMPLERS[`run_${name}`] = gaitSampler('run', deg);
+  SAMPLERS[`crouchWalk_${name}`] = gaitSampler('crouchWalk', deg);
 }
+SAMPLERS.sprint = gaitSampler('sprint', 0);
+SAMPLERS.crouchWalk = gaitSampler('crouchWalk', 0);
+
+/** Crouched hold (loop): the bottom of the crouch clip with a slow breath. */
+SAMPLERS.crouchIdle = {
+  duration: 3,
+  loop: true,
+  sample: (L, t, dur) => {
+    const breath = Math.sin((t / dur) * TAU);
+    const p = base(L, { armDown: 17, elbow: 50 });
+    SIDES.forEach((side) => Pose.armFlex(p, side, 32));
+    Pose.spineFlex(p, 'Spine', 14 + breath * 0.6);
+    Pose.spineFlex(p, 'Spine1', 10);
+    Pose.headNod(p, -18);
+    plantLegs(L, p, { hips: new THREE.Vector3(0, -0.4 * (L.measures.height / 1.78) + breath * 0.003, -0.1) });
+    return p;
+  },
+};
 
 /**
  * Seated on a chair/bench (~46 cm seat at 1.78 m): pelvis down and back, thighs near horizontal,
@@ -450,6 +418,13 @@ SAMPLERS.talk = {
 
 export const CLIP_NAMES = Object.keys(SAMPLERS);
 
+const WEAPON_SAMPLERS = makeWeaponSamplers(SAMPLERS);
+Object.assign(SAMPLERS, WEAPON_SAMPLERS);
+
+/** Clips that need a weapon in hand, by weapon type (bake only the ones a character carries). */
+export const WEAPON_CLIP_NAMES = Object.keys(WEAPON_SAMPLERS);
+export const clipsForWeapon = (type) => WEAPON_CLIP_NAMES.filter((n) => SAMPLERS[n].weapon === type);
+
 export function samplePose(layout, name, time) {
   const s = SAMPLERS[name];
   return s.sample(layout, time % s.duration, s.duration);
@@ -462,11 +437,13 @@ export function bakeClip(layout, name, { prefix = '' } = {}) {
   const times = new Float32Array(frames + 1);
   const quats = Object.fromEntries(JOINTS.map(([j]) => [j, new Float32Array((frames + 1) * 4)]));
   const hipPos = new Float32Array((frames + 1) * 3);
+  const props = {};
   const restHips = layout.world.Hips;
   for (let f = 0; f <= frames; f++) {
     const t = s.loop && f === frames ? 0 : (f / FPS);
     times[f] = f / FPS;
     const pose = s.sample(layout, t, s.duration);
+    for (const [path, value] of Object.entries(pose.props ?? {})) (props[path] ??= []).push(value);
     for (const [j] of JOINTS) {
       const qq = pose.bones[j] ?? new THREE.Quaternion();
       qq.toArray(quats[j], f * 4);
@@ -477,11 +454,19 @@ export function bakeClip(layout, name, { prefix = '' } = {}) {
   }
   const tracks = JOINTS.map(([j]) => new THREE.QuaternionKeyframeTrack(`${prefix}${j}.quaternion`, times, quats[j]));
   tracks.push(new THREE.VectorKeyframeTrack(`${prefix}Hips.position`, times, hipPos));
+  for (const [path, values] of Object.entries(props)) {
+    tracks.push(typeof values[0] === 'boolean'
+      ? new THREE.BooleanKeyframeTrack(path, times, values)
+      : new THREE.VectorKeyframeTrack(path, times, values.flat()));
+  }
   const clip = new THREE.AnimationClip(name, s.duration, tracks);
-  clip.userData = { loop: s.loop, ...(s.meta ? s.meta(layout) : {}), ...(s.events ? { events: s.events } : {}) };
+  clip.userData = { loop: s.loop, ...(s.weapon ? { weapon: s.weapon } : {}), ...(s.meta ? s.meta(layout) : {}), ...(s.events ? { events: s.events } : {}) };
   return clip;
 }
 
-export function bakeAllClips(layout, opts) {
-  return Object.fromEntries(CLIP_NAMES.map((n) => [n, bakeClip(layout, n, opts)]));
+/** Every shared clip, plus the clips for `opts.weapon` when the character carries one. */
+export function bakeAllClips(layout, opts = {}) {
+  const weapons = opts.weapons ?? (opts.weapon ? [opts.weapon] : []);
+  const names = [...CLIP_NAMES, ...weapons.flatMap(clipsForWeapon)];
+  return Object.fromEntries(names.map((n) => [n, bakeClip(layout, n, opts)]));
 }

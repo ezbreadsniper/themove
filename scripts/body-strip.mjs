@@ -19,6 +19,7 @@ const preset2 = flag('preset', 'ps2');
 const variants = o.variants ?? [def];
 const view = flag('view', undefined);
 const hide = flag('hide', '').split(',').filter(Boolean);
+const weapon = flag('weapon', undefined);
 
 const stop = await ensureServer();
 const { browser, page, errors } = await openPage('/evidence.html', { width: 1400, height: 800 });
@@ -27,7 +28,7 @@ const labels = [];
 for (const [vi, v] of variants.entries()) {
   const d = vi === 0 && !o.variants ? def : { ...def, ...v, body: { ...def.body, ...(v.body ?? {}) } };
   for (const camYaw of yaws) {
-    frames.push({ chars: [d], clip, time, camYaw, zone, backdrop: 'sheet', preset: preset2, view, hide, pitch: zone ? 3 : undefined });
+    frames.push({ chars: [d], clip, time, camYaw, zone, backdrop: 'sheet', preset: preset2, view, hide, weapon, pitch: zone ? 3 : undefined });
     labels.push(`${v.label ?? ''} ${camYaw}°`);
   }
 }
