@@ -99,7 +99,7 @@ go in `docs/animation/animation_sources.md`.
   sit inside the loft as NPCs, chilling on the sofa/seats and listening to music (head nods, relaxed
   talk). sheet-04 (camo cargo) holds an unbranded clear lager bottle with a lime wedge and takes sips.
   The player is `trial-default` (or `?id=`). `?npcs=street` may still spawn the street test cast.
-- **Weapons:** the pistol is the only usable gun in the playable game for now (rifle/SMG code stays
+- **Weapons:** the pistol and the SMG (Uzi-style) are the usable guns in the playable game for now (rifle code stays
   in the repo, just not attached or selectable in `world-play.js`).
 - **Movement:** WASD runs by default; Alt (or CapsLock toggle) walks; Shift sprints outdoors.
 - **Time of day:** night. Darker exterior (moonlight + sodium streetlights), interior lamps on.
