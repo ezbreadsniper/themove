@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { buildCharacter } from '../src/character/build.js';
 import { PRESETS } from '../src/character/presets/index.js';
 import { bakeClip, CLIP_NAMES } from '../src/anim/clips.js';
-import { JOINTS } from '../src/rig/skeleton.js';
+import { JOINTS, computeJointLayout } from '../src/rig/skeleton.js';
 import { skinnedPositions, meshByName } from './helpers.js';
 
 function poseAt(group, clipName, time) {
@@ -76,5 +76,20 @@ describe.each(PRESETS)('$id deformation and contact', (preset) => {
   test.each([['walk', 0.3], ['crouch', 1.2], ['jump', 0.85], ['cheer', 0.4], ['turn', 0.6]])('body edges do not tear during %s', (clip, t) => {
     poseAt(group, clip, t);
     expect(maxEdgeStretch(body)).toBeLessThan(1.9);
+  });
+});
+
+describe('chained clips hand over without a pop', () => {
+  const layout = computeJointLayout({});
+  const chains = CLIP_NAMES.map((n) => [n, bakeClip(layout, n).userData.then]).filter(([, then]) => then);
+  test.each(chains)('%s ends where %s starts', (name, then) => {
+    const a = bakeClip(layout, name);
+    const b = bakeClip(layout, then);
+    for (const track of a.tracks.filter((t) => t.name.endsWith('.quaternion'))) {
+      const other = b.tracks.find((t) => t.name === track.name);
+      const end = new THREE.Quaternion().fromArray(track.values, track.values.length - 4);
+      const start = new THREE.Quaternion().fromArray(other.values, 0);
+      expect(THREE.MathUtils.radToDeg(end.angleTo(start)), track.name).toBeLessThan(3);
+    }
   });
 });

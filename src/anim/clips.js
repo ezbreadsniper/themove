@@ -4,6 +4,7 @@ import { createPose, Pose, rotate } from './pose.js';
 import { gaitSampler, DIRECTIONS } from './gait.js';
 import { solveLeg3D } from './ik.js';
 import { makeWeaponSamplers } from './weapon-clips.js';
+import { makeExtraSamplers } from './base-extra.js';
 
 /**
  * Two-bone arm IK (shoulder joint → elbow → wrist) to a world target with an elbow pole, returning
@@ -211,7 +212,8 @@ const SAMPLERS = {
     events: [{ name: 'impact', time: 0.04 }],
     sample: (L, t) => {
       const k = L.measures.height / 1.78;
-      const d = t < 0.12 ? Math.sin((t / 0.12) * Math.PI * 0.5) : 1 - ease(window01(t, 0.12, 0.7));
+      // Contact happens with the knees already bent (as in `fall`), then the legs absorb.
+      const d = t < 0.15 ? 0.35 + 0.65 * ease(t / 0.15) : 1 - ease(window01(t, 0.15, 0.7));
       const p = base(L, { armDown: 15 - d * 20, elbow: 12 + d * 30 });
       SIDES.forEach((side) => Pose.armFlex(p, side, d * 40));
       Pose.spineFlex(p, 'Spine', d * 22);
@@ -415,6 +417,8 @@ SAMPLERS.talk = {
     return p;
   },
 };
+
+Object.assign(SAMPLERS, makeExtraSamplers(SAMPLERS));
 
 export const CLIP_NAMES = Object.keys(SAMPLERS);
 
