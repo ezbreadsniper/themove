@@ -3,3 +3,4 @@ dist
 exports/*.glb
 docs/evidence/tmp
 .unimate
+.claude/worktrees
