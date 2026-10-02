@@ -4,7 +4,7 @@ import { DialogueRunner, makeContext, evalCondition, applyEffects } from '../src
 import { getTree, validateTree, BUILTIN_TREES, registerTree } from '../src/dialogue/loader.js';
 import { BarkSystem } from '../src/dialogue/barks.js';
 import BARK_RULES from '../src/dialogue/data/barks.json';
-import { frameShot, frameClearShot, sideOf, DialogueCamera, SHOT_KINDS } from '../src/dialogue/camera.js';
+import { frameShot, frameClearShot, composeShot, scoreShot, sideOf, DialogueCamera, SHOT_KINDS } from '../src/dialogue/camera.js';
 import { CollisionWorld } from '../src/world/physics/collision.js';
 import { DialogueDirector, pickShot } from '../src/dialogue/director.js';
 import { Relationships } from '../src/npc/disposition.js';
@@ -271,9 +271,24 @@ describe('dialogue camera', () => {
     const b = new THREE.Vector3(0, 1.6, 1.5);
     const two = frameShot('two', { a, b, side: 1 });
     const mid = two.pos.clone().lerp(two.target, 0.4);
-    const s = frameClearShot('two', { a, b, side: 1 }, null, [{ x: mid.x, z: mid.z }]);
-    expect(s.kind).not.toBe('two');
+    const by = [{ x: mid.x, y: 0, z: mid.z }];
+    expect(scoreShot(two, { a, b, bystanders: by }).issues).toContain('bystander blocks a speaker');
+    const s = composeShot('two', { a, b, side: 1 }, { bystanders: by });
+    expect(s.issues.filter((i) => i.includes('blocks'))).toEqual([]);
+    expect(s.orbit !== 0 || s.scale !== 1 || s.kind !== 'two').toBe(true);
     expect(sideOf(s.pos, a, b)).toBe(1);
+  });
+
+  test('a clean two-shot keeps both speakers in frame at any separation and aspect', () => {
+    for (const sep of [0.9, 1.5, 2.6]) {
+      for (const aspect of [4 / 3, 16 / 9, 21 / 9]) {
+        const a = new THREE.Vector3(0, 1.6, 0);
+        const b = new THREE.Vector3(0.3, 1.7, sep);
+        const s = composeShot('two', { a, b, side: -1, aspect });
+        expect(s.kind).toBe('two');
+        expect(s.issues).toEqual([]);
+      }
+    }
   });
 
   test('shot choice follows hints, opening and emotion', () => {

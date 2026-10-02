@@ -13,7 +13,7 @@ const stop = await ensureServer();
 const { browser, page, errors } = await openPage('/npc.html?scripted', { width: 960, height: 540 });
 const shot = async (name) => {
   await page.waitForTimeout(600); // let the HUD's CSS transitions (letterbox) settle
-  writeFileSync(`${outDir}/${name}.png`, await page.screenshot());
+  writeFileSync(`${outDir}/${name}.png`, await page.screenshot({ timeout: 120000 }));
 };
 const run = (fn, arg) => page.evaluate(fn, arg);
 const states = () => run(() => window.npcDemo.summary().map((s) => `${s.id}:${s.state}`).join(' '));
