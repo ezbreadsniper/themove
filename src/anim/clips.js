@@ -2,36 +2,10 @@ import * as THREE from 'three';
 import { JOINTS } from '../rig/skeleton.js';
 import { createPose, Pose, rotate, relaxHands } from './pose.js';
 import { gaitSampler, DIRECTIONS } from './gait.js';
-import { solveLeg3D } from './ik.js';
+import { makeSmokeSamplers } from './smoke-clips.js';
 import { makeWeaponSamplers } from './weapon-clips.js';
 import { makeExtraSamplers } from './base-extra.js';
-
-/**
- * Two-bone arm IK (shoulder joint → elbow → wrist) to a world target with an elbow pole, returning
- * local quaternions for Arm, ForeArm and Hand (hand fingers aimed at `aim`). Assumes the spine is near
- * rest, which holds for the gestures that use it.
- */
-function armIK(L, side, target, pole, aim) {
-  const w = L.world;
-  const rig = {
-    hip: w[`${side}Arm`].clone(),
-    knee: w[`${side}ForeArm`].clone(),
-    ankle: w[`${side}Hand`].clone(),
-    thigh: w[`${side}Arm`].distanceTo(w[`${side}ForeArm`]),
-    shin: w[`${side}ForeArm`].distanceTo(w[`${side}Hand`]),
-  };
-  const sol = solveLeg3D(rig, rig.hip, target, new THREE.Quaternion(), pole.clone().normalize());
-  const handRest = L.measures.armDir.clone().setX(side === 'Left' ? L.measures.armDir.x : -L.measures.armDir.x);
-  const foreDir = handRest.clone().applyQuaternion(sol.shin);
-  const toAim = aim.clone().sub(sol.ankle).normalize();
-  const handAim = foreDir.clone().lerp(toAim, 0.45).normalize();
-  const handGlobal = new THREE.Quaternion().setFromUnitVectors(foreDir, handAim).multiply(sol.shin);
-  return {
-    [`${side}Arm`]: sol.thigh,
-    [`${side}ForeArm`]: sol.thigh.clone().invert().multiply(sol.shin),
-    [`${side}Hand`]: sol.shin.clone().invert().multiply(handGlobal),
-  };
-}
+import { makeActionSamplers } from './action-clips.js';
 
 import { FPS, TAU, SIDES, ease, window01, armDirs, base, plantLegs } from './clip-kit.js';
 
@@ -315,30 +289,6 @@ const SAMPLERS = {
       return p;
     },
   },
-  smoke: {
-    duration: 6,
-    loop: true,
-    events: [{ name: 'exhale', time: 2.35 }],
-    sample: (L, t) => {
-      const up = ease(window01(t, 0.15, 0.9)) * (1 - ease(window01(t, 1.85, 2.55)));
-      const p = base(L);
-      const k = L.measures.height / 1.78;
-      const mouth = new THREE.Vector3(0, L.measures.height - L.measures.headHeight * 0.8, 0.095 * k);
-      const target = mouth.clone().add(new THREE.Vector3(-0.05 * k, -0.14 * k, 0.085 * k));
-      const ik = armIK(L, 'Right', target, new THREE.Vector3(-0.7, -1, -0.15), mouth.clone().add(new THREE.Vector3(0.02 * k, 0, 0.03 * k)));
-      for (const [bone, q] of Object.entries(ik)) {
-        const rest = p.bones[bone] ?? new THREE.Quaternion();
-        p.bones[bone] = rest.clone().slerp(q, up);
-      }
-      const drag = Math.sin(Math.PI * window01(t, 0.9, 1.8));
-      Pose.headNod(p, -up * 3 + drag * 2);
-      Pose.spineFlex(p, 'Spine2', -drag * 2);
-      const exhale = Math.sin(Math.PI * window01(t, 2.3, 3.2));
-      Pose.headNod(p, -exhale * 7);
-      plantLegs(L, p, { hips: new THREE.Vector3(0.01, -0.006, 0) });
-      return p;
-    },
-  },
   point: {
     duration: 1.6,
     loop: false,
@@ -419,7 +369,10 @@ SAMPLERS.talk = {
 };
 
 Object.assign(SAMPLERS, makeExtraSamplers(SAMPLERS));
+Object.assign(SAMPLERS, makeSmokeSamplers(SAMPLERS));
+Object.assign(SAMPLERS, makeActionSamplers(SAMPLERS));
 
+/** Shared (unarmed) clip names. Live: registerSamplers() appends to it. */
 export const CLIP_NAMES = Object.keys(SAMPLERS);
 
 const WEAPON_SAMPLERS = makeWeaponSamplers(SAMPLERS);
@@ -428,6 +381,34 @@ Object.assign(SAMPLERS, WEAPON_SAMPLERS);
 /** Clips that need a weapon in hand, by weapon type (bake only the ones a character carries). */
 export const WEAPON_CLIP_NAMES = Object.keys(WEAPON_SAMPLERS);
 export const clipsForWeapon = (type) => WEAPON_CLIP_NAMES.filter((n) => SAMPLERS[n].weapon === type);
+
+/** The sampler registry (read-only use: duration / loop / events / sample). */
+export function getSampler(name) {
+  return SAMPLERS[name] ?? null;
+}
+
+/**
+ * Registers extra samplers ({ duration, loop, events?, meta?, weapon?, sample(L, t, duration) }) from
+ * another module (e.g. the NPC social clips) before baking. Names must be new unless
+ * `{ replace: true }`; a sampler with `weapon` joins that weapon's clip set, others join CLIP_NAMES (so
+ * bakeAllClips bakes them). `bases` passed to a factory are the live registry, so new clips can build
+ * on idle / walk / smoke etc.: registerSamplers((bases) => ({ npc_x: ... })).
+ * Returns the names registered.
+ */
+export function registerSamplers(map, { replace = false } = {}) {
+  const entries = Object.entries(typeof map === 'function' ? map(SAMPLERS) : map);
+  for (const [name, s] of entries) {
+    if (SAMPLERS[name] && !replace) throw new Error(`Clip ${name} is already registered`);
+    if (typeof s?.sample !== 'function' || !(s.duration > 0)) throw new Error(`Clip ${name} needs sample() and a duration`);
+  }
+  for (const [name, s] of entries) {
+    const known = !!SAMPLERS[name];
+    SAMPLERS[name] = s;
+    if (known) continue;
+    (s.weapon ? WEAPON_CLIP_NAMES : CLIP_NAMES).push(name);
+  }
+  return entries.map(([name]) => name);
+}
 
 export function samplePose(layout, name, time) {
   const s = SAMPLERS[name];

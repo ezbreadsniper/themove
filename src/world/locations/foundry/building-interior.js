@@ -60,7 +60,7 @@ function door(kit, d) {
   kit.at(H.x1, 0, U.z1, 0, () => {
     const x0 = d.x - H.x1;
     doorFrame(kit, { x0, x1: x0 + 0.92, y0: SLAB, y1: F + DOOR_H, z0: 0, z1: 0.2, mat: 'trimDark' });
-    swingDoor(kit, d.name, { hx: x0, hz: 0.1, y: F, width: 0.92, height: DOOR_H, mat: 'woodDark', locked: !!d.locked, style: 'panel', kick: true, peephole: true, hardware: 'brass' });
+    swingDoor(kit, d.name, { hx: x0, hz: 0.1, y: F, width: 0.92, height: DOOR_H, mat: 'woodDark', locked: !!d.locked, style: 'panel', kick: true, peephole: true, hardware: 'brass', swing: 'pos' });
     kit.panel('houseNumber', [x0 + 0.46, F + 2.32, 0.222], [0.3, 0.11], '+z');
   });
 }
@@ -101,7 +101,7 @@ function corridor(kit, rng) {
     { x: 14.0, flicker: { rate: 0.55, depth: 0.55, seed: 'corridor-14', dropout: 0.16, dim: 0.22, hum: 0.06 } },
     { x: 19.6, flicker: null },
   ];
-  for (const f of fl) kit.at(f.x, C.ceiling, CZ, 0, () => fluorescent(kit, `corridor-fl-${f.x}`, { zone: 'corridor', flicker: f.flicker, intensity: 2.3, range: 4.4 }));
+  for (const f of fl) kit.at(f.x, C.ceiling, CZ, 0, () => fluorescent(kit, `corridor-fl-${f.x}`, { zone: 'corridor', flicker: f.flicker, intensity: 2.0, range: 3.8 }));
   for (const d of DOORS) {
     const sx = d.x + 0.92 + 0.32;
     south(kit, () => {
@@ -167,7 +167,7 @@ function hall(kit, rng) {
   kit.at(H.x0, F, 6.3, Math.PI / 2, () => {
     slab(kit, 'woodDark', [-0.7, 0.42, 0.05], [0.7, 0.47, 0.42], { r: 0.008, collide: true });
     for (const x of [-0.62, 0.62]) slab(kit, 'steelBlack', [x - 0.02, 0, 0.08], [x + 0.02, 0.42, 0.39], { r: 0.004, occlude: false });
-    kit.interactable({ id: 'hall.bench.seat', kind: 'seat', pos: [0, 0.47, 0.24], yaw: 0, radius: 0.8, prompt: 'Sit', data: { seatHeight: 0.47, variant: 'chair', exit: [0, 0, 0.9] } });
+    kit.interactable({ id: 'hall.bench.seat', kind: 'seat', pos: [0, 0.47, 0.24], yaw: 0, radius: 1.2, prompt: 'Sit', data: { seatHeight: 0.47, variant: 'chair', exit: [0, 0, 0.9] } });
     kit.decal('posterFlea', [0.2, 1.55, 0.004], [0.36, 0.72], '+z');
     radiator(kit, -1.4, { w: 0.7, h: 0.55 });
   });
@@ -198,7 +198,7 @@ function emptyUnits(kit, rng) {
     kit.tube('wire', [[cx, B.deckUnderside, 5], [cx, 4.4, 5]], 0.006, { sides: 3 });
     kit.cylinder('plasticBlack', [cx, 4.38, 5], 0.02, 0.05, { sides: 6 });
     kit.glow(name, () => kit.sphere('bulbWarm', [cx, 4.33, 5], 0.05, { w: 6, h: 4 }));
-    kit.light({ name, pos: [cx, 4.25, 5], color: '#ffd9a0', intensity: 1.5, range: 7, zone: u.id, switchable: true, shadow: true, fill: 1.0, on: u.id !== '1C', layer: `unit-${u.id}` });
+    kit.light({ name, pos: [cx, 4.25, 5], color: '#ffdcae', intensity: 1.0, range: 7, zone: u.id, switchable: true, shadow: true, fill: 0.5, on: u.id !== '1C', layer: `unit-${u.id}` });
     const circuit = kit.lights.filter((l) => l.layerName === `unit-${u.id}`).map((l) => l.name);
     kit.at(u.door + 0.92 + 0.25, F, U.z1, Math.PI, () => lightSwitch(kit, `${u.id}.switch`, 0, circuit, { y: 1.2 }));
     kit.at(cx, F, B.z0 + B.wall, 0, () => radiator(kit, 0, { w: 1.1 }));
@@ -242,13 +242,16 @@ function loft(kit) {
   kit.box('steelBlack', [U.x0, M.top - 0.4, M.z0 - 0.07], [U.x1, M.top, M.z0], { seg: 0.8 });
   kit.box('steelBlack', [12.86, F, M.z0 - 0.07], [13.0, M.top - 0.4, M.z0 + 0.07], { seg: 9, collide: true, tag: 'column' });
   kit.box('steelBlack', [12.8, F, M.z0 - 0.13], [13.06, F + 0.012, M.z0 + 0.13], { seg: 9, occlude: false });
-  const plate = { x0: S.cx, x1: S.cx + 1.0, z0: 6.95 };
+  // Landing plate: covers the stair's whole open quadrant (x > cx, z > cz), so the top tread's exit
+  // edge (radial, z cz..cz+r) steps straight onto it with ~0.85 m clear; guards only on its open
+  // south and east edges, the mezzanine opens to the north across its full 1 m width.
+  const plate = { x0: S.cx, x1: S.cx + 1.0, z0: S.cz + 0.05 };
   kit.box('steelBlack', [plate.x0, M.top - 0.15, plate.z0], [plate.x1, M.top, M.z0], { seg: 9, collide: true, walk: true });
   spiralStair(kit, { cx: S.cx, cz: S.cz, y0: F, y1: M.top, r: S.r, pole: S.pole, treads: S.treads, sweep: S.sweep, start: 0, dir: -1 });
   guard(kit, [U.x0, M.z0 - 0.03], [S.cx, M.z0 - 0.03], M.top);
   guard(kit, [plate.x1, M.z0 - 0.03], [U.x1, M.z0 - 0.03], M.top);
   guard(kit, [plate.x1, plate.z0], [plate.x1, M.z0 - 0.03], M.top);
-  guard(kit, [plate.x0 + 0.05, plate.z0], [plate.x1, plate.z0], M.top);
+  guard(kit, [plate.x0 + 0.1, plate.z0], [plate.x1, plate.z0], M.top);
   kit.marker('stair-bottom', [S.cx + 0.6, F, S.cz + 0.25], { yaw: Math.PI });
   kit.marker('stair-top', [S.cx + 0.55, M.top, 7.2], { yaw: 0 });
   kit.marker('mezzanine', [12.9, M.top, 9.6], { yaw: Math.PI });
@@ -258,7 +261,7 @@ function loft(kit) {
   partition(kit, 'x', bz - 0.1, U.bath.x0, U.x1, [{ mat: 'drywall', t: 0.05 }, { mat: 'tileWhite', t: 0.05 }], { y0: SLAB, y1: M.top - M.thick, seg: 0.6 });
   kit.at(U.bath.x0 + 0.05, 0, bz, -Math.PI / 2, () => {
     doorFrame(kit, { x0: 0.3, x1: 1.12, y0: SLAB, y1: F + 2.05, z0: 0, z1: 0.1, mat: 'paintWhiteGloss' });
-    swingDoor(kit, 'door-bath', { hx: 0.3, hz: 0.05, y: F, width: 0.82, height: 1.95, mat: 'paintWhiteGloss', style: 'panel' });
+    swingDoor(kit, 'door-bath', { hx: 0.3, hz: 0.05, y: F, width: 0.82, height: 1.95, mat: 'paintWhiteGloss', style: 'panel', swing: 'pos' });
   });
   kit.box('tileWhite', [U.bath.x0 + 0.05, F, bz], [U.x1, F + 0.005, U.z1], { seg: 9, occlude: false, uv: 'world' });
 

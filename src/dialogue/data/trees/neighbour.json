@@ -1,0 +1,59 @@
+{
+  "id": "neighbour",
+  "title": "Resident neighbour (placeholder)",
+  "start": "entry",
+  "speakers": {
+    "npc": { "color": "#8fd3ff" },
+    "player": { "name": "You", "color": "#ffd34a" }
+  },
+  "nodes": {
+    "entry": { "type": "condition", "branches": [
+      { "if": { "rankIs": "hostile" }, "next": "hostile_brush" },
+      { "if": { "var": "npc.met" }, "next": "again" }
+    ], "else": "first" },
+
+    "first": { "type": "line", "speaker": "npc", "text": "Oh, hi. You're the one who took 1B, right? With the big window?", "emotion": "curious", "shot": "two", "next": "met" },
+    "met": { "type": "action", "effects": [{ "set": { "npc.met": true } }, { "deed": "chatted" }], "next": "first_choice" },
+    "first_choice": { "type": "choice", "options": [
+      { "text": "That's me. Just moved in. Nice to meet you.", "tone": "friendly", "effects": [{ "disposition": 6 }], "next": "warm" },
+      { "text": "Who's asking?", "tone": "neutral", "next": "cautious" },
+      { "text": "None of your business.", "tone": "rude", "effects": [{ "deed": "insulted" }], "next": "rude" },
+      { "text": "You seem to know everyone here. Anything I should know?", "tone": "curious", "check": { "skill": "persuade", "dc": 10, "fail": "gossip_fail" }, "next": "gossip_tip" }
+    ] },
+
+    "warm": { "type": "line", "speaker": "npc", "text": "Dana. 1C, right next door. Walls are thin, so... no drum kits, okay?", "emotion": "happy", "anim": "npc_talk_gesture_2", "next": "hub" },
+    "cautious": { "type": "line", "speaker": "npc", "text": "Your neighbour, that's who. Dana, 1C. Relax.", "emotion": "neutral", "anim": "npc_shrug", "next": "hub" },
+    "rude": { "type": "line", "speaker": "npc", "text": "Wow. Okay. Welcome to the building, I guess.", "emotion": "annoyed", "shot": "close", "next": "end_cold" },
+    "gossip_tip": { "type": "line", "speaker": "npc", "text": "Since you asked nicely: stay off the corner after dark. Vince and his crew think they own the block.", "emotion": "worried", "anim": "npc_talk_gesture_4", "effects": [{ "set": { "global.tip_crew": true } }], "next": "hub" },
+    "gossip_fail": { "type": "line", "speaker": "npc", "text": "Ha. Nice try. Buy me a coffee first.", "emotion": "amused", "next": "hub" },
+
+    "again": { "type": "condition", "branches": [
+      { "if": { "rank": "friendly" }, "next": "again_warm" },
+      { "if": { "rankBelow": "neutral" }, "next": "again_cold" }
+    ], "else": "again_neutral" },
+    "again_warm": { "type": "line", "speaker": "npc", "text": "Hey you! How's the loft treating you?", "emotion": "happy", "anim": "npc_greet_wave", "next": "hub" },
+    "again_neutral": { "type": "line", "speaker": "npc", "text": "Hey again.", "emotion": "neutral", "next": "hub" },
+    "again_cold": { "type": "line", "speaker": "npc", "text": "Oh. It's you. What do you want?", "emotion": "annoyed", "shot": "close", "next": "hub" },
+
+    "hub": { "type": "choice", "prompt": "Dana", "options": [
+      { "text": "What's this building like?", "tone": "curious", "once": true, "next": "building" },
+      { "text": "About that crew on the corner...", "tone": "curious", "if": { "var": "global.tip_crew" }, "once": true, "next": "crew" },
+      { "text": "Nice jacket, by the way.", "tone": "flirty", "once": true, "effects": [{ "deed": "complimented" }], "next": "compliment" },
+      { "text": "Could you water my plants while I'm away?", "tone": "friendly", "requires": { "if": { "rank": "friendly" }, "label": "Needs: Friendly" }, "once": true, "next": "favour" },
+      { "text": "Sorry about earlier.", "tone": "apologetic", "if": { "deed": "insulted" }, "once": true, "effects": [{ "deed": "apologised" }, { "disposition": 4 }], "next": "apology" },
+      { "text": "See you around.", "tone": "neutral", "next": "bye" }
+    ] },
+
+    "building": { "type": "line", "speaker": "npc", "text": "Old foundry. The boiler screams at 6 a.m. and the super never picks up. But the light in those lofts...", "emotion": "neutral", "anim": "npc_talk_gesture_1", "next": "building2" },
+    "building2": { "type": "line", "speaker": "player", "text": "Yeah, the windows sold me.", "emotion": "neutral", "next": "hub" },
+    "crew": { "type": "line", "speaker": "npc", "text": "Don't make eye contact, don't give them a reason. Rook's all talk. Vince isn't.", "emotion": "worried", "shot": "close", "anim": "npc_talk_gesture_3", "next": "hub" },
+    "compliment": { "type": "line", "speaker": "npc", "text": "Ha! Thrift store. Two bucks. Don't tell anyone.", "emotion": "happy", "anim": "npc_shrug", "effects": [{ "disposition": 3 }], "next": "hub" },
+    "favour": { "type": "line", "speaker": "npc", "text": "Sure. Leave the key under the mat. I'll talk to them too, plants like that.", "emotion": "happy", "effects": [{ "set": { "global.plants_watched": true } }, { "deed": "helped" }], "next": "hub" },
+    "apology": { "type": "line", "speaker": "npc", "text": "...Fine. Fresh start.", "emotion": "neutral", "next": "hub" },
+    "bye": { "type": "line", "speaker": "npc", "text": "Take care, neighbour.", "emotion": "happy", "anim": "npc_greet_nod", "next": "end" },
+
+    "hostile_brush": { "type": "line", "speaker": "npc", "text": "Stay away from me. I mean it.", "emotion": "afraid", "shot": "close", "next": "end_cold" },
+    "end": { "type": "end", "outcome": "friendly" },
+    "end_cold": { "type": "end", "outcome": "cold" }
+  }
+}

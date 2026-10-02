@@ -9,7 +9,7 @@ import * as THREE from 'three';
  * scale) between them without re-baking.
  */
 export const DUSK = Object.freeze({
-  sky: { zenith: '#1a2346', horizon: '#c0704e', horizonAway: '#4c4d6e', ground: '#2c2824', intensity: 0.85 },
+  sky: { zenith: '#1a2346', horizon: '#b0684e', horizonAway: '#4c4d6e', ground: '#2c2824', intensity: 0.55 },
   sunDir: new THREE.Vector3(0.42, 0.07, -0.88).normalize().toArray(),
   sunColor: '#ff8a52',
   sunIntensity: 1.35,

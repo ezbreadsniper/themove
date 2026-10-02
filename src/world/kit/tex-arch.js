@@ -100,11 +100,11 @@ export const ARCH_TEXTURES = {
   },
   /** Smooth painted plaster (loft walls): warm off-white with faint roller marks. */
   plasterWhite: {
-    size: [64, 64], tile: [2.4, 2.4],
+    size: [128, 128], tile: [2.4, 2.4], grain: 0.018, blocks: 0.012,
     paint(r, rng) {
-      r.fill('#e2ded3');
-      blotches(r, rng, 12, 8, 22, 0.97, 1.02);
-      for (let i = 0; i < 10; i++) r.rect(rng.next() * 64, 0, 4, 64, '#dad5c9', 0.25);
+      r.fill('#e6e3db');
+      blotches(r, rng, 16, 10, 34, 0.975, 1.015);
+      for (let i = 0; i < 14; i++) r.rect(rng.next() * 128, 0, 6, 128, '#dedad0', 0.2);
     },
   },
   drywall: {

@@ -50,9 +50,10 @@ export function steelWindow(kit, { x0, x1, y0, y1, z, colsPerSide = 3, rowsBelow
  * Hinged door, dynamic. The hinge sits at (hx, hz); the closed leaf runs along +X (dir = 1) or -X
  * (dir = -1) from it. data: { locked, auto } — auto doors open toward the side away from the player.
  */
-export function swingDoor(kit, name, { hx, hz, y = 0, width = 0.92, height = 2.13, thickness = 0.045, dir = 1, mat = 'paintBlack', locked = false, glassPanel = false, label = name, style = 'flat', kick = false, peephole = false, hardware = 'chrome', interact = true }) {
+export function swingDoor(kit, name, { hx, hz, y = 0, width = 0.92, height = 2.13, thickness = 0.045, dir = 1, mat = 'paintBlack', locked = false, glassPanel = false, label = name, style = 'flat', kick = false, peephole = false, hardware = 'chrome', interact = true, swing = 'both' }) {
   const yaw = dir === 1 ? 0 : Math.PI;
-  kit.beginDynamic(name, [hx, y, hz], yaw, { door: true, locked, width, height, label });
+  // swing: 'pos' opens toward the frame's -Z side, 'neg' toward +Z, 'both' either way (doors.js).
+  kit.beginDynamic(name, [hx, y, hz], yaw, { door: true, locked, width, height, label, swing });
   const t2 = thickness / 2;
   slab(kit, mat, [0.005, 0.008, -t2], [width - 0.005, height - 0.003, t2], { r: 0.004, occlude: false });
   if (style === 'panel') {

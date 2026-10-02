@@ -138,7 +138,7 @@ export const MATERIALS = {
   doorSpill: { tex: 'beamGrad', color: '#ffb866', kind: 'beam', opacity: 0.85 },
   beamWarm: { tex: 'beamGrad', color: '#ffc989', kind: 'beam', opacity: 0.16 },
   beamCool: { tex: 'beamGrad', color: '#bcd2ec', kind: 'beam', opacity: 0.14 },
-  beamSodium: { tex: 'beamGrad', color: '#ff9a40', kind: 'beam', opacity: 0.12 },
+  beamSodium: { tex: 'beamGrad', color: '#ff9a40', kind: 'beam', opacity: 0.05 },
   worldIsYours: { tex: 'worldIsYours', kind: 'emissive', alphaTest: 0.5 },
   signExit: { tex: 'signExit', kind: 'emissive' },
   fakeInterior: { tex: 'fakeInterior', kind: 'emissive', dim: 0.55 },
@@ -160,8 +160,8 @@ function paintTexture(name) {
   const cutout = spec.alpha || spec.decal;
   if (cutout) unpremultiply(r);
   else {
-    r.grain(rng, 0.05);
-    r.blocks(rng, 4, 0.035);
+    r.grain(rng, spec.grain ?? 0.05);
+    r.blocks(rng, 4, spec.blocks ?? 0.035);
   }
   r.posterize(32);
   if (!cutout) for (let i = 3; i < r.data.length; i += 4) r.data[i] = 255;
@@ -257,9 +257,12 @@ function prelit(material, U) {
 function layered(material, U, key) {
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, { uLayerScale: U.uLayerScale, uEmitFloor: U.uEmitFloor });
+    // beams (fake light shafts) also fade with view distance: additive cards must not glow through fog
+    const fade = key === 'beam' ? '\nvEmit *= clamp( 1.0 - ( -mvPosition.z - 3.0 ) / 13.0, 0.0, 1.0 ) * clamp( ( -mvPosition.z - 0.4 ) / 1.6, 0.0, 1.0 );' : '';
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\nattribute float emit;\nuniform float uLayerScale[ ${MAX_LAYERS} ];\nvarying float vEmit;`)
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEmit = emit < 0.0 ? 1.0 : uLayerScale[ int( emit + 0.5 ) ];');
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEmit = emit < 0.0 ? 1.0 : uLayerScale[ int( emit + 0.5 ) ];')
+      .replace('#include <project_vertex>', `#include <project_vertex>${fade}`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying float vEmit;\nuniform float uEmitFloor;')
       .replace('#include <color_fragment>', `#include <color_fragment>\n${key === 'beam' ? 'diffuseColor.rgb *= vEmit;' : 'diffuseColor.rgb *= max( vEmit, uEmitFloor );'}`);
@@ -313,7 +316,8 @@ export class MaterialLibrary {
     const U = this.uniforms;
     let m;
     if (def.kind === 'emissive') {
-      m = layered(new THREE.MeshBasicMaterial({ map, color: color.multiplyScalar(def.dim ?? 1), alphaTest: def.alphaTest ?? 0, side: THREE.DoubleSide }), U, 'emissive');
+      // single-sided: a sign or screen seen from behind would read mirrored (e.g. "TIXE")
+      m = layered(new THREE.MeshBasicMaterial({ map, color: color.multiplyScalar(def.dim ?? 1), alphaTest: def.alphaTest ?? 0, side: def.doubleSide ? THREE.DoubleSide : THREE.FrontSide }), U, 'emissive');
     } else if (def.kind === 'beam') {
       m = layered(new THREE.MeshBasicMaterial({ map, color, transparent: true, opacity: def.opacity ?? 1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }), U, 'beam');
     } else if (def.kind === 'glass') {

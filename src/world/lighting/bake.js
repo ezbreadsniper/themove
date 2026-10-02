@@ -17,6 +17,7 @@ import * as THREE from 'three';
  */
 export const MAX_LAYERS = 32;
 const LAYER_SLOTS = 4;
+const CACHE_Q = 0.03;
 const GRID = 2;
 
 function hemisphereDirs(count) {
@@ -115,7 +116,7 @@ export class LightBaker {
    * lights = kit lights ({ layer: index | -1, zone, fill, ... }); layers = kit layers ({ index, color }).
    * fill = bounce strength (fraction of a light's power spread over its zone).
    */
-  constructor({ occluders, lights, sky, zones = [], rays = 20, maxDist = 30, bounce = 0.16, layers = [], fill = 0.05 }) {
+  constructor({ occluders, lights, sky, zones = [], rays = 20, maxDist = 30, bounce = 0.16, layers = [], fill = 0.025 }) {
     this.grid = new OccluderGrid(occluders);
     this.lights = lights.filter((l) => !l.bakeSkip).map((l) => ({ ...l, rgb: toRgb(l.color), layer: l.layer ?? -1 }));
     this.sky = { ...sky, zenithRgb: toRgb(sky.zenith), horizonRgb: toRgb(sky.horizon), awayRgb: toRgb(sky.horizonAway), groundRgb: toRgb(sky.ground) };
@@ -129,6 +130,8 @@ export class LightBaker {
     this.layerLum = this.layerRgb.map((c) => lum(c) || 1);
     if (layers.length > MAX_LAYERS) throw new Error(`too many light layers (${layers.length} > ${MAX_LAYERS})`);
     this.scratch = new Float32Array(MAX_LAYERS);
+    this.cache = new Map();
+    this.cacheHits = 0;
   }
 
   skyRadiance(d) {
@@ -240,12 +243,33 @@ export class LightBaker {
     return out;
   }
 
-  /** Splits one vertex into its channels; writes into the provided arrays at index i. */
+  /**
+   * Splits one vertex into its channels; writes into the provided attributes at index i. Results
+   * are cached by quantised position (CACHE_Q m) and normal, so co-located vertices (chamfer
+   * rings, stacked decals, the duplicated corners of flat-shaded furniture) share one sample.
+   */
   bakeVertex(p, n, skyOnly, out, i) {
+    const key = `${Math.round(p[0] / CACHE_Q)},${Math.round(p[1] / CACHE_Q)},${Math.round(p[2] / CACHE_Q)},${Math.round(n[0] * 6)},${Math.round(n[1] * 6)},${Math.round(n[2] * 6)},${skyOnly ? 1 : 0}`;
+    let r = this.cache.get(key);
+    if (!r) {
+      r = this.sampleChannels(p, n, skyOnly);
+      this.cache.set(key, r);
+    } else this.cacheHits++;
+    out.bake.setXYZ(i, r[0], r[1], r[2]);
+    out.bakeStatic.setXYZ(i, r[3], r[4], r[5]);
+    out.bakeLayer.setXYZW(i, r[6], r[7], r[8], r[9]);
+    out.bakeLayerW.setXYZW(i, r[10], r[11], r[12], r[13]);
+  }
+
+  /** [sky rgb, static rgb, 4 layer ids, 4 layer weights] for one vertex. */
+  sampleChannels(p, n, skyOnly) {
+    const res = new Float32Array(14);
     const o = [p[0] + n[0] * 0.03, p[1] + n[1] * 0.03, p[2] + n[2] * 0.03];
     const zone = this.zoneAt(o);
     const { rgb, ao } = this.skyAt(o, n, zone);
-    out.bake.setXYZ(i, Math.min(3, rgb[0]), Math.min(3, rgb[1]), Math.min(3, rgb[2]));
+    res[0] = Math.min(3, rgb[0]);
+    res[1] = Math.min(3, rgb[1]);
+    res[2] = Math.min(3, rgb[2]);
     const st = [0, 0, 0];
     const w = this.scratch;
     const touched = [];
@@ -263,15 +287,18 @@ export class LightBaker {
         }
       }
     }
-    out.bakeStatic.setXYZ(i, Math.min(3, st[0]), Math.min(3, st[1]), Math.min(3, st[2]));
+    res[3] = Math.min(3, st[0]);
+    res[4] = Math.min(3, st[1]);
+    res[5] = Math.min(3, st[2]);
     touched.sort((a, b) => w[b] - w[a]);
     for (let s = 0; s < LAYER_SLOTS; s++) {
       const id = touched[s];
       const v = id === undefined ? 0 : Math.min(4, w[id]);
-      out.bakeLayer.setComponent(i, s, id === undefined || v < 0.002 ? -1 : id);
-      out.bakeLayerW.setComponent(i, s, id === undefined || v < 0.002 ? 0 : v);
+      res[6 + s] = id === undefined || v < 0.002 ? -1 : id;
+      res[10 + s] = id === undefined || v < 0.002 ? 0 : v;
     }
     for (const id of touched) w[id] = 0;
+    return res;
   }
 
   /** Fills the light attributes of every prelit mesh in `meshes` ([THREE.Mesh]). */
@@ -297,6 +324,8 @@ export class LightBaker {
       for (const a of Object.values(out)) a.needsUpdate = true;
       vertices += pos.count;
     }
+    this.cacheSize = this.cache.size;
+    this.cache = new Map();
     return vertices;
   }
 }

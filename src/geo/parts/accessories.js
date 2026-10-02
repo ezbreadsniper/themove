@@ -2,6 +2,7 @@ import { JOINT_INDEX as J } from '../../rig/skeleton.js';
 import { MeshBuilder, V, ringRadius, frameFor } from '../mesh-builder.js';
 import { HEAD_LANDMARKS as L, featureOffset } from './head.js';
 import { torsoRings, torsoWeights } from './body.js';
+import { CIGARETTE, cigarettePoints } from '../../anim/cigarette.js';
 
 const HEAD = [[J.Head, 1]];
 const smooth = (a, b, x) => {
@@ -365,24 +366,23 @@ export function buildWristwear(layout, { side = 'Left', kind = 'watch' } = {}) {
 }
 
 /**
- * Cigarette held between the right index and middle fingers, skinned to the hand. Returns the mesh
- * plus the lit tip offset in RightHand bone space (bones rest at identity, so it is a world delta).
+ * Cigarette held in the V grip between the right index and middle fingers (src/anim/cigarette.js has
+ * the placement shared with the smoking clips), skinned to the finger block so it follows the curl.
+ * Returns the mesh plus the lit tip offset in RightHandFingers1 bone space (bones rest at identity,
+ * so it is a world delta from the knuckle). UV v runs filter (0..0.3) → paper → ash / ember (≥0.94).
  */
 export function buildCigarette(layout) {
   const mb = new MeshBuilder('cigarette');
-  const m = layout.measures;
-  const k = m.height / 1.78;
-  const dir = m.armDir.clone().setX(-m.armDir.x);
-  const f = frameFor(dir, V(0, 0, 1));
-  const wrist = layout.world.RightHand;
-  const grip = wrist.clone().addScaledVector(dir, m.handLength * 0.72).addScaledVector(f.z, 0.012 * k);
-  const along = f.z.clone();
-  const len = 0.07 * k;
-  const w = [[J.RightHand, 1]];
-  const rings = [0, 0.3, 0.31, 1].map((t, i) => ({ c: grip.clone().addScaledVector(along, (t - 0.25) * len), x: f.x, z: dir, r: 0.0035 * k, v: [0, 0.3, 0.3, 1][i], w }));
-  mb.loft(rings, { sides: 5, uv: [0, 0, 1, 1], capStart: 0.0005, capEnd: 0.0005 });
-  const tip = grip.clone().addScaledVector(along, 0.75 * len).sub(wrist);
-  return { mb, tip };
+  const c = cigarettePoints(layout);
+  const f = frameFor(c.axis, c.frame.fingers);
+  const w = [[J[CIGARETTE.bone], 1]];
+  const r = CIGARETTE.radius * c.k;
+  const len = c.filter.distanceTo(c.tip);
+  const at = (t) => c.filter.clone().addScaledVector(c.axis, t * len);
+  const rings = [[0, 0, 1], [0.3, 0.29, 1], [0.31, 0.32, 1], [0.93, 0.9, 0.97], [1, 0.97, 0.9]]
+    .map(([t, v, s]) => ({ c: at(t), x: f.x, z: f.z, r: r * s, v, w }));
+  mb.loft(rings, { sides: 6, uv: [0, 0, 1, 1], capStart: 0.0005, capEnd: 0.0005 });
+  return { mb, tip: c.local.tip.clone(), filter: c.local.filter.clone(), bone: CIGARETTE.bone };
 }
 
 /** Stacked chains resting on the collar/chest. chains: [{ drop, thickness, pendant }] */
