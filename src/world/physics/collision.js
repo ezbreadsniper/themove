@@ -121,10 +121,19 @@ export class CollisionWorld {
     return item;
   }
 
+  /** Removes a solid added with addSolid (dynamic props, despawned objects). */
+  removeSolid(item) {
+    this.solidHash.remove(item);
+    const at = this.solids.indexOf(item);
+    if (at >= 0) this.solids.splice(at, 1);
+  }
+
   /** Replaces a solid's polygon (moving doors). */
-  updateSolid(item, poly) {
+  updateSolid(item, poly, y0 = item.y0, y1 = item.y1) {
     this.solidHash.remove(item);
     item.poly = poly;
+    item.y0 = y0;
+    item.y1 = y1;
     item.aabb = bounds(poly);
     this.solidHash.insert(item);
   }
@@ -148,6 +157,12 @@ export class CollisionWorld {
     return best;
   }
 
+  /** Slope of a walkable surface in radians (0 for flat floors and stair helices). */
+  slopeOf(surface) {
+    if (!surface?.plane) return 0;
+    return Math.atan(Math.hypot(surface.plane.gx, surface.plane.gz));
+  }
+
   /** All surface heights under (x, z) (multi-level navigation). */
   surfacesAt(x, z) {
     const out = [];
@@ -160,10 +175,10 @@ export class CollisionWorld {
   }
 
   /** Deepest overlap of a capsule footprint with solids (0 when free). */
-  penetration(x, z, feetY, radius = this.player.radius, height = this.player.height, stepUp = this.player.stepUp) {
+  penetration(x, z, feetY, radius = this.player.radius, height = this.player.height, stepUp = this.player.stepUp, filter = null) {
     let worst = 0;
     for (const s of this.solidHash.query(x - radius, z - radius, x + radius, z + radius)) {
-      if (!this.blocking(s, feetY, height, stepUp)) continue;
+      if (!this.blocking(s, feetY, height, stepUp) || (filter && !filter(s))) continue;
       const c = closestOnPoly(x, z, s.poly);
       const depth = pointInPoly(x, z, s.poly) ? radius + c.d : radius - c.d;
       if (depth > worst) worst = depth;
@@ -171,13 +186,17 @@ export class CollisionWorld {
     return worst;
   }
 
-  /** Pushes pos ({x, y, z}, y = feet) out of blocking solids. Returns the solids touched. */
-  resolve(pos, radius = this.player.radius, height = this.player.height, stepUp = this.player.stepUp) {
+  /**
+   * Pushes pos ({x, y, z}, y = feet) out of blocking solids. Returns the solids touched.
+   * filter(solid) → false skips a solid (a prop ignoring its own collider). When `normals` is an
+   * array, each push-out direction is appended as [nx, nz] (collide-and-slide velocity clipping).
+   */
+  resolve(pos, radius = this.player.radius, height = this.player.height, stepUp = this.player.stepUp, filter = null, normals = null) {
     const touched = new Set();
     for (let iter = 0; iter < 4; iter++) {
       let moved = false;
       for (const s of this.solidHash.query(pos.x - radius, pos.z - radius, pos.x + radius, pos.z + radius)) {
-        if (!this.blocking(s, pos.y, height, stepUp)) continue;
+        if (!this.blocking(s, pos.y, height, stepUp) || (filter && !filter(s))) continue;
         const c = closestOnPoly(pos.x, pos.z, s.poly);
         const inside = pointInPoly(pos.x, pos.z, s.poly);
         if (!inside && c.d >= radius) continue;
@@ -195,6 +214,7 @@ export class CollisionWorld {
         }
         pos.x = c.x + nx * (radius + 1e-4);
         pos.z = c.z + nz * (radius + 1e-4);
+        normals?.push([nx, nz, s]);
         touched.add(s);
         moved = true;
       }
@@ -243,13 +263,22 @@ export class CollisionWorld {
   }
 
   /** Distance along the ray (origin, unit dir) to the first solid, or maxDist. */
-  raycast(o, d, maxDist) {
+  raycast(o, d, maxDist, filter = null) {
+    return this.raycastHit(o, d, maxDist, filter).dist;
+  }
+
+  /**
+   * First solid along the ray: { dist, solid } (solid null when nothing is hit within maxDist).
+   * Solids flagged noCamera are skipped; filter(solid) → false skips others.
+   */
+  raycastHit(o, d, maxDist, filter = null) {
     const ex = o[0] + d[0] * maxDist;
     const ez = o[2] + d[2] * maxDist;
     let best = maxDist;
+    let hit = null;
     for (const s of this.solidHash.query(Math.min(o[0], ex), Math.min(o[2], ez), Math.max(o[0], ex), Math.max(o[2], ez))) {
-      if (!s.enabled || s.noCamera) continue;
-      if (pointInPoly(o[0], o[2], s.poly) && o[1] >= s.y0 && o[1] <= s.y1) return 0;
+      if (!s.enabled || s.noCamera || (filter && !filter(s))) continue;
+      if (pointInPoly(o[0], o[2], s.poly) && o[1] >= s.y0 && o[1] <= s.y1) return { dist: 0, solid: s };
       for (let i = 0; i < s.poly.length; i++) {
         const [ax, az] = s.poly[i];
         const [bx, bz] = s.poly[(i + 1) % s.poly.length];
@@ -257,17 +286,36 @@ export class CollisionWorld {
         if (t === null) continue;
         const dist = t * maxDist;
         const y = o[1] + d[1] * dist;
-        if (y >= s.y0 && y <= s.y1 && dist < best) best = dist;
+        if (y >= s.y0 && y <= s.y1 && dist < best) {
+          best = dist;
+          hit = s;
+        }
       }
       if (Math.abs(d[1]) > 1e-6) {
         for (const yPlane of [s.y0, s.y1]) {
           const dist = (yPlane - o[1]) / d[1];
           if (dist <= 0 || dist >= best) continue;
-          if (pointInPoly(o[0] + d[0] * dist, o[2] + d[2] * dist, s.poly)) best = dist;
+          if (pointInPoly(o[0] + d[0] * dist, o[2] + d[2] * dist, s.poly)) {
+            best = dist;
+            hit = s;
+          }
         }
       }
     }
-    return best;
+    return { dist: best, solid: hit };
+  }
+
+  /**
+   * Is there a solid directly over a capsule footprint whose underside lies in (yFrom, yTo]?
+   * (head bumps while jumping or standing up from a crouch)
+   */
+  ceiling(x, z, yFrom, yTo, radius = this.player.radius, filter = null) {
+    for (const s of this.solidHash.query(x - radius, z - radius, x + radius, z + radius)) {
+      if (!s.enabled || (filter && !filter(s))) continue;
+      if (s.y0 < yFrom - 1e-4 || s.y0 > yTo) continue;
+      if (pointInPoly(x, z, s.poly) || closestOnPoly(x, z, s.poly).d < radius * 0.7) return s;
+    }
+    return null;
   }
 }
 
