@@ -80,7 +80,7 @@ export function topBodyRings(layout, { fit, hemY, collarGap = 0.012, neckScale =
   const hemBase = sampleTorso(layout, hemY);
   rows.push({ y: hemY, ...hang(hemBase, 0.003 + fit * 0.022), hem: true });
   rows.push({ y: hemY + 0.018, ...hang(hemBase, 0.002 + fit * 0.016) });
-  for (const key of ['hips', 'pelvisTop', 'waist', 'ribs', 'underBust', 'chest']) {
+  for (const key of ['hips', 'pelvisTop', 'waist', 'ribs', 'underBust', 'chest', 'bustHigh']) {
     if (byKey[key].y > hemY + 0.04) rows.push({ key, y: byKey[key].y, ...hang(byKey[key]) });
   }
   const uc = byKey.upperChest;

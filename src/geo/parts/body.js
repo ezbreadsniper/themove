@@ -81,13 +81,14 @@ export function torsoRings(layout, { skin = false } = {}) {
     { key: 'underBust', y: bust.foldY, t: 0.55 },
     { key: 'bustLow', y: bust.foldY + (bust.nippleY - bust.foldY) * 0.55, t: 0.8 },
     { key: 'chest', y: bust.nippleY, t: 1 },
+    { key: 'bustHigh', y: bust.nippleY + (m.shoulderY - 0.055 * k - bust.nippleY) * 0.45, t: 0.965 },
     { key: 'upperChest', y: m.shoulderY - 0.055 * k, rx: m.chestHalfWidth * 1.03, rzF: m.chestDepth * 0.92, rzB: 0.12 * k * (1 - fem * 0.08), cz: -0.016, n: 2.35 },
     { key: 'shoulderTop', y: m.shoulderY + 0.045 * k, rx: m.shoulderHalf * 1.0, rzF: 0.078 * k, rzB: 0.088 * k, cz: -0.02, n: 2.4 },
     { key: 'trapezius', y: m.neckY - 0.008 * k, rx: m.neckRadius * 2.1, rzF: m.neckRadius * 1.1, rzB: m.neckRadius * 1.35, cz: -0.02, n: 2.1 },
     { key: 'neck', y: m.neckY + 0.03 * k, rx: m.neckRadius, rzF: m.neckRadius * 1.02, rzB: m.neckRadius, cz: -0.014, n: 2 },
     { key: 'neckTop', y: m.headY + 0.02 * k, rx: m.neckRadius * 0.95, rzF: m.neckRadius * 0.95, rzB: m.neckRadius * 0.95, cz: -0.012, n: 2 },
   ].filter((r) => !skin || r.key !== 'crotch')
-    .map((r) => (skin && r.key === 'seat' ? { ...r, rx: m.hipHalfWidth * 0.985, rzF: r.rzF * 1.12, n: 2.3 } : skin && r.key === 'hips' ? { ...r, rx: r.rx * 0.975 } : r))
+    .map((r) => (skin && r.key === 'seat' ? { ...r, rx: m.hipHalfWidth * 0.985, rzF: r.rzF * 1.12, n: 2.3 } : skin && r.key === 'hips' ? { ...r, rx: r.rx * 0.975 } : skin && r.key === 'shoulderTop' ? { ...r, rx: r.rx * 0.93 } : r))
     .map((r) => (r.t === undefined ? r : {
     key: r.key,
     y: r.y,
@@ -134,7 +135,10 @@ export function bustForm(layout, ribsY) {
   const foldY = Math.max(ribsY + 0.015 * k, nippleY - lowerPole);
   const topY = m.shoulderY - 0.02 * k;
   const vertical = (y, cloth) => {
-    if (y >= nippleY) return Math.max(0, 1 - (y - nippleY) / (topY - nippleY)) ** 1.25;
+    if (y >= nippleY) {
+      const t = Math.min(1, (y - nippleY) / (topY - nippleY));
+      return 1 - t * t * (3 - 2 * t);
+    }
     const t = (nippleY - y) / (nippleY - foldY);
     const round = t >= 1 ? 0 : Math.sqrt(1 - t * t * 0.92) * (1 - t * 0.15);
     return cloth ? Math.max(round, Math.max(0, 1 - (nippleY - y) / (0.17 * k)) ** 1.5) : round;
@@ -195,7 +199,7 @@ function torsoShape(key, fem = 0) {
 }
 
 /** Torso rings from lowest to highest; clothing hides everything below `from`. */
-export const TORSO_KEYS = ['crotch', 'seat', 'hips', 'pelvisTop', 'waist', 'ribs', 'underBust', 'bustLow', 'chest', 'upperChest', 'shoulderTop', 'trapezius', 'neck', 'neckTop'];
+export const TORSO_KEYS = ['crotch', 'seat', 'hips', 'pelvisTop', 'waist', 'ribs', 'underBust', 'bustLow', 'chest', 'bustHigh', 'upperChest', 'shoulderTop', 'trapezius', 'neck', 'neckTop'];
 
 function interpRing(a, b, y) {
   const t = (y - a.y) / (b.y - a.y);
@@ -228,6 +232,7 @@ function buildTorso(mb, layout, { from = 'crotch', lowerFrom = 'crotch', gapFrom
       z: Z,
       v: (r.y - yMin) / (yMax - yMin),
       w: torsoWeights(layout, r.y),
+      offset: r.key === 'shoulderTop' ? shoulderSlope(layout, r) : undefined,
     };
   };
   const loft = (rows, capStart) => {
@@ -247,6 +252,13 @@ function buildTorso(mb, layout, { from = 'crotch', lowerFrom = 'crotch', gapFrom
   mb.newSmoothingGroup();
   loft(rows, from === 'crotch' ? undefined : 0.001);
   return bottom;
+}
+
+/** Trapezius slope: the shoulder ring drops toward the acromion instead of forming a flat shelf. */
+function shoulderSlope(layout, ring) {
+  const k = layout.measures.height / 1.78;
+  const drop = (0.03 - (layout.measures.muscle ?? 0.4) * 0.012) * k;
+  return (theta, p) => V(0, -drop * Math.min(1, Math.abs(p.x) / ring.rx) ** 2, 0);
 }
 
 function vertexAt(mb, i) {
@@ -371,7 +383,7 @@ export function armStations(layout, side) {
   const F = J[`${side}ForeArm`];
   const Hd = J[`${side}Hand`];
   return [
-    { s: -0.035, r: R * 0.75, w: [[Sh, 0.7], [A, 0.3]] },
+    { s: -0.035, r: R * 0.62, w: [[Sh, 0.7], [A, 0.3]] },
     { s: 0.0, r: R * 1.2, w: [[Sh, 0.35], [A, 0.65]] },
     { s: up * 0.18, r: R * 1.22, w: [[Sh, 0.08], [A, 0.92]] },
     { s: up * 0.36, r: R * 1.04, w: [[A, 1]] },
@@ -408,7 +420,7 @@ function buildArm(mb, layout, side, fromS) {
   const total = layout.measures.upperArm + layout.measures.foreArm + 0.035;
   const rect = SKIN_ATLAS[side === 'Left' ? 'armL' : 'armR'];
   const rings = stations.map((st) => ({
-    c: f.origin.clone().addScaledVector(f.d, st.s).addScaledVector(V(0, -1, 0), st.s < 0.02 ? 0.01 : 0),
+    c: f.origin.clone().addScaledVector(f.d, st.s).addScaledVector(V(0, -1, 0), st.s < 0 ? 0.022 : st.s < 0.02 ? 0.008 : 0),
     x: f.x,
     z: f.z,
     rx: st.r * 0.86,
@@ -417,7 +429,7 @@ function buildArm(mb, layout, side, fromS) {
     v: (st.s + 0.035) / total,
     w: st.w,
   }));
-  mb.loft(rings, { sides: 8, uv: rect, capStart: cut ? 0.004 : undefined });
+  mb.loft(rings, { sides: 10, uv: rect, capStart: cut ? 0.004 : undefined });
 }
 
 /** Mitten hand with a separate thumb, relaxed curl. Sizes are real hand measurements. */
