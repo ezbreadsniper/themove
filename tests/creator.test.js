@@ -3,6 +3,8 @@ import { createEditStore, EDITS_KEY } from '../src/app/edits.js';
 import { planControls, allLeafPaths } from '../src/app/schema-controls.js';
 import { normalizeDefinition, ACCESSORY_SCHEMAS } from '../src/character/definition.js';
 import { PRESETS, PRESETS_BY_ID } from '../src/character/presets/index.js';
+import { randomizeOutfit } from '../src/character/randomize.js';
+import { buildCharacter, disposeCharacter } from '../src/character/build.js';
 
 function memoryStorage() {
   const m = new Map();
@@ -87,7 +89,28 @@ describe('creator menu coverage', () => {
   test('optional slots and accessories always have an on/off toggle', () => {
     const plan = planControls(normalizeDefinition({ id: 'bare' }).value);
     const toggles = plan.filter((c) => c.kind === 'toggle').map((c) => c.path.join('.'));
-    expect(toggles).toEqual(expect.arrayContaining(['top', 'outer', 'bottom', 'dress', 'socks']));
+    expect(toggles).toEqual(expect.arrayContaining(['top', 'outer', 'bottom', 'legwear', 'dress', 'socks']));
     expect(plan.filter((c) => c.kind === 'accessory').map((c) => c.accessory)).toEqual(Object.keys(ACCESSORY_SCHEMAS));
+  });
+});
+
+describe('randomise outfit', () => {
+  test('keeps the person, changes the clothes, is deterministic, builds and persists', () => {
+    const base = normalizeDefinition(PRESETS[0]).value;
+    const seen = new Set();
+    for (const seed of ['a', 'b', 'c', 'd']) {
+      const def = randomizeOutfit(base, seed);
+      expect(def).toEqual(randomizeOutfit(base, seed));
+      expect(normalizeDefinition(def).errors).toEqual([]);
+      for (const key of ['id', 'name', 'body', 'skin', 'face', 'hair', 'tattoos']) expect(def[key]).toEqual(base[key]);
+      seen.add(JSON.stringify([def.top, def.bottom, def.shoes]));
+      const g = buildCharacter(def);
+      expect(g.userData.errors).toEqual([]);
+      disposeCharacter(g);
+      const storage = memoryStorage();
+      createEditStore(storage, PRESETS_BY_ID, { debounceMs: 0 }).save(def);
+      expect(createEditStore(storage, PRESETS_BY_ID).get(def.id)).toEqual(def);
+    }
+    expect(seen.size).toBe(4);
   });
 });
