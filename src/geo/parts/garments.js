@@ -725,16 +725,22 @@ export function buildBottom(layout, style, rng, { under = null, shoes = null, so
   };
   const seatRows = table.filter((r) => r.y < riseY - 0.045 && r.y > by.crotch.y + 0.02).map((r) => {
     const row = waistRow(r.y, infl * 0.5);
-    return r.y < by.hips.y - 0.005 ? { ...row, rzB: row.rzB * 0.86 } : row;
+    return { ...row, rzB: row.rzB * (r.y < by.hips.y - 0.005 ? 0.72 : 0.84) };
   });
   const crotchY = by.crotch.y + 0.012;
   const crotch = torsoAt(crotchY);
+  // Under the seat the fabric keeps spanning the cleft down toward the crotch seam instead of
+  // stepping straight in (which left a downward-facing shelf between the cheeks).
+  const lowestSeat = seatRows.reduce((lo, r) => (r.y < lo.y ? r : lo), seatRows[0] ?? waistRow(by.seat.y, infl * 0.5));
+  const underSeatY = (lowestSeat.y + crotchY) / 2;
+  const underSeat = { ...waistRow(underSeatY, infl * 0.5), rx: by.hips.rx * 0.62, rzB: lowestSeat.rzB * 0.9 };
   const waist = [
     waistRow(riseY - 0.02, 0.003, { lip: true }),
     waistRow(riseY, infl * 0.3),
     waistRow(riseY - 0.035, infl * 0.4),
     ...seatRows.sort((a, b) => b.y - a.y),
-    { y: crotchY, rx: by.hips.rx * 0.36, rzF: crotch.rzF - 0.03, rzB: crotch.rzB * 0.7, cz: crotch.cz, n: 2.2, shape: crotch.shape },
+    underSeat,
+    { y: crotchY, rx: by.hips.rx * 0.36, rzF: crotch.rzF - 0.03, rzB: Math.max(crotch.rzB * 0.7, lowestSeat.rzB * 0.6), cz: crotch.cz, n: 2.2, shape: crotch.shape },
   ].map((r, i, all) => ({
     c: V(0, r.y, r.cz),
     x: X,
