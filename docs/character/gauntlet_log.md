@@ -60,9 +60,34 @@ Evidence: `pass1-shorts-seat.png`.
 
 ---
 
+## Pass A4: joint-volume correctives (hips, knees)
+
+**Failed:**
+- Crouch and sit folded the groin flat and made the glutes angular. Linear blend skinning pulls half-weighted vertices toward the joint. At 100° hip flex, the blend zone sat at 92.6% of its rest distance.
+
+**Changed:**
+- `src/rig/body-correctives.js` bakes, per driver pose, the difference between LBS and a rigid rotation by each vertex's weighted share of the bend (DQS-style) as a bind-space morph target. Drivers: hip flex 45/95/130, hip extend 35, knee 70/130, both legs. They run through the existing `updateCorrectives` (Stage.update).
+- GLB extras now carry every mesh's corrective driver table. The export script no longer crashes on `presets/meta.json`.
+
+**Verified:** the blend zone holds 100.7% of rest at 100° (test). All 8 presets export and re-import. Evidence: `passA4-crouch-sit.png`.
+
+## Pass A3: leg landmarks
+
+**Failed:** the legs were plain tubes in silhouette: no knee, a weak calf, and no medial/lateral asymmetry.
+
+**Changed:** the leg stations carry anatomical bumps. These cover the vastus lateralis and adductors, the vastus medialis (inner knee), the patella and popliteal hollow, the tibial tuberosity, the gastrocnemius (medial head larger and lower), and the malleoli. Landmarks apply only to skin below any hem, because garment colliders use the plain stations.
+
+**Regression caught and fixed:** the knee corrective pushed skin 11% through knee-length shorts (jump/sit). Body correctives now fade out 2 cm below a trouser hem and are off under skirts. A new test gates shorts poke at 0 on the base, woman and heavy bodies.
+
+**Skirt baseline note:** on this machine the agent's last commit (779504a) already shows 4–7% skin poke for A-line, flared, pleated and long pencil skirts in `sit` (and 2–4% in some crouches). That's not the 0% in `clothing_gauntlet_status.md`. My passes leave the matrix exactly at that baseline. This goes into the queue below.
+
+Evidence: `passA3-legs.png`.
+
+---
+
 ## Queue (in order)
-1. **A4 hip-flexion correctives for the bare body:** crouch and sit fold the thigh top hard and flatten the glutes. Reuse `src/garment/correctives.js` drivers (hip stride/sit) on the body mesh.
-2. **A3 legs:** the silhouette shows almost no knee or calf shape, and the thighs are puffy in the side view.
+1. **Skirt sit poke** (pre-existing, 4–7% on this machine): add the skirt matrix to `tests/fit.test.js` as the status doc planned, then fix it.
+2. **Elbow/shoulder correctives**, plus a real armpit stitch (the arm is still a tube sunk into the torso).
 3. **Arms vs torso:** the arms merge into the torso in the front silhouette. Also missing: an armpit stitch like the pelvis zip, and an elbow loop.
 4. Open items from `clothing_gauntlet_status.md`: tee hem over skirts in motion, skirt gates in tests, upper-body garment audit.
 5. **Female body variety:** a bust/butt/waist matrix across build 0..1, with silhouette sheets per variant.
