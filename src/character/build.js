@@ -141,7 +141,7 @@ function overHem(ctx) {
 /** What an untucked top / jacket must clear at the waist: the trouser fit, or a skirt's real surface. */
 function bottomUnder(ctx) {
   const { def, layout } = ctx;
-  if (!def.bottom) return null;
+  if (!def.bottom) return def.legwear ? { surface: leggingsSurface(layout), gap: LAYER_GAP } : null;
   if (def.bottom.type === 'skirt') {
     ctx.skirtSurface ??= buildSkirtFor(layout, def.bottom).surface;
     return { surface: ctx.skirtSurface, gap: LAYER_GAP };
@@ -210,6 +210,18 @@ const RECIPES = {
     // never poke through its own offset); other bottoms hide the skin they cover.
     if (leggings) return { parts, cover: { legHemY: res.hemY, legCorrectives: true, riseY: res.riseY, hideSkin: [res.hemY + SKIN_HIDE_INSET, res.riseY - SKIN_HIDE_INSET] } };
     return { parts, cover: { legsBelowY, legHemY: res.hemY, legCorrectives: !skirt, torsoFrom: 'pelvisTop', lowerFrom: 'pelvisTop', riseY: res.riseY } };
+  },
+  /** Leggings / tights layered under the bottom: the second-skin leggings mesh in its own slot. */
+  legwear(ctx) {
+    const { def, layout, rng } = ctx;
+    if (!def.legwear) return { parts: [] };
+    const style = { ...def.legwear, rise: def.bottom?.type === 'leggings' ? def.bottom.rise : undefined };
+    const res = buildLeggings(layout, { ...leggingsSpan(layout, style), sockTop: def.socks ? def.socks.height * (layout.measures.height / 1.78) : null });
+    const raster = paintLeggings(def.legwear, rng.fork('legwearTex'));
+    return {
+      parts: [{ name: 'legwear', mb: res.mb, raster, opts: { doubleSide: true, fabric: def.legwear.kind } }],
+      cover: { legHemY: res.hemY, legCorrectives: true, riseY: res.riseY, hideSkin: [res.hemY + SKIN_HIDE_INSET, res.riseY - SKIN_HIDE_INSET] },
+    };
   },
   socks(ctx) {
     const { def, layout, rng } = ctx;
@@ -314,10 +326,12 @@ function buildRecipeParts(ctx) {
     if (res.cover && 'feet' in res.cover) cover.feet = res.cover.feet;
     if (res.cover?.footLift) cover.footLift = res.cover.footLift;
     if (res.cover?.neckHidden) cover.neckHidden = true;
-    if (res.cover?.riseY != null) cover.riseY = res.cover.riseY;
-    if (res.cover?.hideSkin) cover.hideSkin = res.cover.hideSkin;
-    if (res.cover?.legHemY != null) cover.legHemY = res.cover.legHemY;
-    if (res.cover && 'legCorrectives' in res.cover) cover.legCorrectives = res.cover.legCorrectives;
+    // Layered legwear: the highest waistband, the widest hidden-skin span, the lowest hem, and no leg
+    // correctives if any layer (a skirt) needs plain skinning.
+    if (res.cover?.riseY != null) cover.riseY = Math.max(cover.riseY ?? -Infinity, res.cover.riseY);
+    if (res.cover?.hideSkin) cover.hideSkin = cover.hideSkin ? [Math.min(cover.hideSkin[0], res.cover.hideSkin[0]), Math.max(cover.hideSkin[1], res.cover.hideSkin[1])] : res.cover.hideSkin;
+    if (res.cover?.legHemY != null) cover.legHemY = Math.min(cover.legHemY ?? Infinity, res.cover.legHemY);
+    if (res.cover && 'legCorrectives' in res.cover) cover.legCorrectives = (cover.legCorrectives ?? true) && res.cover.legCorrectives;
   }
   // No bare midriff band when the bottom's waistband rises over the top's hem (dresses, high rises).
   if (cover.topHemY != null && cover.riseY != null && cover.riseY >= cover.topHemY) cover.topHemY = null;
@@ -372,6 +386,10 @@ export function buildCharacter(input) {
   const coveredAboveY = cover.legCorrectives === false ? -Infinity : cover.legHemY != null ? cover.legHemY - HEM_CLEARANCE : Infinity;
   bakeBodyCorrectives(meshes[0], rig, { coveredAboveY });
   const bottomMesh = meshes.find((m) => m.name === 'bottom');
+  const legwearMesh = meshes.find((m) => m.name === 'legwear');
+  if (legwearMesh && def.shoes && SHOE_TYPES.includes(def.shoes.type) && def.shoes.type !== 'barefoot' && def.legwear.length !== 'shorts') {
+    bakeAnkleCorrectives(legwearMesh, rig, shoeCollider(layout, def.shoes.type, { size: def.shoes.size }), { margin: collisionMargin(def.legwear.kind) + 0.002 });
+  }
   if (bottomMesh && def.bottom.type === 'skirt') {
     const shoes = def.shoes && SHOE_TYPES.includes(def.shoes.type) && def.shoes.type !== 'barefoot' ? shoeCollider(layout, def.shoes.type, { size: def.shoes.size }) : null;
     bakeHipCorrectives(bottomMesh, rig, layout, { margin: collisionMargin(def.bottom.kind ?? 'cotton') + 0.006, shoes, topY: overHem(ctx) });

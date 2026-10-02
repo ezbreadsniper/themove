@@ -41,6 +41,7 @@ export function randomizeOutfit(def, seed = 'outfit') {
     cargo: rng.chance(0.2),
     belt: rng.chance(0.4) ? { color: rng.pick(NEUTRALS), buckle: rng.pick(METALS) } : null,
   };
+  out.legwear = ['shorts', 'skirt'].includes(bottomType) && rng.chance(0.3) ? { color: rng.pick(NEUTRALS), length: rng.pick(['full', 'cropped']) } : null;
   out.outer = rng.chance(0.4) ? { type: rng.pick(enumOf('outer', 'type')), color: colour(), open: rng.chance(0.5) } : null;
   out.socks = rng.chance(0.6) ? { color: rng.pick(NEUTRALS), height: Math.round(rng.range(0.12, 0.3) * 100) / 100 } : null;
   out.shoes = { ...def.shoes, type: rng.pick(enumOf('shoes', 'type').filter((t) => t !== 'barefoot')), upper: colour(), sole: rng.pick(NEUTRALS), accent: undefined };

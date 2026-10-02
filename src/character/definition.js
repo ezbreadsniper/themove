@@ -158,6 +158,13 @@ export const SCHEMA = obj({
     belt: obj({ color: color('#141414'), buckle: color('#c9ccd2') }, { nullable: true }),
     stitch: color(undefined),
   }, { nullable: true }),
+  /** Leggings / tights worn as a layer under the bottom (shorts, a skirt) or a dress. */
+  legwear: obj({
+    length: oneOf(['full', 'cropped', 'shorts'], 'full'),
+    color: color('#141416'),
+    kind: oneOf(FABRIC_NAMES, 'spandex'),
+    sideStripe: color(undefined),
+  }, { nullable: true }),
   /** One-piece dress: replaces top and bottom with a fitted bodice and a skirt joined at the waist. */
   dress: obj({
     bodice: oneOf(['cami', 'tank', 'tube', 'tee'], 'cami'),
