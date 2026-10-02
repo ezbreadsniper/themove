@@ -369,8 +369,8 @@ export const PROP_TEXTURES = {
       r.ellipse(30, 12, 28, 10, '#cfd6dc');
       r.ellipse(30, 12, 26, 8.5, '#3a4048');
       r.polygon([[54, 12], [63, 20], [63, 4]], '#cfd6dc');
-      drawTextCentered(r, 'STAY UP', 30, 13, '#f2f6f8');
-      drawTextCentered(r, 'LATE', 30, 4, '#f2f6f8');
+      drawTextCentered(r, 'THE WORLD', 30, 13, '#f2f6f8');
+      drawTextCentered(r, 'IS YOURS', 30, 4, '#f2f6f8');
     },
   },
   case48: {
