@@ -31,14 +31,16 @@ function character(id) {
 
 const SILHOUETTE = new THREE.MeshBasicMaterial({ color: 0x000000 });
 const WIRE = new THREE.MeshBasicMaterial({ color: 0x101018, wireframe: true });
+const CLAY = new THREE.MeshLambertMaterial({ color: 0xb8b4ac });
 
-/** Review views: 'silhouette' (flat black), 'wire' (wireframe overlay on the shaded meshes). */
+/** Review views: 'silhouette' (flat black), 'clay' (untextured grey), 'wire' (wireframe overlay on the shaded meshes). */
 function applyView(character, view) {
   if (!view || view === 'shaded') return;
   const meshes = [];
   character.traverse((o) => { if (o.isSkinnedMesh && o.visible) meshes.push(o); });
   for (const mesh of meshes) {
     if (view === 'silhouette') mesh.material = SILHOUETTE;
+    if (view === 'clay') mesh.material = CLAY;
     if (view === 'wire') {
       const wire = new THREE.SkinnedMesh(mesh.geometry, WIRE);
       wire.frustumCulled = false;

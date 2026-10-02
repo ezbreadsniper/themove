@@ -237,8 +237,11 @@ function buildTorso(mb, layout, { from = 'crotch', lowerFrom = 'crotch', gapFrom
   };
   const loft = (rows, capStart) => {
     if (rows.length < 2) return;
-    const res = mb.loft(rows.map(toRing), { sides, uv: [u0, v0, u1, v1], capStart });
-    if (rows[0] === table[0]) bottom = { start: res.starts[0], sides, group: mb.group, ring: toRing(rows[0]), yMin, yMax };
+    // A bare pelvis ends the torso at the hip ring: the seat ring only shapes the thighs' top loops,
+    // so the blend from torso to leg spans the whole hip-to-seat height instead of a sliver.
+    const bare = rows[0] === table[0];
+    const res = mb.loft((bare ? rows.slice(1) : rows).map(toRing), { sides, uv: [u0, v0, u1, v1], capStart });
+    if (bare) bottom = { start: res.starts[0], sides, group: mb.group, ring: toRing(rows[0]), yMin, yMax };
   };
   if (gapFrom !== null && from !== 'crotch') {
     const lower = table.slice(indexOf(lowerFrom)).filter((r) => r.y < gapFrom);
@@ -322,9 +325,9 @@ function buildConnectedLegs(mb, layout, bottom) {
   const crotchY = glute.foldY;
   const halfW = seat.rx * 0.5;
   const L = bottom.sides / 2 + 4;
-  const yTop = seat.y - 0.016 * k;
-  const zFront = seat.cz + ringRadius(seat, 0) * 0.985;
-  const zBack = seat.cz - ringRadius(seat, Math.PI) * 0.985;
+  const yTop = seat.y;
+  const zFront = seat.cz + ringRadius(seat, 0) * 1.0;
+  const zBack = seat.cz - ringRadius(seat, Math.PI) * 1.0;
   const saved = mb.group;
   mb.group = bottom.group;
   const junction = {};
@@ -337,7 +340,7 @@ function buildConnectedLegs(mb, layout, bottom) {
     const seamPoint = (theta) => {
       if (!inner(theta)) {
         const phi = -theta;
-        const r = ringRadius(seat, phi) * 0.985;
+        const r = ringRadius(seat, phi);
         return V(Math.abs(Math.sin(phi)) < 1e-6 ? 0 : Math.sin(phi) * r, yTop, seat.cz + Math.cos(phi) * r);
       }
       const u = Math.abs(theta) / Math.PI;
