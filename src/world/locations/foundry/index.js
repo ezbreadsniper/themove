@@ -17,9 +17,10 @@ export function buildFoundry(lib) {
   const rng = createRng('foundry-st');
   buildStreet(kit, rng.fork('street'));
   buildExterior(kit, rng.fork('exterior'));
-  buildInterior(kit);
+  buildInterior(kit, rng.fork('interior'));
   dressLoft(kit, rng.fork('loft'));
   kit.marker('spawn', [(HALL.door.x0 + HALL.door.x1) / 2 + 1.2, 0, -1.8], { yaw: 0 });
   kit.bucketFlags('clutter', { cullDistance: 28 });
+  kit.bucketFlags('across', { cast: false });
   return kit.finish();
 }

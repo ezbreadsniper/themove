@@ -101,6 +101,18 @@ export const DECAL_TEXTURES = {
       }
     },
   },
+  /** Additive light-shaft card: bright at the source (top), soft sides, fading to nothing below. */
+  beamGrad: {
+    size: [32, 64], tile: [1, 1], decal: true,
+    paint(r) {
+      for (let y = 0; y < 64; y++) {
+        for (let x = 0; x < 32; x++) {
+          const side = Math.max(0, 1 - Math.abs(x - 15.5) / 16) ** 1.4;
+          r.plot(x, y, '#ffffff', side * (y / 63) ** 1.8);
+        }
+      }
+    },
+  },
   manhole: {
     size: [32, 32], tile: [1, 1], alpha: true,
     paint(r, rng) {

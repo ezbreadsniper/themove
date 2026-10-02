@@ -1,6 +1,8 @@
 import { STREET, GROUND, BUILDING, HALL } from './layout.js';
 import { railing } from '../../kit/arch.js';
-import { streetlight, utilityPole, wire, signPost, hydrant, dumpster, trashBag, trashCan, bikeRack, tree, car } from '../../props/street-props.js';
+import { streetlight, utilityPole, wire, signPost, hydrant, dumpster, trashBag, trashCan, bikeRack, tree } from '../../props/street-props.js';
+import { debris } from '../../props/clutter.js';
+import { buildingAcross } from './building-across.js';
 
 /**
  * Foundry St. in front of the warehouse, the Mill Ave. T-intersection stub, the lot the building
@@ -98,7 +100,7 @@ function wear(kit, rng) {
 
 function lighting(kit) {
   kit.at(21, 0, STREET.sidewalkN[0] + 0.35, Math.PI, (k) => streetlight(k, 'streetlight-foundry-n'));
-  kit.at(-13, 0, STREET.sidewalkN[0] + 0.35, Math.PI, (k) => streetlight(k, 'streetlight-foundry-w'));
+  kit.at(-13, 0, STREET.sidewalkN[0] + 0.35, Math.PI, (k) => streetlight(k, 'streetlight-foundry-w', { flicker: { rate: 0.25, depth: 0.85, seed: 'sodium-w', dropout: 0.2, dim: 0.25, hum: 0.02 } }));
   kit.at(2.5, 0, STREET.sidewalkS[1] - 0.35, 0, (k) => streetlight(k, 'streetlight-foundry-s'));
   kit.at(STREET.mill.x[0] - 0.35, 0, 4.5, Math.PI / 2, (k) => streetlight(k, 'streetlight-mill'));
 }
@@ -136,9 +138,49 @@ function furniture(kit, rng) {
   kit.at(1.4, 0, -1.05, 0, (k) => bikeRack(k));
   kit.at(BUILDING.x1 + 1.6, 0, 9.5, Math.PI / 2, (k) => dumpster(k));
   for (const [x, z, s] of [[BUILDING.x1 + 0.6, 7.9, 1], [BUILDING.x1 + 1.3, 7.6, 0.85], [BUILDING.x1 + 0.7, 11.3, 0.9]]) kit.at(x, 0, z, rng.next() * 6, (k) => trashBag(k, s));
-  kit.at(-2.4, R, STREET.parkingN + 1.15, Math.PI / 2, (k) => car(k, 'carBlue'));
-  kit.at(12.8, R, STREET.parkingS - 1.15, -Math.PI / 2, (k) => car(k, 'carWhite'));
-  kit.at(STREET.mill.x[0] + 1.25, R, 16.9, Math.PI, (k) => car(k, 'carWhite', 'van'));
+}
+
+/**
+ * Street grit: leaf drifts and wet patches along the gutters, butts and papers where people stand
+ * (entry stoop, bike rack, bus-stop corner), trash around the dumpster, weeds at the building base
+ * and in sidewalk joints. All rng-driven and non-colliding.
+ */
+function grit(kit, rng) {
+  const N = STREET.sidewalkN;
+  const S = STREET.sidewalkS;
+  for (let x = STREET.x0 + 2; x < STREET.x1 - 2; x += 3.5 + rng.next() * 3) {
+    kit.decal('leafDrift', [x, R + 0.006, N[0] - 0.28], [2.4 + rng.next(), 0.55], '+y', { flip: rng.chance(0.5) });
+    if (rng.chance(0.5)) kit.decal('leafDrift', [x + 1.3, R + 0.006, S[1] + 0.28], [2.2, 0.5], '+y', { rot: Math.PI });
+  }
+  for (const [x, z, s] of [[12.5, -3.9, 1.6], [-10, -3.8, 1.3], [6.5, -8.0, 1.2], [21, -12.4, 1.5], [36.2, 6.5, 1.4], [33.8, 9.2, 1.1], [-3.5, -10.5, 1.0]]) {
+    kit.decal('puddle', [x, R + 0.007, z], [s * 1.6, s], '+y', { rot: rng.next() * 0.5 });
+  }
+  debris(kit, rng.fork('stoop'), { x0: HALL.door.x0 - 1.0, x1: HALL.door.x1 + 1.6, z0: -2.6, z1: -0.7, y: 0.002, count: 6, mix: { butts: 2, paper: 1, trash: 0.6 }, bits: 7 });
+  debris(kit, rng.fork('north-walk'), { x0: STREET.x0 + 4, x1: 32, z0: N[0] + 0.3, z1: N[1] - 0.2, y: 0.002, count: 18, mix: { paper: 1, butts: 1, trash: 1.2, leaves: 1.5, grime: 0.8 }, bits: 8 });
+  debris(kit, rng.fork('south-walk'), { x0: STREET.x0 + 4, x1: STREET.x1 - 4, z0: S[0] + 0.3, z1: S[1] - 0.3, y: 0.002, count: 12, mix: { leaves: 2, paper: 1, trash: 0.5 } });
+  debris(kit, rng.fork('dumpster'), { x0: BUILDING.x1 + 0.2, x1: BUILDING.x1 + 3.2, z0: 6.8, z1: 12.4, y: 0, count: 8, mix: { trash: 2, paper: 1, wet: 1, grime: 1 }, bits: 6 });
+  debris(kit, rng.fork('road'), { x0: STREET.x0 + 2, x1: 32, z0: STREET.road[0] + 0.5, z1: STREET.road[1] - 0.5, y: R + 0.004, count: 10, mix: { paper: 1, trash: 1, wet: 0.8 } });
+  // weeds at the facade base and in sidewalk joints (upright cut-out cards)
+  const weed = (x, z, s) => {
+    for (const yaw of [0.3, 0.3 + Math.PI / 2]) kit.at(x, 0, z, yaw, () => kit.decal('weeds', [0, s * 0.45, 0], [s, s * 0.9], '+z', { cut: true }));
+  };
+  for (let x = BUILDING.x0 + 0.7; x < BUILDING.x1; x += 1.4 + rng.next() * 2.2) if (rng.chance(0.6)) weed(x, -0.2, 0.3 + rng.next() * 0.2);
+  for (let i = 0; i < 14; i++) weed(STREET.x0 + 3 + rng.next() * 52, N[0] + 0.25 + rng.next() * 2.7, 0.16 + rng.next() * 0.12);
+  for (let i = 0; i < 10; i++) weed(STREET.x0 + 3 + rng.next() * 52, S[1] - 0.2, 0.25 + rng.next() * 0.2);
+  for (let i = 0; i < 18; i++) kit.decal('weedTuft', [STREET.x0 + 3 + rng.next() * 52, 0.004, rng.chance(0.5) ? N[0] + 0.2 + rng.next() * 2.8 : S[0] + 0.2 + rng.next() * 2.6], [0.3, 0.3], '+y', { rot: rng.next() * 6 });
+  // stickers / flyers on poles and the utility boxes
+  kit.decal('stickerSkate', [21 - 0.11, 1.5, STREET.sidewalkN[0] + 0.35], [0.1, 0.1], '-x');
+  kit.decal('flyerRent', [-13.11, 1.45, STREET.sidewalkN[0] + 0.35], [0.22, 0.22], '-x', { rot: 0.08 });
+  kit.decal('stickerEye', [2.5 + 0.115, 1.7, STREET.sidewalkS[1] - 0.35], [0.1, 0.1], '+x');
+}
+
+/** NPC placement markers for the behaviour workstream (contracts §2). */
+function npcMarkers(kit) {
+  const midDoor = (HALL.door.x0 + HALL.door.x1) / 2;
+  kit.marker('npc_stoop_1', [midDoor + 0.95, 0, -0.95], { yaw: -Math.PI / 2 - 0.6, role: 'smoker' });
+  kit.marker('npc_street_1', [2.2, 0, -1.55], { yaw: Math.PI * 0.75, role: 'loiter' });
+  kit.marker('npc_street_2', [9.5, 0, -14.6], { yaw: Math.PI / 2, role: 'pedestrian' });
+  kit.marker('npc_street_3', [31.5, 0, -1.6], { yaw: -Math.PI / 2, role: 'waiting' });
 }
 
 /** Far-side frontage: picket railing and the clipped hedge behind it (seen from the loft window). */
@@ -163,4 +205,8 @@ export function buildStreet(kit, rng) {
   utilities(kit);
   furniture(kit, rng.fork('furniture'));
   southFrontage(kit, rng.fork('south'));
+  grit(kit, rng.fork('grit'));
+  npcMarkers(kit);
+  kit.bucket('across');
+  buildingAcross(kit, rng.fork('across'));
 }

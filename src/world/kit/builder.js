@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { decalUV } from './decal-atlas.js';
 
 /**
  * Kit: the world-building context. Primitives are appended into per-(bucket, material) buffers in
@@ -45,6 +46,7 @@ class Accum {
     this.nrm = [];
     this.uv = [];
     this.idx = [];
+    this.emit = [];
   }
 
   get count() {
@@ -70,6 +72,9 @@ export class Kit {
     this.dynamics = new Map();
     this.dynamic = null;
     this.flags = new Map();
+    this.layers = new Map();
+    this.emitLayer = -1;
+    this.interactables = [];
   }
 
   get m() {
@@ -139,6 +144,7 @@ export class Kit {
       else if (uv === 'world') t = projectUV([tmpV.x, tmpV.y, tmpV.z], [tmpN.x, tmpN.y, tmpN.z], tile);
       else t = [vert.uv[0] * uvScale[0], vert.uv[1] * uvScale[1]];
       a.uv.push(t[0] + uvOffset[0], t[1] + uvOffset[1]);
+      a.emit.push(this.emitLayer);
     }
     for (const i of tris) a.idx.push(base + i);
     return this;
@@ -217,6 +223,17 @@ export class Kit {
     const v = axes[1].map((x, i) => -axes[0][i] * sr + x * cr);
     const corner = (su, sv) => c.map((x, i) => x + u[i] * su * w / 2 + v[i] * sv * h / 2);
     return this.quad(mat, corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1), opts);
+  }
+
+  /**
+   * Atlas decal (see decal-atlas.js): a panel mapped onto the named atlas cell. Place it 3-5 mm off
+   * the surface it marks; the decal material's polygon offset handles the rest. opts.cut uses the
+   * alpha-tested variant (upright cards), opts.flip mirrors it, opts.rot spins it in-plane.
+   */
+  decal(name, c, size, facing = '+z', opts = {}) {
+    const [u0, v0, u1, v1] = decalUV(name);
+    const uvs = opts.flip ? [[u1, v0], [u0, v0], [u0, v1], [u1, v1]] : [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+    return this.panel(opts.cut ? 'decalsCut' : 'decals', c, size, facing, { ...opts, uvs });
   }
 
   /** Appends a THREE.BufferGeometry transformed by `matrix` (frame-local). */
@@ -392,23 +409,87 @@ export class Kit {
   }
 
   /**
-   * Light source. Static lights are baked into vertices; `dynamic: true` lights also exist at
-   * runtime (they light characters). dir + cone (cosine of half-angle) make a spot.
+   * Light source. Static lights are baked into vertices; `dynamic: true` lights may also be lit at
+   * runtime by the light rig's pool (they light characters). dir + cone (cosine of half-angle) make
+   * a spot. Lights that are `switchable`, `flicker` or name a `layer` bake into a runtime-scalable
+   * light layer instead of the static bake (several lights may share a layer = one circuit);
+   * `shadow: true` makes the light a candidate for the rig's shadowed spot pool (it needs a layer
+   * of its own). `fill` scales the light's crude same-zone bounce; `on: false` starts it off.
    */
-  light({ name, pos, color = '#ffd8a0', intensity = 1, range = 6, dir = null, cone = null, dynamic = false, zone = null }) {
+  light({ name, pos, color = '#ffd8a0', intensity = 1, range = 6, dir = null, cone = null, dynamic = false, zone = null, switchable = false, flicker = null, layer = null, shadow = false, fill = 1, on = true }) {
     const p = this.toWorld(pos);
     let d = null;
     if (dir) {
       tmpN.set(dir[0], dir[1], dir[2]).applyMatrix3(tmpNM.getNormalMatrix(this.m)).normalize();
       d = tmpN.toArray();
     }
-    this.lights.push({ name, pos: p, color, intensity, range, dir: d, cone, dynamic, zone });
+    if (this.lights.some((l) => l.name === name)) throw new Error(`duplicate light ${name}`);
+    const layerName = layer ?? (switchable || flicker || shadow ? name : null);
+    const layerIndex = layerName ? this.layerIndex(layerName, color) : -1;
+    if (layerName) this.layers.get(layerName).lights.push(name);
+    this.lights.push({ name, pos: p, color, intensity, range, dir: d, cone, dynamic, zone, switchable: !!switchable, flicker, layer: layerIndex, layerName, shadow, fill, on });
+    return this;
+  }
+
+  /** Index of the named light layer (created on first use; colour from its first light). */
+  layerIndex(name, color = null) {
+    if (!this.layers.has(name)) this.layers.set(name, { name, index: this.layers.size, color, lights: [] });
+    const layer = this.layers.get(name);
+    if (!layer.color && color) layer.color = color;
+    return layer.index;
+  }
+
+  /** Emissive geometry built inside fn glows with light layer `layerName` (dims when it is off). */
+  glow(layerName, fn) {
+    const saved = this.emitLayer;
+    this.emitLayer = this.layerIndex(layerName);
+    try {
+      fn(this);
+    } finally {
+      this.emitLayer = saved;
+    }
+    return this;
+  }
+
+  /**
+   * Gameplay hook (docs/INTEGRATION_CONTRACTS.md §2). pos and data.exit are frame-local; yaw is the
+   * facing the player takes (forward = (sin yaw, 0, cos yaw)), relative to the frame.
+   */
+  interactable({ id, kind, pos, yaw = 0, radius = 1.2, prompt = 'Use', data = {} }) {
+    if (this.interactables.some((i) => i.id === id)) throw new Error(`duplicate interactable ${id}`);
+    const out = { id, kind, pos: this.toWorld(pos), yaw: yaw + this.frameYaw(), radius, prompt, data: { ...data } };
+    if (data.exit) out.data.exit = this.toWorld(data.exit);
+    this.interactables.push(out);
+    return this;
+  }
+
+  frameYaw() {
+    return Math.atan2(this.m.elements[8], this.m.elements[0]);
+  }
+
+  /**
+   * Loose prop simulated by the physics owner (contracts §3): geometry built in fn (local to `pos`,
+   * y = 0 its base) becomes a dynamic with data.physical = { shape: 'box' | 'cylinder',
+   * size: [w, h, d] | radius + height, mass }. A matching local solid is generated from the shape.
+   */
+  physical(name, pos, spec, fn, yaw = 0) {
+    const physical = { shape: 'box', mass: 2, ...spec };
+    this.beginDynamic(name, pos, yaw, { physical });
+    fn(this);
+    if (physical.shape === 'cylinder') {
+      const r = physical.radius;
+      this.solid(Array.from({ length: 8 }, (_, i) => [Math.cos((i / 8) * Math.PI * 2) * r, -Math.sin((i / 8) * Math.PI * 2) * r]), 0, physical.height, 'prop');
+    } else {
+      const [w, h, d] = physical.size;
+      this.solid([[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]], 0, h, 'prop');
+    }
+    this.endDynamic();
     return this;
   }
 
   marker(name, pos, data = {}) {
     const p = this.toWorld(pos);
-    const yaw = data.yaw !== undefined ? data.yaw + Math.atan2(this.m.elements[8], this.m.elements[0]) : undefined;
+    const yaw = data.yaw !== undefined ? data.yaw + this.frameYaw() : undefined;
     this.markers.set(name, { name, pos: p, ...data, yaw });
     return this;
   }
@@ -450,6 +531,10 @@ export class Kit {
         g.setAttribute('normal', new THREE.Float32BufferAttribute(a.nrm, 3));
         g.setAttribute('uv', new THREE.Float32BufferAttribute(a.uv, 2));
         g.setAttribute('bake', new THREE.Float32BufferAttribute(new Float32Array(a.count * 3).fill(0.5), 3));
+        g.setAttribute('bakeStatic', new THREE.Float32BufferAttribute(new Float32Array(a.count * 3), 3));
+        g.setAttribute('bakeLayer', new THREE.Float32BufferAttribute(new Float32Array(a.count * 4).fill(-1), 4));
+        g.setAttribute('bakeLayerW', new THREE.Float32BufferAttribute(new Float32Array(a.count * 4), 4));
+        if (['emissive', 'beam'].includes(this.lib.def(matName).kind)) g.setAttribute('emit', new THREE.Float32BufferAttribute(a.emit, 1));
         g.setIndex(a.count > 65535 ? new THREE.Uint32BufferAttribute(a.idx, 1) : new THREE.Uint16BufferAttribute(a.idx, 1));
         g.computeBoundingSphere();
         g.computeBoundingBox();
@@ -462,6 +547,7 @@ export class Kit {
         mesh.userData = { bucket: key, material: matName };
         if (material.userData.kind === 'decal') mesh.renderOrder = 1;
         if (material.userData.kind === 'glass') mesh.renderOrder = 2;
+        if (material.userData.kind === 'beam') mesh.renderOrder = 3;
         group.add(mesh);
         triangles += a.idx.length / 3;
         drawCalls++;
@@ -480,7 +566,8 @@ export class Kit {
     return {
       root, buckets, dynamics,
       solids: this.solids, walkables: this.walkables, occluders: this.occluders,
-      lights: this.lights, markers: Object.fromEntries(this.markers),
+      lights: this.lights, layers: [...this.layers.values()], markers: Object.fromEntries(this.markers),
+      interactables: this.interactables,
       stats: { triangles, drawCalls },
     };
   }

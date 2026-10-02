@@ -4,8 +4,9 @@ import { createRng } from '../../core/rng.js';
 import { ARCH_TEXTURES } from './tex-arch.js';
 import { PROP_TEXTURES } from './tex-props.js';
 import { DECAL_TEXTURES } from './tex-decals.js';
+import { ATLAS_TEXTURES } from './decal-atlas.js';
 
-export const TEXTURE_SPECS = { ...ARCH_TEXTURES, ...PROP_TEXTURES, ...DECAL_TEXTURES };
+export const TEXTURE_SPECS = { ...ARCH_TEXTURES, ...PROP_TEXTURES, ...DECAL_TEXTURES, ...ATLAS_TEXTURES };
 
 /**
  * Material catalogue. kind: 'baked' (prelit Lambert, default), 'decal' (baked + blended, polygon
@@ -16,6 +17,7 @@ export const MATERIALS = {
   brick: { tex: 'brickRed' },
   brickTan: { tex: 'brickTan' },
   cmu: { tex: 'cmuPainted' },
+  cmuDark: { tex: 'cmuPainted', color: '#7f8c8a' },
   drywall: { tex: 'drywall' },
   concreteFloor: { tex: 'concretePolished' },
   concreteRough: { tex: 'concreteRough' },
@@ -44,10 +46,14 @@ export const MATERIALS = {
   knit: { tex: 'fabricKnit' },
   sage: { tex: 'fabricSage' },
   mustard: { tex: 'fabricMustard' },
-  rainbow: { tex: 'pillowRainbow' },
-  kilim: { tex: 'pillowKilim' },
-  stripeBW: { tex: 'pillowStripeBW' },
   rug: { tex: 'rugPersian' },
+  marbleBlack: { tex: 'marbleBlack' },
+  cardboard: { tex: 'cardboard' },
+  doormat: { tex: 'doormat' },
+  ceilingTile: { tex: 'ceilingTile' },
+  plasterWhite: { tex: 'plasterWhite' },
+  decals: { tex: 'decalAtlas', kind: 'decal' },
+  decalsCut: { tex: 'decalAtlas', kind: 'cutout', cast: false },
   terracotta: { tex: 'terracotta' },
   ceramic: { tex: 'ceramicWhite' },
   redPaint: { tex: 'redPaint' },
@@ -56,8 +62,8 @@ export const MATERIALS = {
   leafPothos: { tex: 'leafPothos', kind: 'cutout' },
   leafSnake: { tex: 'leafSnake', kind: 'cutout' },
   treeLeaves: { tex: 'treeLeaves', kind: 'cutout' },
-  artGun: { tex: 'artGun' },
-  artHands: { tex: 'artHands' },
+  artPop: { tex: 'artPop' },
+  artPhoto: { tex: 'artPhoto' },
   artAbstract: { tex: 'artAbstract' },
   artPrint: { tex: 'artPrint' },
   case48: { tex: 'case48' },
@@ -76,8 +82,6 @@ export const MATERIALS = {
   houseNumber: { tex: 'houseNumber' },
   graffiti: { tex: 'graffiti', kind: 'decal' },
   archWindow: { tex: 'archWindow', kind: 'cutout' },
-  carWindow: { tex: 'carWindow' },
-  tire: { tex: 'tire' },
   mailboxes: { tex: 'mailboxes' },
   dumpster: { tex: 'dumpsterSide' },
   trashBag: { tex: 'trashBag' },
@@ -110,9 +114,17 @@ export const MATERIALS = {
   yellowPaint: { color: '#d4a51c' },
   bluePaint: { color: '#1d4f9a' },
   hydrantRed: { color: '#a3201f' },
-  carRed: { color: '#7a1c1c' },
-  carBlue: { color: '#2a3d5a' },
-  carWhite: { color: '#c9c6bd' },
+  denim: { color: '#3b4f6e' },
+  plasticGrey: { color: '#6e6c68' },
+  paintRadiator: { color: '#8d8a80' },
+  copper: { color: '#9a5a36' },
+  sprinklerRed: { color: '#8e2420' },
+  bronze: { color: '#4a4036' },
+  trimDark: { color: '#2b2926' },
+  paper: { color: '#e8e4da' },
+  bottleGreen: { color: '#24442c' },
+  bottleBrown: { color: '#4a2a14' },
+  candleJar: { color: '#c9b48c' },
   wire: { color: '#151515', cast: false },
   glass: { kind: 'glass', color: '#9fb4bf', opacity: 0.22 },
   glassDark: { kind: 'glass', color: '#2b3338', opacity: 0.78 },
@@ -121,6 +133,12 @@ export const MATERIALS = {
   bulbCool: { color: '#e8f0ff', kind: 'emissive' },
   sodium: { color: '#ffb35a', kind: 'emissive' },
   lavaLamp: { color: '#ff4a6a', kind: 'emissive' },
+  bulbTube: { color: '#dfeaf2', kind: 'emissive' },
+  exitGlow: { color: '#ff3a2a', kind: 'emissive' },
+  doorSpill: { tex: 'beamGrad', color: '#ffb866', kind: 'beam', opacity: 0.85 },
+  beamWarm: { tex: 'beamGrad', color: '#ffc989', kind: 'beam', opacity: 0.16 },
+  beamCool: { tex: 'beamGrad', color: '#bcd2ec', kind: 'beam', opacity: 0.14 },
+  beamSodium: { tex: 'beamGrad', color: '#ff9a40', kind: 'beam', opacity: 0.12 },
   worldIsYours: { tex: 'worldIsYours', kind: 'emissive', alphaTest: 0.5 },
   signExit: { tex: 'signExit', kind: 'emissive' },
   fakeInterior: { tex: 'fakeInterior', kind: 'emissive', dim: 0.55 },
@@ -176,36 +194,97 @@ function toTexture(raster, name) {
   return tex;
 }
 
+const MAX_LAYERS = 32;
+
+/** Shadow subtraction: each of the rig's two shadowed spot slots removes its layer's baked light. */
+const SHADOW_SLOT = (i) => /* glsl */ `
+#if defined( USE_SHADOWMAP ) && NUM_SPOT_LIGHT_SHADOWS > ${i}
+  if ( receiveShadow ) {
+    float sh${i} = getShadow( spotShadowMap[ ${i} ], spotLightShadows[ ${i} ].shadowMapSize, spotLightShadows[ ${i} ].shadowIntensity, spotLightShadows[ ${i} ].shadowBias, spotLightShadows[ ${i} ].shadowRadius, vSpotLightCoord[ ${i} ] );
+    irradiance -= vSlotBake${i} * ( 1.0 - sh${i} ) * PI * uBakeScale;
+  }
+#endif`;
+
 const LIGHTS_BAKED = THREE.ShaderChunk.lights_fragment_begin
   .replace('#if ( NUM_POINT_LIGHTS > 0 ) && defined( RE_Direct )', '#if 0')
   .replace('#if ( NUM_SPOT_LIGHTS > 0 ) && defined( RE_Direct )', '#if 0')
-  .replace('vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );', 'vec3 irradiance = vBake * PI * uBakeScale;')
+  .replace('vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );', `vec3 irradiance = vBake * PI * uBakeScale;${SHADOW_SLOT(0)}${SHADOW_SLOT(1)}\nirradiance = max( irradiance, vec3( 0.0 ) );`)
   .replace('#if ( NUM_HEMI_LIGHTS > 0 )', '#if 0');
 
+for (const needle of ['NUM_POINT_LIGHTS > 0 ) && defined', 'getAmbientLightIrradiance( ambientLightColor );', 'NUM_HEMI_LIGHTS > 0 )']) {
+  if (!THREE.ShaderChunk.lights_fragment_begin.includes(needle)) throw new Error(`prelit shader: three.js chunk changed (${needle})`);
+}
+
+const LAYER_UNIFORMS_GLSL = `uniform vec3 uLayerColor[ ${MAX_LAYERS} ];\nuniform float uLayerScale[ ${MAX_LAYERS} ];`;
+
+const PRELIT_VERTEX = /* glsl */ `
+vBake = bake * uSkyScale + bakeStatic;
+vSlotBake0 = vec3( 0.0 );
+vSlotBake1 = vec3( 0.0 );
+for ( int k = 0; k < 4; k ++ ) {
+  float id = bakeLayer[ k ];
+  if ( id < 0.0 ) continue;
+  int li = int( id + 0.5 );
+  vec3 c = uLayerColor[ li ] * bakeLayerW[ k ] * uLayerScale[ li ];
+  vBake += c;
+  if ( abs( id - uSlotLayer[ 0 ] ) < 0.5 ) vSlotBake0 += c;
+  if ( abs( id - uSlotLayer[ 1 ] ) < 0.5 ) vSlotBake1 += c;
+}`;
+
 /**
- * Prelit Lambert: per-vertex `bake` (ambient sky, bounce, AO and every static light) replaces the
- * ambient/hemisphere term; the sun stays a live shadowed light; point/spot lights are ignored
- * because they are already in the bake (they exist only to light characters).
+ * Prelit Lambert: the per-vertex bake (sky × time-of-day, static lights, and up to four runtime-
+ * scaled light layers) replaces the ambient/hemisphere term; the sun stays a live shadowed light;
+ * point/spot lights are not added (they are in the bake and exist to light characters), except that
+ * the rig's shadowed spot slots subtract their own layer's light where the spot's shadow map says a
+ * dynamic caster blocks it.
  */
-function prelit(material) {
+function prelit(material, U) {
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uBakeScale = BAKE_UNIFORMS.uBakeScale;
+    Object.assign(shader.uniforms, { uBakeScale: U.uBakeScale, uSkyScale: U.uSkyScale, uLayerColor: U.uLayerColor, uLayerScale: U.uLayerScale, uSlotLayer: U.uSlotLayer });
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 bake;\nvarying vec3 vBake;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvBake = bake;');
+      .replace('#include <common>', `#include <common>\nattribute vec3 bake;\nattribute vec3 bakeStatic;\nattribute vec4 bakeLayer;\nattribute vec4 bakeLayerW;\n${LAYER_UNIFORMS_GLSL}\nuniform float uSkyScale;\nuniform float uSlotLayer[ 2 ];\nvarying vec3 vBake;\nvarying vec3 vSlotBake0;\nvarying vec3 vSlotBake1;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${PRELIT_VERTEX}`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vBake;\nuniform float uBakeScale;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vBake;\nvarying vec3 vSlotBake0;\nvarying vec3 vSlotBake1;\nuniform float uBakeScale;')
       .replace('#include <lights_fragment_begin>', LIGHTS_BAKED);
   };
-  material.customProgramCacheKey = () => 'world-prelit';
+  material.customProgramCacheKey = () => 'world-prelit-2';
   material.userData.prelit = true;
   return material;
+}
+
+/** Unlit glow (bulbs, screens, signs, beams) scaled by its light layer: `emit` = layer or -1. */
+function layered(material, U, key) {
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, { uLayerScale: U.uLayerScale, uEmitFloor: U.uEmitFloor });
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\nattribute float emit;\nuniform float uLayerScale[ ${MAX_LAYERS} ];\nvarying float vEmit;`)
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvEmit = emit < 0.0 ? 1.0 : uLayerScale[ int( emit + 0.5 ) ];');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vEmit;\nuniform float uEmitFloor;')
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${key === 'beam' ? 'diffuseColor.rgb *= vEmit;' : 'diffuseColor.rgb *= max( vEmit, uEmitFloor );'}`);
+  };
+  material.customProgramCacheKey = () => `world-layered-${key}`;
+  return material;
+}
+
+/** Uniforms shared by every material of one library (one World). */
+export function createLightUniforms() {
+  return {
+    uBakeScale: BAKE_UNIFORMS.uBakeScale,
+    uSkyScale: { value: 1 },
+    uLayerColor: { value: Array.from({ length: MAX_LAYERS }, () => new THREE.Vector3(1, 1, 1)) },
+    uLayerScale: { value: new Array(MAX_LAYERS).fill(1) },
+    uSlotLayer: { value: [-1, -1] },
+    uEmitFloor: { value: 0.07 },
+  };
 }
 
 export class MaterialLibrary {
   constructor() {
     this.textures = new Map();
     this.materials = new Map();
+    this.uniforms = createLightUniforms();
   }
 
   texture(name) {
@@ -231,13 +310,16 @@ export class MaterialLibrary {
     const def = this.def(name);
     const map = def.tex ? this.texture(def.tex) : null;
     const color = new THREE.Color(def.color ?? '#ffffff');
+    const U = this.uniforms;
     let m;
     if (def.kind === 'emissive') {
-      m = new THREE.MeshBasicMaterial({ map, color: color.multiplyScalar(def.dim ?? 1), alphaTest: def.alphaTest ?? 0, side: THREE.DoubleSide });
+      m = layered(new THREE.MeshBasicMaterial({ map, color: color.multiplyScalar(def.dim ?? 1), alphaTest: def.alphaTest ?? 0, side: THREE.DoubleSide }), U, 'emissive');
+    } else if (def.kind === 'beam') {
+      m = layered(new THREE.MeshBasicMaterial({ map, color, transparent: true, opacity: def.opacity ?? 1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }), U, 'beam');
     } else if (def.kind === 'glass') {
-      m = prelit(new THREE.MeshLambertMaterial({ color, transparent: true, opacity: def.opacity, depthWrite: false, side: THREE.DoubleSide }));
+      m = prelit(new THREE.MeshLambertMaterial({ color, transparent: true, opacity: def.opacity, depthWrite: false, side: THREE.DoubleSide }), U);
     } else {
-      m = prelit(new THREE.MeshLambertMaterial({ map, color }));
+      m = prelit(new THREE.MeshLambertMaterial({ map, color }), U);
       if (def.kind === 'cutout') {
         m.alphaTest = 0.5;
         m.side = THREE.DoubleSide;
@@ -253,7 +335,7 @@ export class MaterialLibrary {
     }
     m.name = name;
     m.userData.kind = def.kind ?? 'baked';
-    m.userData.cast = def.cast ?? !['decal', 'glass', 'emissive'].includes(def.kind);
+    m.userData.cast = def.cast ?? !['decal', 'glass', 'emissive', 'beam'].includes(def.kind);
     this.materials.set(name, m);
     return m;
   }

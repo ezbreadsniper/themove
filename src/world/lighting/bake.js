@@ -7,8 +7,16 @@ import * as THREE from 'three';
  *    black for very close hits (contact occlusion). Interiors therefore only see sky through their
  *    openings, so window walls glow and deep corners stay dark without any per-room tuning.
  *  - Static lights: windowed inverse-square point/spot lights with a shadow ray each.
- * The same sampler drives the runtime light probe that tints characters.
+ *  - Light layers: switchable / flickering lights bake into per-vertex layer weights instead (up to
+ *    four layers per vertex: index + scalar weight against the layer colour) that the prelit shader
+ *    scales at runtime, so switching a lamp off really darkens its room (see lighting/rig.js).
+ *  - Bounce: each light adds a soft, AO-weighted fill to its own zone so a room's ambient level
+ *    comes from its lamps (and drops when they are switched off) rather than a fixed floor.
+ * Output channels per vertex: `bake` (sky + zone floor; scaled by time of day), `bakeStatic`
+ * (static lights), `bakeLayer` / `bakeLayerW` (layers). The same sampler drives the character probe.
  */
+export const MAX_LAYERS = 32;
+const LAYER_SLOTS = 4;
 const GRID = 2;
 
 function hemisphereDirs(count) {
@@ -103,16 +111,24 @@ const toRgb = (c) => {
 export class LightBaker {
   /**
    * sky = { zenith, horizon, horizonAway, ground, intensity, sunDir: [x,y,z] }
-   * zones = [{ min, max, ambient: '#hex', bounce }] give interiors a floor of light.
+   * zones = [{ name, min, max, ambient: '#hex', floor }] give interiors a faint floor of light.
+   * lights = kit lights ({ layer: index | -1, zone, fill, ... }); layers = kit layers ({ index, color }).
+   * fill = bounce strength (fraction of a light's power spread over its zone).
    */
-  constructor({ occluders, lights, sky, zones = [], rays = 20, maxDist = 30, bounce = 0.16 }) {
+  constructor({ occluders, lights, sky, zones = [], rays = 20, maxDist = 30, bounce = 0.16, layers = [], fill = 0.05 }) {
     this.grid = new OccluderGrid(occluders);
-    this.lights = lights.filter((l) => !l.bakeSkip).map((l) => ({ ...l, rgb: toRgb(l.color) }));
+    this.lights = lights.filter((l) => !l.bakeSkip).map((l) => ({ ...l, rgb: toRgb(l.color), layer: l.layer ?? -1 }));
     this.sky = { ...sky, zenithRgb: toRgb(sky.zenith), horizonRgb: toRgb(sky.horizon), awayRgb: toRgb(sky.horizonAway), groundRgb: toRgb(sky.ground) };
     this.zones = zones.map((z) => ({ ...z, rgb: toRgb(z.ambient) }));
     this.dirs = hemisphereDirs(rays);
     this.maxDist = maxDist;
     this.bounce = bounce;
+    this.fill = fill;
+    this.layerRgb = [];
+    for (const l of layers) this.layerRgb[l.index] = toRgb(l.color ?? '#ffffff');
+    this.layerLum = this.layerRgb.map((c) => lum(c) || 1);
+    if (layers.length > MAX_LAYERS) throw new Error(`too many light layers (${layers.length} > ${MAX_LAYERS})`);
+    this.scratch = new Float32Array(MAX_LAYERS);
   }
 
   skyRadiance(d) {
@@ -133,15 +149,14 @@ export class LightBaker {
     return null;
   }
 
-  /** Irradiance-like RGB at point p with unit normal n. */
-  sample(p, n, { skyOnly = false } = {}) {
-    const o = [p[0] + n[0] * 0.03, p[1] + n[1] * 0.03, p[2] + n[2] * 0.03];
+  /** Sky + bounce + zone floor at offset point o: { rgb, ao } (ao: 0 enclosed .. 1 open). */
+  skyAt(o, n, zone) {
     const up = Math.abs(n[1]) < 0.95 ? [0, 1, 0] : [1, 0, 0];
     const t1 = normalize(cross(up, n));
     const t2 = cross(n, t1);
     const out = [0, 0, 0];
     let open = 0;
-    const zone = this.zoneAt(o);
+    let ao = 0;
     for (const h of this.dirs) {
       const d = [t1[0] * h[0] + n[0] * h[1] + t2[0] * h[2], t1[1] * h[0] + n[1] * h[1] + t2[1] * h[2], t1[2] * h[0] + n[2] * h[1] + t2[2] * h[2]];
       const hit = this.grid.trace(o, d, this.maxDist);
@@ -151,8 +166,11 @@ export class LightBaker {
         out[1] += s[1];
         out[2] += s[2];
         open++;
+        ao += 1;
       } else {
-        const k = this.bounce * Math.min(1, hit / 1.2);
+        const near = Math.min(1, hit / 1.2);
+        ao += near;
+        const k = this.bounce * near;
         const g = zone ? zone.rgb : this.sky.groundRgb;
         out[0] += g[0] * k;
         out[1] += g[1] * k;
@@ -163,42 +181,100 @@ export class LightBaker {
     out[0] *= inv;
     out[1] *= inv;
     out[2] *= inv;
+    ao *= inv;
     if (zone) {
-      const ao = 0.35 + 0.65 * Math.min(1, (open * inv) * 4 + 0.6);
-      out[0] += zone.rgb[0] * zone.floor * ao;
-      out[1] += zone.rgb[1] * zone.floor * ao;
-      out[2] += zone.rgb[2] * zone.floor * ao;
+      const occl = 0.35 + 0.65 * Math.min(1, open * inv * 4 + 0.6);
+      out[0] += zone.rgb[0] * zone.floor * occl;
+      out[1] += zone.rgb[1] * zone.floor * occl;
+      out[2] += zone.rgb[2] * zone.floor * occl;
     }
-    if (skyOnly) return out;
-    for (const l of this.lights) this.addLight(out, o, n, l);
-    return out;
+    return { rgb: out, ao };
   }
 
-  addLight(out, o, n, l) {
+  /** Direct + bounce RGB of one light at offset point o with normal n (shadow-tested), or null. */
+  lightAt(o, n, l, zone, ao) {
     const lx = l.pos[0] - o[0];
     const ly = l.pos[1] - o[1];
     const lz = l.pos[2] - o[2];
     const dist = Math.hypot(lx, ly, lz);
-    if (dist >= l.range || dist < 1e-4) return;
-    const L = [lx / dist, ly / dist, lz / dist];
-    const ndl = n[0] * L[0] + n[1] * L[1] + n[2] * L[2];
-    if (ndl <= 0) return;
-    let spot = 1;
-    if (l.dir && l.cone !== null && l.cone !== undefined) {
-      const c = -(L[0] * l.dir[0] + L[1] * l.dir[1] + L[2] * l.dir[2]);
-      if (c <= l.cone) return;
-      spot = Math.min(1, (c - l.cone) / 0.12);
+    let k = 0;
+    if (zone && l.zone === zone.name && l.fill > 0 && dist < l.range * 2.2) {
+      k += this.fill * l.fill * l.intensity * (0.25 + 0.75 * ao) / (1 + (dist / l.range) ** 2 * 2);
     }
-    const win = Math.max(0, 1 - (dist / l.range) ** 4) ** 2;
-    const atten = (win / (dist * dist + 1)) * l.intensity * ndl * spot;
-    if (atten < 0.002) return;
-    if (this.grid.trace(o, L, dist - 0.08) !== Infinity) return;
-    out[0] += l.rgb[0] * atten;
-    out[1] += l.rgb[1] * atten;
-    out[2] += l.rgb[2] * atten;
+    if (dist < l.range && dist > 1e-4) {
+      const L = [lx / dist, ly / dist, lz / dist];
+      const ndl = n[0] * L[0] + n[1] * L[1] + n[2] * L[2];
+      if (ndl > 0) {
+        let spot = 1;
+        if (l.dir && l.cone !== null && l.cone !== undefined) {
+          const c = -(L[0] * l.dir[0] + L[1] * l.dir[1] + L[2] * l.dir[2]);
+          spot = c <= l.cone ? 0 : Math.min(1, (c - l.cone) / 0.12);
+        }
+        const win = Math.max(0, 1 - (dist / l.range) ** 4) ** 2;
+        const atten = (win / (dist * dist + 1)) * l.intensity * ndl * spot;
+        if (atten >= 0.002 && this.grid.trace(o, L, dist - 0.08) === Infinity) k += atten;
+      }
+    }
+    return k > 0 ? k : 0;
   }
 
-  /** Fills the `bake` attribute of every prelit mesh in `meshes` ([THREE.Mesh]). */
+  /**
+   * Full sample at p with unit normal n. `layerScale` (array by layer index, default 1) and
+   * `skyScale` let the runtime probe see the current switch / flicker / time-of-day state;
+   * `direct` scales lights (the probe uses < 1 when the rig's pool lights characters directly).
+   */
+  sample(p, n, { skyOnly = false, layerScale = null, skyScale = 1, direct = 1 } = {}) {
+    const o = [p[0] + n[0] * 0.03, p[1] + n[1] * 0.03, p[2] + n[2] * 0.03];
+    const zone = this.zoneAt(o);
+    const { rgb, ao } = this.skyAt(o, n, zone);
+    const out = rgb.map((v) => v * skyScale);
+    if (skyOnly) return out;
+    for (const l of this.lights) {
+      const k = this.lightAt(o, n, l, zone, ao);
+      if (!k) continue;
+      const s = (l.layer >= 0 && layerScale ? layerScale[l.layer] : 1) * direct;
+      out[0] += l.rgb[0] * k * s;
+      out[1] += l.rgb[1] * k * s;
+      out[2] += l.rgb[2] * k * s;
+    }
+    return out;
+  }
+
+  /** Splits one vertex into its channels; writes into the provided arrays at index i. */
+  bakeVertex(p, n, skyOnly, out, i) {
+    const o = [p[0] + n[0] * 0.03, p[1] + n[1] * 0.03, p[2] + n[2] * 0.03];
+    const zone = this.zoneAt(o);
+    const { rgb, ao } = this.skyAt(o, n, zone);
+    out.bake.setXYZ(i, Math.min(3, rgb[0]), Math.min(3, rgb[1]), Math.min(3, rgb[2]));
+    const st = [0, 0, 0];
+    const w = this.scratch;
+    const touched = [];
+    if (!skyOnly) {
+      for (const l of this.lights) {
+        const k = this.lightAt(o, n, l, zone, ao);
+        if (!k) continue;
+        if (l.layer < 0) {
+          st[0] += l.rgb[0] * k;
+          st[1] += l.rgb[1] * k;
+          st[2] += l.rgb[2] * k;
+        } else {
+          if (w[l.layer] === 0) touched.push(l.layer);
+          w[l.layer] += (lum(l.rgb) * k) / this.layerLum[l.layer];
+        }
+      }
+    }
+    out.bakeStatic.setXYZ(i, Math.min(3, st[0]), Math.min(3, st[1]), Math.min(3, st[2]));
+    touched.sort((a, b) => w[b] - w[a]);
+    for (let s = 0; s < LAYER_SLOTS; s++) {
+      const id = touched[s];
+      const v = id === undefined ? 0 : Math.min(4, w[id]);
+      out.bakeLayer.setComponent(i, s, id === undefined || v < 0.002 ? -1 : id);
+      out.bakeLayerW.setComponent(i, s, id === undefined || v < 0.002 ? 0 : v);
+    }
+    for (const id of touched) w[id] = 0;
+  }
+
+  /** Fills the light attributes of every prelit mesh in `meshes` ([THREE.Mesh]). */
   bakeMeshes(meshes) {
     const p = new THREE.Vector3();
     const n = new THREE.Vector3();
@@ -208,22 +284,24 @@ export class LightBaker {
       if (!mesh.material.userData.prelit) continue;
       mesh.updateWorldMatrix(true, false);
       nm.getNormalMatrix(mesh.matrixWorld);
-      const pos = mesh.geometry.attributes.position;
-      const nrm = mesh.geometry.attributes.normal;
-      const bake = mesh.geometry.attributes.bake;
+      const g = mesh.geometry;
+      const pos = g.attributes.position;
+      const nrm = g.attributes.normal;
+      const out = { bake: g.attributes.bake, bakeStatic: g.attributes.bakeStatic, bakeLayer: g.attributes.bakeLayer, bakeLayerW: g.attributes.bakeLayerW };
       const skyOnly = mesh.userData.skyOnly;
       for (let i = 0; i < pos.count; i++) {
         p.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
         n.fromBufferAttribute(nrm, i).applyMatrix3(nm).normalize();
-        const c = this.sample([p.x, p.y, p.z], [n.x, n.y, n.z], { skyOnly });
-        bake.setXYZ(i, Math.min(3, c[0]), Math.min(3, c[1]), Math.min(3, c[2]));
+        this.bakeVertex([p.x, p.y, p.z], [n.x, n.y, n.z], skyOnly, out, i);
       }
-      bake.needsUpdate = true;
+      for (const a of Object.values(out)) a.needsUpdate = true;
       vertices += pos.count;
     }
     return vertices;
   }
 }
+
+const lum = (c) => c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722;
 
 function cross(a, b) {
   return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
