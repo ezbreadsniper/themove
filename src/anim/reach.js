@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { gripAt, handRotation } from './arm-ik.js';
+import { gripAt, handRotation, handGripOffset } from './arm-ik.js';
+import { worldPose } from './fk.js';
 
-const ARM = (side) => [`${side}Arm`, `${side}ForeArm`, `${side}Hand`];
 
 /**
  * A hand target for reach(): where the grip point (palm centre) goes, the hand frame there (world
@@ -19,24 +19,35 @@ export function palmFrom(side, fingers, forward) {
 }
 
 /**
- * Moves one arm between two states, each a target (handTargetAt) or null (the arm as the body pose
- * already has it). Between two targets the grip position lerps, the hand rotation slerps and the arm
- * is re-solved (no pop); to or from a free arm the solved bone rotations blend with the free ones
- * (the IK and the body's own arm reach the same hand on different twists, so lerping targets would pop).
+ * The arm as the pose has it, expressed as a target: the hand's grip point and world rotation, and the
+ * elbow's direction off the shoulder–wrist line as the pole. Solving it reproduces the arm.
  */
-export function reach(layout, pose, side, from, to, u) {
-  if (!from && !to) return pose;
-  const bones = ARM(side);
-  const free = bones.map((b) => (pose.bones[b] ?? new THREE.Quaternion()).clone());
-  const solve = (t) => gripAt(layout, pose, side, t.grip, t.rot, t.pole);
-  if (from && to) {
-    solve({ grip: from.grip.clone().lerp(to.grip, u), rot: from.rot.clone().slerp(to.rot, u), pole: from.pole.clone().lerp(to.pole, u).normalize() });
-    return pose;
-  }
-  const target = from ?? to;
-  const w = from ? 1 - u : u;
-  if (w <= 0) return pose;
-  solve(target);
-  bones.forEach((b, i) => { pose.bones[b] = free[i].clone().slerp(pose.bones[b], w); });
+export function freeTarget(layout, pose, side) {
+  const fk = worldPose(layout, pose);
+  const rot = fk.quat[`${side}Hand`].clone();
+  const wrist = fk.pos[`${side}Hand`];
+  const shoulder = fk.pos[`${side}Arm`];
+  const elbow = fk.pos[`${side}ForeArm`];
+  const line = wrist.clone().sub(shoulder).normalize();
+  const off = elbow.clone().sub(shoulder);
+  const pole = off.addScaledVector(line, -off.dot(line));
+  if (pole.lengthSq() < 1e-8) pole.set(0, 0, -1);
+  return { grip: wrist.clone().add(handGripOffset(layout, side).applyQuaternion(rot)), rot, pole: pole.normalize() };
+}
+
+/**
+ * Moves one arm from one state to another by u (0..1). Each state is a target (handTargetAt) or null
+ * (the arm as the body pose already has it). The whole path is solved by IK in hand space: the grip
+ * lerps (bowed by `arc` × sin(πu) when given, so a hand does not cut through the body), the hand
+ * rotation slerps and the elbow pole swings, so the elbow never swings out the way a blend of joint
+ * rotations would. A free end is the arm as posed (freeTarget), which the IK reproduces exactly.
+ */
+export function reach(layout, pose, side, from, to, u, { arc = null } = {}) {
+  if ((!from && !to) || (!from && u <= 0) || (!to && u >= 1)) return pose;
+  const a = from ?? freeTarget(layout, pose, side);
+  const b = to ?? freeTarget(layout, pose, side);
+  const grip = a.grip.clone().lerp(b.grip, u);
+  if (arc) grip.addScaledVector(arc, Math.sin(Math.PI * u));
+  gripAt(layout, pose, side, grip, a.rot.clone().slerp(b.rot, u), a.pole.clone().lerp(b.pole, u).normalize());
   return pose;
 }
