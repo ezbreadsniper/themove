@@ -108,7 +108,8 @@ export class CharacterMotor {
     const c = this.collision;
     const cfg = this.cfg;
     const p = this.pos;
-    const out = { grounded: false, jumped: false, landed: null, left: false, contacts: new Set(), vx: 0, vz: 0, stepped: 0, fall: 0 };
+    const out = { grounded: this.grounded, jumped: false, landed: null, left: false, contacts: new Set(), vx: 0, vz: 0, stepped: 0, fall: 0 };
+    if (!(dt > 0)) return out;
     // Depenetrate first (teleports, a door or prop that ended up overlapping): not counted as velocity.
     this.depenetrate(out.contacts);
     const x0 = p.x;

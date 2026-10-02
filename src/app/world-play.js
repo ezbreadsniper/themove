@@ -288,8 +288,9 @@ let last = performance.now();
 let frames = 0;
 let fpsT = 0;
 function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
+  // rAF timestamps can precede the performance.now() taken at load: never step with dt <= 0.
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+  last = Math.max(last, now);
   frames++;
   fpsT += dt;
   if (fpsT > 1) {
@@ -297,7 +298,7 @@ function loop(now) {
     frames = 0;
     fpsT = 0;
   }
-  if (!scripted) step(dt);
+  if (!scripted && dt > 0) step(dt);
   requestAnimationFrame(loop);
 }
 
