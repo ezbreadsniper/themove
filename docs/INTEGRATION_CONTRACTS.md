@@ -150,3 +150,31 @@ go in `docs/animation/animation_sources.md`.
   between activities over minutes so the room feels alive; at most one NPC per slot.
 - Held props (`src/npc/activities/props.js`): bottle (unbranded clear lager + lime), phone,
   controller, cup; attached to hand bones with a grip offset.
+
+## 8. Physical, shootable props (I ↔ D ↔ G)
+
+- **I owns** `src/world/physics/**` (rigid-body world, props, breakage, debris; the KCC/collision
+  files there keep their APIs and tests) and may add one physics dependency (e.g.
+  `@dimforge/rapier3d-compat`) if it is clearly worth it. D owns where props are placed; G owns
+  hitscan.
+- **D** builds every loose item (bottles, cans, cups, books, magazines, plants/pots, speakers,
+  boxes, crates, bins, chairs, stools, lamps, frames, remote, controller, console, candles,
+  shoes, basketball, cushions/blanket if cheap) through
+  `kit.physical(name, buildFn, { shape: 'box'|'cylinder'|'sphere'|'hull', mass, material:
+  'glass'|'ceramic'|'wood'|'metal'|'plastic'|'paper'|'fabric'|'rubber'|'electronics', breakable?,
+  anchored?: 'wall'|'ceiling'|null })` so each is its own dynamic node (not merged into a static
+  bucket), resting on its shelf/table/floor. Heavy furniture (sofa, console, tables, fridge) can be
+  `physical` with high mass or stay static with `bulletDecalsOnly`.
+- **I** simulates them: full 3D rigid bodies (tumble, roll, stack, slide off shelves, sleep),
+  collision with world static geometry and with each other, character capsules push them
+  (player + NPC bodies), and exposes on `game.physics` (and `world.physics`):
+  `raycast(origin, dir, max) → { body, point, normal, distance, material } | null`,
+  `shoot(hit, dir, { impulse, weapon })` (applies impulse at the point, spin, breakage), `step(dt)`.
+  Breakables shatter into retro low-poly shards/debris (glass bottles, TV screen cracks + sparks,
+  ceramic pots → pieces + soil, lamp bulbs pop and the light goes out via `world.setLight`,
+  hanging pendants swing on their chains when hit, posters/frames fall or tilt, speakers knocked over
+  — music source follows/cuts).
+  Events: `prop:hit { body, point, material }`, `prop:break { body, material, pos }` on game.events
+  (audio plays material-specific sounds).
+- **G** includes `game.physics.raycast` in hitscan (nearest of world / prop / NPC wins) and calls
+  `shoot`; bullet decals still go on static surfaces.
